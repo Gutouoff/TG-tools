@@ -1,0 +1,21 @@
+# 账号数据与凭据 —— 永不入库
+**/accounts/
+accounts/
+*.session
+*.session-journal
+tdata/
+**/tdata/
+*.json.bak
+
+# 备份/日志/缓存(profiles 含账号 uid/手机号/头像本地路径)
+profiles.json
+nicknames.json
+settings.json
+whitelist.json
+backups/
+logs/
+avatars/
+_previews/
+__pycache__/
+*.pyc
+*.log
