@@ -30,7 +30,7 @@ from tg_tool import (
 
 # GUI 自己的排除列表(与 CLI 的工具目录/非账号文件夹对齐)
 EXCLUDE_DIRS = {'工具箱', 'logs', 'backups', 'modules', 'tupdates', '空白Telegram',
-                '__pycache__'}
+                '__pycache__', '_internal'}
 
 try:
     from telethon import functions
@@ -338,6 +338,16 @@ class Engine:
                         w = random.uniform(*tg_tool.CONTACT_BATCH_DELAY)
                         self._log(T('t076', w))
                         await self._sleep(w)
+                if rnd < 2 and not self._check_cancel():
+                    r = await client(functions.contacts.GetContactsRequest(hash=0))
+                    remain = [u.id for u in r.users
+                              if u.id != me.id and u.id not in tg_tool.USER_WHITELIST]
+                    if remain:
+                        w = random.uniform(*tg_tool.CONTACT_ROUND_DELAY)
+                        self._log(T('t077', w))
+                        await self._sleep(w)
+                    else:
+                        break
 
             res2 = await client(functions.contacts.GetContactsRequest(hash=0))
             left = [u for u in res2.users if u.id != me.id and u.id not in tg_tool.USER_WHITELIST]
@@ -401,13 +411,6 @@ class Engine:
 
             self._log(T('t083', len(dialogs), len(users), len(deleted), len(bots),
                         len(groups), len(keep_users) + len(keep_groups)))
-            self._state('scan', {
-                'total': len(dialogs),
-                'privates': len(users) + len(deleted) + len(bots),
-                'groups': len(groups),
-                'users': len(users), 'deleted': len(deleted), 'bots': len(bots),
-                'keep': keep_users + keep_groups,
-            })
 
             all_privates = users + deleted + bots
 
@@ -543,6 +546,8 @@ class Engine:
                 'privates': len(users) + len(deleted) + len(bots),
                 'groups': len(groups),
                 'users': len(users), 'deleted': len(deleted), 'bots': len(bots),
+                'keep_users': len(keep_users),
+                'keep_groups': len(keep_groups),
                 'keep': [tg_tool._dlbl(d) for d in keep_users + keep_groups],
             }
             self._log(T('t083', len(dialogs), len(users), len(deleted), len(bots),
@@ -554,12 +559,14 @@ class Engine:
             self._state('done', f'扫描出错: {e}')
             return None
 
-    def count_contacts(self):
-        return self._submit(self._do_count_contacts())
+    def count_contacts(self, on_done=None):
+        """统计联系人。成功经 on_done(True, data) 回调;失败 on_done(False, msg)。"""
+        return self._submit(self._do_count_contacts(on_done))
 
-    async def _do_count_contacts(self):
+    async def _do_count_contacts(self, on_done=None):
         if not self._client:
-            self._state('done', '未连接账号')
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
             return None
         try:
             client, me = self._client, self._me
@@ -570,28 +577,42 @@ class Engine:
                     'whitelist': len(all_users) - len(deletable)}
             self._log(T('t066', len(all_users), data['whitelist'], len(deletable)))
             self._state('contacts_scan', data)
+            if on_done:
+                self._gui_schedule(lambda d=data: on_done(True, d))
             return data
         except Exception as e:
             self._log(f'[!] 扫描出错: {type(e).__name__}: {e}')
-            self._state('done', f'扫描出错: {e}')
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            else:
+                self._state('done', f'扫描出错: {e}')
             return None
 
-    def resolve_entity(self, s):
-        """白名单添加用: 解析 ID/@用户名 -> 实体(需已连接)。"""
-        return self._submit(self._do_resolve_entity(s))
+    def resolve_entity(self, s, on_done=None):
+        """白名单添加用: 解析 ID/@用户名 -> 实体(需已连接)。
+        成功经 on_done(True, entity) 回调;失败 on_done(False, msg)。"""
+        return self._submit(self._do_resolve_entity(s, on_done))
 
-    async def _do_resolve_entity(self, s):
+    async def _do_resolve_entity(self, s, on_done=None):
         if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
             return None
         s = (s or '').strip().lstrip('+')
+        ent = None
         try:
             if s.isdigit():
-                return await self._client.get_entity(int(s))
-            if s.startswith('@'):
-                return await self._client.get_entity(s)
+                ent = await self._client.get_entity(int(s))
+            elif s.startswith('@'):
+                ent = await self._client.get_entity(s)
         except Exception:
-            return None
-        return None
+            ent = None
+        if on_done:
+            if ent is not None:
+                self._gui_schedule(lambda e=ent: on_done(True, e))
+            else:
+                self._gui_schedule(lambda: on_done(False, '未找到该用户/群组'))
+        return ent
 
     def convert_tdata(self, account_dir):
         return self._submit(self._do_convert_tdata(account_dir))
@@ -630,10 +651,12 @@ class Engine:
     # ---------- 停止 ----------
 
     def stop_task(self):
-        """温和停止: 当前动作完成后停。"""
+        """温和停止: 当前动作完成后停。返回是否真的请求了停止。"""
         if self._task_running:
             self._cancel.set()
             self._log('[停止] 已请求停止,当前动作完成后中止…')
+            return True
+        return False
 
 
 def _dlbl_safe(d):

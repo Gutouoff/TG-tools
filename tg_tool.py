@@ -196,21 +196,29 @@ DEFAULT_TEXTS = {
 UI_TEXTS = {}
 
 def _load_ui_texts():
-    p = os.path.join(SCRIPT_DIR, '界面文本.txt')
-    if not os.path.isfile(p):
-        return
-    try:
-        for ln in open(p, encoding='utf-8-sig'):
-            ln = ln.rstrip('\r\n')
-            if not ln.strip() or ln.lstrip().startswith('#') or '=' not in ln:
-                continue
-            k, v = ln.split('=', 1)
-            if v.startswith(' '):
-                v = v[1:]
-            v = v.replace('\\n', '\n').replace('\\t', '\t')
-            UI_TEXTS[k.strip()] = v
-    except Exception:
-        pass
+    # frozen 打包: 先读 exe 旁(可编辑),再回退到打包模板(_MEIPASS)
+    paths = [os.path.join(SCRIPT_DIR, '界面文本.txt')]
+    if IS_FROZEN:
+        try:
+            paths.append(os.path.join(sys._MEIPASS, '界面文本.txt'))
+        except Exception:
+            pass
+    for p in paths:
+        if not os.path.isfile(p):
+            continue
+        try:
+            for ln in open(p, encoding='utf-8-sig'):
+                ln = ln.rstrip('\r\n')
+                if not ln.strip() or ln.lstrip().startswith('#') or '=' not in ln:
+                    continue
+                k, v = ln.split('=', 1)
+                if v.startswith(' '):
+                    v = v[1:]
+                v = v.replace('\\n', '\n').replace('\\t', '\t')
+                UI_TEXTS[k.strip()] = v
+            return
+        except Exception:
+            pass
 
 def T(key, *args):
     s = UI_TEXTS.get(key) or DEFAULT_TEXTS.get(key) or key
@@ -250,8 +258,18 @@ except Exception:
     pass
 
 # ============ 工作目录 ============
-WORKDIR = os.getcwd()            # 账号检测基准目录(bat 所在目录)
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))   # tg_tool.py 所在目录(工具箱)
+IS_FROZEN = getattr(sys, 'frozen', False)
+
+if IS_FROZEN:
+    # PyInstaller 打包: exe 所在目录既是数据目录(白名单/日志/备份/界面文本),
+    # 也是账号根目录(扫描 exe 旁的各账号文件夹)
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(sys.executable))
+    WORKDIR = SCRIPT_DIR
+else:
+    # 源码运行: 工具箱目录为数据目录,当前目录(bat 所在)为账号检测基准
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    WORKDIR = os.getcwd()
+
 LOG_DIR = os.path.join(SCRIPT_DIR, 'logs')
 BACKUP_DIR = os.path.join(SCRIPT_DIR, 'backups')
 _load_ui_texts()   # 界面文本: 编辑 界面文本.txt 自定义,删除即恢复默认
@@ -424,7 +442,10 @@ def init_log():
 def log(msg):
     ts = time.strftime('%H:%M:%S')
     line = f'[{ts}] {msg}'
-    print(line, flush=True)
+    try:
+        print(line, flush=True)
+    except Exception:
+        pass   # windowed 打包时无 stdout,忽略
     if LOGFILE:
         try:
             LOGFILE.write(line + '\n')

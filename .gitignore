@@ -6,6 +6,7 @@ accounts/
 tdata/
 **/tdata/
 *.json.bak
+test_account/
 
 # 备份/日志/缓存(profiles 含账号 uid/手机号/头像本地路径)
 profiles.json
@@ -19,3 +20,7 @@ _previews/
 __pycache__/
 *.pyc
 *.log
+
+# 打包产物(PyInstaller)
+build/
+dist/

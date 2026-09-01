@@ -15,17 +15,23 @@
 线程模型: Tk 主线程 + tg_engine 后台线程(asyncio)。
 所有引擎回调经 root.after(0, ...) 投回主线程。
 """
+import glob
 import os
+import shutil
 import sys
+import tempfile
 import threading
 import tkinter as tk
+import zipfile
 from tkinter import ttk, messagebox, simpledialog
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, SCRIPT_DIR)
-ROOT = os.path.dirname(SCRIPT_DIR)          # TG小号 根目录
+import tg_tool                              # noqa: E402  (路径/界面文本/白名单)
 
-import tg_tool                              # noqa: E402  (界面文本/白名单)
+SCRIPT_DIR = tg_tool.SCRIPT_DIR
+sys.path.insert(0, SCRIPT_DIR)
+# 账号根目录: 源码=工具箱目录的上级(TG小号); 打包=exe 所在目录的上级(用户放 exe 的那个账号根目录)
+ROOT = os.path.dirname(SCRIPT_DIR)
+
 import tg_engine                            # noqa: E402
 import tg_profile                           # noqa: E402
 
@@ -207,6 +213,15 @@ class App:
         APP_ROOT = root               # _schedule 用
         self.eng.start()               # 启动后台 asyncio 循环线程
         root.protocol('WM_DELETE_WINDOW', self._on_close)
+
+        # 拖放导入: 把含 tdata / session+json 的 zip 拖进窗口自动导入
+        self._dnd_ok = False
+        try:
+            import windnd
+            windnd.hook_dropfiles(root, func=self._on_dropfiles, force_unicode=True)
+            self._dnd_ok = True
+        except Exception:
+            pass
 
         # 后台补全 username/头像(串行,每号1s,完成后刷列表)
         tg_profile.start_refresh(ROOT, on_update=self._on_profile_one)
@@ -517,7 +532,7 @@ class App:
         if not ok:
             messagebox.showerror('查询失败', str(n)[:300])
             return
-        keep = n.get('keep', 0)
+        keep = n.get('whitelist', 0)
         dele = n.get('deletable', 0)
         if dele == 0:
             messagebox.showinfo('无需操作', f'联系人共 {keep} 个，均在白名单，无可删除项。')
@@ -623,7 +638,7 @@ class App:
             b.configure(state=st)
 
     def _apply_speed(self):
-        idx = int(self.speed_var.get()) - 1
+        idx = int(self.speed_var.get())
         self.eng.set_speed(idx)
 
     def set_status(self, s):
@@ -678,10 +693,6 @@ class App:
                 if s:
                     self.set_status(s)
             messagebox.showinfo('完成', '任务已完成。')
-        elif state == 'connect_fail':
-            self.connected = False
-            self._end_task()
-            messagebox.showerror('连接失败', str(data)[:300])
         elif state == 'error':
             self._end_task()
             messagebox.showerror('任务出错', str(data)[:500])
@@ -694,6 +705,119 @@ class App:
                 return
         self.eng.shutdown()
         self.root.after(150, self.root.destroy)
+
+    # ---------- 拖放导入账号 ----------
+    def _on_dropfiles(self, files):
+        """windnd 回调: 拖入的文件路径列表(默认 bytes)。"""
+        for f in files:
+            if isinstance(f, bytes):
+                try:
+                    f = f.decode('gbk')
+                except UnicodeDecodeError:
+                    f = f.decode('utf-8', errors='replace')
+            if not f or not f.lower().endswith('.zip'):
+                continue
+            self._import_archive(f)
+
+    def _import_archive(self, zip_path):
+        """解压 zip 并导入账号(tdata 或 session+json)到账号根目录 ROOT。"""
+        name = os.path.splitext(os.path.basename(zip_path))[0] or '账号'
+        tmp = tempfile.mkdtemp(prefix='tgimport_')
+        try:
+            try:
+                with zipfile.ZipFile(zip_path) as zf:
+                    zf.extractall(tmp)
+            except Exception as e:
+                messagebox.showerror('导入失败', f'解压失败：{e}')
+                return
+            src, kind = self._find_account(tmp)
+            if src is None:
+                messagebox.showerror('导入失败',
+                                     '压缩包里没找到 tdata 或 session+json 账号结构。')
+                return
+            target = self._unique_target_dir(ROOT, name)
+            os.makedirs(target, exist_ok=True)
+            for entry in os.listdir(src):
+                s = os.path.join(src, entry)
+                d = os.path.join(target, entry)
+                if os.path.isdir(s):
+                    if os.path.exists(d):
+                        shutil.rmtree(d, ignore_errors=True)
+                    shutil.copytree(s, d)
+                else:
+                    shutil.copy2(s, d)
+            self.accounts = []
+            self.refresh_accounts()
+            if kind == 'tdata':
+                self.log(f'已导入 tdata 账号 {os.path.basename(target)}，后台转换中…')
+                fut = self.eng.convert_tdata(target)
+                fut.add_done_callback(
+                    lambda f, t=target: self._after_tdata_convert(f, t))
+            else:
+                self.log(f'已导入账号：{os.path.basename(target)}（session+json）')
+                messagebox.showinfo('导入完成', f'已导入账号：{os.path.basename(target)}')
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def _after_tdata_convert(self, fut, target):
+        """tdata 后台转换完成后的回调(引擎线程)。"""
+        try:
+            ok = bool(fut.result())
+        except Exception:
+            ok = False
+
+        def _cb():
+            self.accounts = []
+            self.refresh_accounts()
+            name = os.path.basename(target)
+            if ok:
+                self.log(f'账号 {name} 转换完成')
+                messagebox.showinfo('导入完成', f'已导入并转换账号：{name}')
+            else:
+                self.log(f'账号 {name} 转换失败')
+                messagebox.showwarning(
+                    '导入完成',
+                    f'tdata 已导入到 {name}，但转换失败（可能缺 opentele-ng）。')
+
+        _schedule(_cb)
+
+    def _find_account(self, d):
+        """在解压目录里找账号结构(支持顶层或一层子目录)。
+        返回 (源目录, 'tdata'|'session') 或 (None, None)。"""
+        r = self._account_kind(d)
+        if r:
+            return d, r
+        for sub in sorted(os.listdir(d)):
+            subd = os.path.join(d, sub)
+            if os.path.isdir(subd):
+                r = self._account_kind(subd)
+                if r:
+                    return subd, r
+        return None, None
+
+    def _account_kind(self, d):
+        """判断目录 d 是否是账号结构。返回 'tdata' / 'session' / None。"""
+        if os.path.isdir(os.path.join(d, 'tdata')):
+            return 'tdata'
+        sess = glob.glob(os.path.join(d, '*.session'))
+        js = [f for f in glob.glob(os.path.join(d, '*.json'))
+              if tg_tool._is_account_json(f)]
+        if sess and js:
+            return 'session'
+        return None
+
+    def _unique_target_dir(self, root, name):
+        """返回 root 下不冲突的账号文件夹路径。"""
+        clean = name.strip() or '账号'
+        for ch in '\\/:*?"<>|':
+            clean = clean.replace(ch, '_')
+        cand = os.path.join(root, clean)
+        if not os.path.exists(cand):
+            return cand
+        i = 2
+        while os.path.exists(f'{cand}_{i}'):
+            i += 1
+        return f'{cand}_{i}'
 
     # ---------- 程序设置(代理) ----------
     def on_settings(self):
@@ -889,7 +1013,7 @@ class App:
         def on_done(ok, info):
             if ok:
                 ent = info or {}
-                uid = getattr(ent, 'id', None) or info.get('id')
+                uid = getattr(ent, 'id', None)
                 name = (getattr(ent, 'first_name', '') + ' ' + getattr(ent, 'last_name', '')).strip()
                 if uid:
                     tg_tool.USER_WHITELIST.add(int(uid))
@@ -948,20 +1072,11 @@ class App:
             self.log(f'白名单已移除群/频道 {gid}')
 
     # ---------- 资料后台补全 ----------
-    _profile_last_flush = 0.0
-
     def _on_profile_one(self, name, info):
         """worker 线程每完成一个账号回调一次。
-        返回 True = 让 worker 取消(当前账号已连接,防 session 冲突)。"""
-        import time as _t
-        now = _t.time()
-        if now - self._profile_last_flush >= 2.0:
-            self._profile_last_flush = now
-            try:
-                self.root.after(0, lambda: (setattr(self, 'accounts', []),
-                                            self.refresh_accounts()))
-            except RuntimeError:
-                pass
+        返回 True = 让 worker 取消(当前账号已连接,防 session 冲突)。
+        资料只落盘 profiles.json,不实时重建账号列表(避免账号区闪烁),
+        新资料在下次启动或手动重扫时生效。"""
         # 已连接账号 或 即将连接的账号 -> 取消后续刷新
         cur_name = (self._pending_connect or {}).get('name')
         if self.connected and self.cur and self.cur.get('name') == name:
@@ -974,6 +1089,7 @@ class App:
 # ---------- 入口 ----------
 def main():
     global APP_ROOT
+    tg_tool.load_proxy_cfg()
     root = tk.Tk()
     APP_ROOT = root
     app = App(root)

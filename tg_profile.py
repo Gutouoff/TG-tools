@@ -7,9 +7,14 @@ import asyncio
 import glob
 import json
 import os
+import sys
 import threading
 
-TOOLBOX = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    # PyInstaller 打包: 资料缓存/头像写到 exe 所在目录
+    TOOLBOX = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    TOOLBOX = os.path.dirname(os.path.abspath(__file__))
 PROFILE_FILE = os.path.join(TOOLBOX, 'profiles.json')
 AVATAR_DIR = os.path.join(TOOLBOX, 'avatars')
 
@@ -160,6 +165,9 @@ async def _fetch_one(loop, name, d, cfg_path, cfg):
     kw = dict(device_model=cfg.get('device') or 'PC',
               system_version=cfg.get('sdk') or 'Windows',
               app_version=cfg.get('app_version') or '6.6.4 x64')
+    proxy = tg_tool.resolve_proxy()
+    if proxy and proxy[0].startswith('socks') and not tg_tool._HAS_SOCKS:
+        proxy = None
     client = None
     sess = None
     for nm in (os.path.basename(cfg.get('session_file') or ''),
@@ -172,10 +180,11 @@ async def _fetch_one(loop, name, d, cfg_path, cfg):
         if len(found) == 1:
             sess = found[0]
     if sess:
-        client = TelegramClient(sess[:-len('.session')], cfg['app_id'], cfg['app_hash'], **kw)
+        client = TelegramClient(sess[:-len('.session')], cfg['app_id'], cfg['app_hash'],
+                                proxy=proxy, **kw)
     elif cfg.get('session_str') and StringSession:
         client = TelegramClient(StringSession(cfg['session_str']), cfg['app_id'],
-                                cfg['app_hash'], **kw)
+                                cfg['app_hash'], proxy=proxy, **kw)
     if client is None:
         return None
     try:
