@@ -32,15 +32,21 @@ from tg_tool import (
 EXCLUDE_DIRS = {'工具箱', 'logs', 'backups', 'modules', 'tupdates', '空白Telegram',
                 '__pycache__', '_internal'}
 
-try:
+def _ensure_telethon():
+    """惰性导入 telethon(首次任务时加载,省 GUI 启动约 2s)。"""
+    if 'DeleteContactsRequest' in globals():
+        return
     from telethon import functions
     from telethon.errors import FloodWaitError
-    from telethon.tl.functions.contacts import DeleteContactsRequest
+    from telethon.tl.functions.contacts import DeleteContactsRequest, BlockRequest
     from telethon.tl.functions.channels import LeaveChannelRequest
     from telethon.tl.functions.messages import DeleteChatUserRequest
-    from telethon.tl.functions.contacts import BlockRequest
-except Exception as _e:
-    raise SystemExit(f'[!] Telethon 导入失败: {_e}')
+    globals()['functions'] = functions
+    globals()['FloodWaitError'] = FloodWaitError
+    globals()['DeleteContactsRequest'] = DeleteContactsRequest
+    globals()['BlockRequest'] = BlockRequest
+    globals()['LeaveChannelRequest'] = LeaveChannelRequest
+    globals()['DeleteChatUserRequest'] = DeleteChatUserRequest
 
 
 # ============ 账号发现(不转换 tdata —— 转换是写操作,GUI 里单独触发) ============
@@ -266,6 +272,7 @@ class Engine:
         return self._submit(self._do_delete_contacts())
 
     async def _do_delete_contacts(self):
+        _ensure_telethon()
         if not self._client:
             self._state('done', '未连接账号')
             return
@@ -367,6 +374,7 @@ class Engine:
         return self._submit(self._do_delete_dialogs(choice))
 
     async def _do_delete_dialogs(self, choice):
+        _ensure_telethon()
         if not self._client:
             self._state('done', '未连接账号')
             return
@@ -451,6 +459,7 @@ class Engine:
         self._log(T('t084', len(rows), os.path.basename(fname)))
 
     async def _run_dialog_action(self, client, items, desc, fn):
+        _ensure_telethon()
         if not items:
             self._log(T('t085', desc))
             return
@@ -475,6 +484,7 @@ class Engine:
         self._log(T('t088', desc, done, total))
 
     async def _do_groups(self, client, groups):
+        _ensure_telethon()
         await self._backup_dialogs(groups, 'groups')
         total = len(groups)
         done = 0
@@ -564,6 +574,7 @@ class Engine:
         return self._submit(self._do_count_contacts(on_done))
 
     async def _do_count_contacts(self, on_done=None):
+        _ensure_telethon()
         if not self._client:
             if on_done:
                 self._gui_schedule(lambda: on_done(False, '未连接账号'))

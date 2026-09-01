@@ -1,14 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
-# TG工具箱 GUI 打包配置 (PyInstaller onedir)
+# TG工具箱 GUI 打包配置 (PyInstaller onedir 文件夹版)
 # 用法: python -m PyInstaller TG工具箱GUI.spec
-from PyInstaller.utils.hooks import collect_submodules
+# 产物: dist/TG工具箱GUI/TG工具箱GUI.exe (含 _internal 依赖,启动快)
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 hiddenimports = []
 hiddenimports += collect_submodules('telethon')
 hiddenimports += collect_submodules('opentele')
 hiddenimports += ['windnd']
+hiddenimports += collect_submodules('ttkbootstrap')
 
 datas = [('界面文本.txt', '.')]
+datas += collect_data_files('ttkbootstrap')
 
 a = Analysis(
     ['tg_ui.py'],

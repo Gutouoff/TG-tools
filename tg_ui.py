@@ -25,12 +25,20 @@ import tkinter as tk
 import zipfile
 from tkinter import ttk, messagebox, simpledialog
 
+import ttkbootstrap as ttkb                  # noqa: E402
+
 import tg_tool                              # noqa: E402  (路径/界面文本/白名单)
 
 SCRIPT_DIR = tg_tool.SCRIPT_DIR
 sys.path.insert(0, SCRIPT_DIR)
-# 账号根目录: 源码=工具箱目录的上级(TG小号); 打包=exe 所在目录的上级(用户放 exe 的那个账号根目录)
-ROOT = os.path.dirname(SCRIPT_DIR)
+# 账号根目录:
+#   源码: 工具箱目录的上级(TG小号)
+#   打包 onedir: exe 在「程序名」文件夹里,账号在 exe 上级
+#   打包 onefile: exe 是单文件,账号就在 exe 所在目录
+if tg_tool.IS_FROZEN and not os.path.isdir(os.path.join(SCRIPT_DIR, '_internal')):
+    ROOT = SCRIPT_DIR                      # onefile
+else:
+    ROOT = os.path.dirname(SCRIPT_DIR)     # 源码 / onedir
 
 import tg_engine                            # noqa: E402
 import tg_profile                           # noqa: E402
@@ -38,13 +46,14 @@ import tg_profile                           # noqa: E402
 # ---------- 样式常量 ----------
 AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE',
                  '#6EC9CB', '#FAA774', '#FFA6C9']
-FG = '#1F1F1F'
-FG2 = '#888888'
-FG3 = '#AAAAAA'
-SEL_BG = '#D6E7F7'
+PRIMARY = '#229ED9'      # Telegram 蓝
+FG = '#1F2937'
+FG2 = '#6B7280'
+FG3 = '#9CA3AF'
+SEL_BG = '#E6F3FB'
 CARD_BG = '#FFFFFF'
-PANEL_BG = '#F0F0F0'
-BORDER = '#D0D0D0'
+PANEL_BG = '#F5F7FA'
+BORDER = '#E2E8F0'
 
 # ---------- 工具函数 ----------
 def mask_phone(p):
@@ -155,15 +164,26 @@ class AccountItem(tk.Frame):
             child.bind('<Double-Button-1>', lambda e: on_double(self))
 
     def _try_photo(self):
+        # 头像异步: 先显示色块,PIL 解码放后台线程,好了再回填主线程
         p = tg_profile.avatar_path(self.acc['name'])
         if p and os.path.isfile(p):
-            try:
-                from PIL import Image, ImageTk
-                im = Image.open(p).resize((40, 40))
-                self._photo = ImageTk.PhotoImage(im)
-                self.avatar_lbl.configure(image=self._photo, width=40, height=40, text='')
-            except Exception:
-                pass
+            threading.Thread(target=self._load_photo_bg, args=(p,), daemon=True).start()
+
+    def _load_photo_bg(self, p):
+        try:
+            from PIL import Image
+            im = Image.open(p).resize((40, 40))
+            _schedule(lambda: self._apply_photo(im))
+        except Exception:
+            pass
+
+    def _apply_photo(self, im):
+        try:
+            from PIL import ImageTk
+            self._photo = ImageTk.PhotoImage(im)
+            self.avatar_lbl.configure(image=self._photo, width=40, height=40, text='')
+        except Exception:
+            pass
 
     def set_selected(self, sel):
         self.selected = sel
@@ -307,31 +327,26 @@ class App:
         # 按钮区
         bf = tk.Frame(right, bg=PANEL_BG)
         bf.pack(fill='x')
-        self.btn_del_contacts = tk.Button(
-            bf, text='删除联系人', font=('Microsoft YaHei UI', 10, 'bold'),
-            relief='raised', bd=1, padx=14, pady=6, state='disabled',
-            command=self.on_delete_contacts)
+        self.btn_del_contacts = ttkb.Button(
+            bf, text='删除联系人', bootstyle='danger',
+            state='disabled', command=self.on_delete_contacts)
         self.btn_del_contacts.pack(side='left', expand=True, fill='x', padx=(0, 4))
-        self.btn_del_dialogs = tk.Button(
-            bf, text='删除对话', font=('Microsoft YaHei UI', 10, 'bold'),
-            relief='raised', bd=1, padx=14, pady=6, state='disabled',
-            command=self.on_delete_dialogs)
+        self.btn_del_dialogs = ttkb.Button(
+            bf, text='删除对话', bootstyle='danger',
+            state='disabled', command=self.on_delete_dialogs)
         self.btn_del_dialogs.pack(side='left', expand=True, fill='x', padx=4)
         bf2 = tk.Frame(right, bg=PANEL_BG)
         bf2.pack(fill='x', pady=4)
-        self.btn_update = tk.Button(
-            bf2, text='更新本体', font=('Microsoft YaHei UI', 10, 'bold'),
-            relief='raised', bd=1, padx=14, pady=6, state='disabled',
-            command=self.on_update)
+        self.btn_update = ttkb.Button(
+            bf2, text='更新本体', bootstyle='primary',
+            state='disabled', command=self.on_update)
         self.btn_update.pack(side='left', expand=True, fill='x', padx=(0, 4))
-        self.btn_wl = tk.Button(
-            bf2, text='白名单管理', font=('Microsoft YaHei UI', 10, 'bold'),
-            relief='raised', bd=1, padx=14, pady=6,
+        self.btn_wl = ttkb.Button(
+            bf2, text='白名单管理', bootstyle='secondary',
             command=self.on_whitelist)
         self.btn_wl.pack(side='left', expand=True, fill='x', padx=4)
-        self.btn_settings = tk.Button(
-            bf2, text='程序设置', font=('Microsoft YaHei UI', 10, 'bold'),
-            relief='raised', bd=1, padx=14, pady=6,
+        self.btn_settings = ttkb.Button(
+            bf2, text='程序设置', bootstyle='secondary',
             command=self.on_settings)
         self.btn_settings.pack(side='left', expand=True, fill='x', padx=4)
 
@@ -387,10 +402,8 @@ class App:
         self.st_lbl = tk.Label(self.status, text='就绪', bg=PANEL_BG, fg=FG2,
                                font=('Microsoft YaHei UI', 9), anchor='w')
         self.st_lbl.pack(side='left', padx=10)
-        self.btn_stop = tk.Button(self.status, text='■ 停止任务', fg='#C0392B',
-                                  font=('Microsoft YaHei UI', 9, 'bold'),
-                                  relief='raised', bd=1, state='disabled',
-                                  command=self.on_stop)
+        self.btn_stop = ttkb.Button(self.status, text='■ 停止任务', bootstyle='danger-outline',
+                                    state='disabled', command=self.on_stop)
         self.btn_stop.pack(side='right', padx=10, pady=3)
 
     # ---------- 账号列表 ----------
@@ -441,13 +454,20 @@ class App:
             if q in hay.lower() or (cname and q in cname.lower()):
                 shown.append(a)
 
-        for a in shown:
+        # 分片渲染: 每批 24 个,间隙让 UI 响应,避免一次性建几百控件卡顿
+        self._render_batch(shown, 0)
+
+    def _render_batch(self, items, start, step=24):
+        end = min(start + step, len(items))
+        for a in items[start:end]:
             it = AccountItem(self.list_inner, a,
                              on_click=self._pick_item, on_double=self._connect_item)
             it.pack(fill='x', padx=3, pady=2)
-        # 保持当前选中高亮
-        if self.cur and self.cur_item:
-            self.cur_item.set_selected(True)
+            if self.cur and self.cur.get('name') == a.get('name'):
+                it.set_selected(True)
+                self.cur_item = it
+        if end < len(items):
+            self.root.after(8, lambda: self._render_batch(items, end, step))
 
     def _pick_item(self, item):
         if self.cur_item and self.cur_item is not item:
@@ -595,10 +615,10 @@ class App:
             self._start_task('删除对话')
             self.eng.delete_dialogs(choice)
 
-        tk.Button(bf, text='确认执行', font=('Microsoft YaHei UI', 9, 'bold'),
-                  padx=14, command=go).pack(side='left', padx=6)
-        tk.Button(bf, text='取消', font=('Microsoft YaHei UI', 9),
-                  padx=14, command=lambda: (dlg.destroy(), self._end_task())).pack(side='left', padx=6)
+        ttkb.Button(bf, text='确认执行', bootstyle='danger',
+                    command=go).pack(side='left', padx=6)
+        ttkb.Button(bf, text='取消', bootstyle='secondary',
+                    command=lambda: (dlg.destroy(), self._end_task())).pack(side='left', padx=6)
 
     def on_update(self):
         if not self._require_connected():
@@ -908,10 +928,10 @@ class App:
             win.destroy()
 
         import json as _json
-        tk.Button(bf, text='保存', font=('Microsoft YaHei UI', 9, 'bold'),
-                  padx=14, command=save).pack(side='left', padx=6)
-        tk.Button(bf, text='取消', font=('Microsoft YaHei UI', 9),
-                  padx=14, command=win.destroy).pack(side='left', padx=6)
+        ttkb.Button(bf, text='保存', bootstyle='primary',
+                    command=save).pack(side='left', padx=6)
+        ttkb.Button(bf, text='取消', bootstyle='secondary',
+                    command=win.destroy).pack(side='left', padx=6)
 
     def _toggle_proxy_fields(self, win, mode_var):
         f = self._proxy_fields.get('mframe')
@@ -951,15 +971,15 @@ class App:
                 name = tg_profile.nickname_of(uid)
                 tk.Label(r, text=name, bg='white', fg=FG2, anchor='w',
                          font=('Microsoft YaHei UI', 9)).pack(side='left', padx=6)
-                tk.Button(r, text='移除', font=('Microsoft YaHei UI', 8),
-                          command=lambda u=uid: self._wl_remove_user(u, rebuild)).pack(side='right')
+                ttkb.Button(r, text='移除', bootstyle='secondary-outline',
+                            command=lambda u=uid: self._wl_remove_user(u, rebuild)).pack(side='right')
             for gid in sorted(tg_tool.GROUP_WHITELIST):
                 r = tk.Frame(glist, bg='white')
                 r.pack(fill='x', pady=1)
                 tk.Label(r, text=str(gid), bg='white', fg=FG, width=12, anchor='w',
                          font=('Microsoft YaHei UI', 9)).pack(side='left')
-                tk.Button(r, text='移除', font=('Microsoft YaHei UI', 8),
-                          command=lambda g=gid: self._wl_remove_group(g, rebuild)).pack(side='right')
+                ttkb.Button(r, text='移除', bootstyle='secondary-outline',
+                            command=lambda g=gid: self._wl_remove_group(g, rebuild)).pack(side='right')
             cnt1.configure(text=f'用户白名单（{len(tg_tool.USER_WHITELIST)}）')
             cnt2.configure(text=f'群组/频道白名单（{len(tg_tool.GROUP_WHITELIST)}）')
 
@@ -971,8 +991,8 @@ class App:
         cnt1.pack(anchor='w', padx=14)
         uf = tk.Frame(win, bg='white')
         uf.pack(fill='x', padx=14)
-        tk.Button(uf, text='＋ 添加用户', font=('Microsoft YaHei UI', 9),
-                  command=lambda: self._wl_add_user(rebuild)).pack(side='left')
+        ttkb.Button(uf, text='＋ 添加用户', bootstyle='primary-outline',
+                    command=lambda: self._wl_add_user(rebuild)).pack(side='left')
         ulist = tk.Frame(win, bg='white', highlightthickness=1,
                          highlightbackground=BORDER)
         ulist.pack(fill='x', padx=14, pady=(2, 8))
@@ -982,8 +1002,8 @@ class App:
         cnt2.pack(anchor='w', padx=14)
         gf = tk.Frame(win, bg='white')
         gf.pack(fill='x', padx=14)
-        tk.Button(gf, text='＋ 添加群/频道', font=('Microsoft YaHei UI', 9),
-                  command=lambda: self._wl_add_group(rebuild)).pack(side='left')
+        ttkb.Button(gf, text='＋ 添加群/频道', bootstyle='primary-outline',
+                    command=lambda: self._wl_add_group(rebuild)).pack(side='left')
         glist = tk.Frame(win, bg='white', highlightthickness=1,
                          highlightbackground=BORDER)
         glist.pack(fill='x', padx=14, pady=(2, 8))
@@ -998,10 +1018,10 @@ class App:
             tg_tool.save_whitelist()
             rebuild()
 
-        tk.Button(bf, text='恢复默认', font=('Microsoft YaHei UI', 9),
-                  command=restore_default).pack(side='left', padx=6)
-        tk.Button(bf, text='关闭', font=('Microsoft YaHei UI', 9),
-                  command=win.destroy).pack(side='left', padx=6)
+        ttkb.Button(bf, text='恢复默认', bootstyle='warning-outline',
+                    command=restore_default).pack(side='left', padx=6)
+        ttkb.Button(bf, text='关闭', bootstyle='secondary',
+                    command=win.destroy).pack(side='left', padx=6)
         rebuild()
 
     def _wl_add_user(self, rebuild):
@@ -1090,7 +1110,13 @@ class App:
 def main():
     global APP_ROOT
     tg_tool.load_proxy_cfg()
-    root = tk.Tk()
+    root = ttkb.Window(themename='flatly')
+    try:
+        root.style.configure('.', font=('Microsoft YaHei UI', 9))
+        root.style.configure('TButton', font=('Microsoft YaHei UI', 10, 'bold'))
+        root.style.configure('TRadiobutton', font=('Microsoft YaHei UI', 9))
+    except Exception:
+        pass
     APP_ROOT = root
     app = App(root)
     root.mainloop()

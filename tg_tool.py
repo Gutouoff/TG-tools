@@ -234,23 +234,34 @@ def T(key, *args):
             return d
 
 
-# Telethon 1.44 新版 message 构造体补丁(服务器 schema 已更新,库还没跟进)
-try:
-    import tl_patch
-    tl_patch.apply()
-except Exception as _e:
-    print(T('t001', _e))
-
-try:
-    from telethon import TelegramClient, functions
-    from telethon.sessions import StringSession
-    from telethon.errors import FloodWaitError
-    from telethon.tl.functions.contacts import BlockRequest
-    from telethon.tl.functions.channels import LeaveChannelRequest
-    from telethon.tl.functions.messages import DeleteChatUserRequest
-except ImportError:
-    print(T('t002'))
-    sys.exit(1)
+def _ensure_telethon():
+    """惰性导入 telethon + TL 补丁(首次连接/操作账号时加载,省 GUI 启动约 2s)。"""
+    if 'TelegramClient' in globals():
+        return
+    try:
+        import telethon as _telethon
+        from telethon import functions
+        from telethon.sessions import StringSession
+        from telethon.errors import FloodWaitError
+        from telethon.tl.functions.contacts import BlockRequest
+        from telethon.tl.functions.channels import LeaveChannelRequest
+        from telethon.tl.functions.messages import DeleteChatUserRequest
+    except ImportError:
+        print(T('t002'))
+        sys.exit(1)
+    # Telethon 1.44 新版 message 构造体补丁(服务器 schema 已更新,库还没跟进),失败不影响
+    try:
+        import tl_patch
+        tl_patch.apply()
+    except Exception as _e:
+        print(T('t001', _e))
+    globals()['TelegramClient'] = _telethon.TelegramClient
+    globals()['functions'] = functions
+    globals()['StringSession'] = StringSession
+    globals()['FloodWaitError'] = FloodWaitError
+    globals()['BlockRequest'] = BlockRequest
+    globals()['LeaveChannelRequest'] = LeaveChannelRequest
+    globals()['DeleteChatUserRequest'] = DeleteChatUserRequest
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')
@@ -646,6 +657,7 @@ def resolve_proxy():
 
 
 def make_client(cfg_path, cfg):
+    _ensure_telethon()
     base = os.path.dirname(cfg_path)
     stem = os.path.splitext(os.path.basename(cfg_path))[0]
     kw = dict(device_model=cfg.get('device') or 'PC',
@@ -790,6 +802,7 @@ async def account_workspace(account_dir, account_dirs, mode):
 # ============ 任务1: 删除联系人 ============
 
 async def task_delete_contacts(client, me):
+    _ensure_telethon()
     log(T('t065'))
     res = await client(functions.contacts.GetContactsRequest(hash=0))
     all_users = [u for u in res.users if u.id != me.id]
@@ -931,6 +944,7 @@ async def _backup_dialogs(items, tag):
 
 
 async def _run_dialog_action(client, items, desc, fn):
+    _ensure_telethon()
     if not items:
         log(T('t085', desc))
         return
@@ -951,6 +965,7 @@ async def _run_dialog_action(client, items, desc, fn):
 
 
 async def task_delete_dialogs(client, me):
+    _ensure_telethon()
     users, bots, deleted, groups, keep_users, keep_groups, total_dialogs = await _analyze_dialogs(client, me)
     all_privates = users + deleted + bots   # 规则: 白名单之外全删;bot 额外拉黑
 
