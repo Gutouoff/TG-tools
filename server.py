@@ -56,7 +56,8 @@ TOKEN = secrets.token_urlsafe(32)
 async def token_middleware(request, call_next):
     from fastapi.responses import JSONResponse
     if request.url.path.startswith('/api') and request.method != 'OPTIONS':
-        if request.headers.get('X-TG-Token') != TOKEN:
+        token = request.headers.get('X-TG-Token') or request.query_params.get('token', '')
+        if token != TOKEN:
             return JSONResponse(status_code=401, content={'detail': 'unauthorized'})
     return await call_next(request)
 
@@ -221,6 +222,17 @@ async def me():
     eng = init_engine()
     ok, data = await _call(eng.get_me)
     return {'ok': ok, 'me': _jsonable(data) if ok else {}}
+
+
+@app.get('/api/avatar-image')
+async def avatar_image(name: str):
+    """返回账号头像图片(供前端 <img> 加载,失败 404 回退色块)。"""
+    from fastapi.responses import FileResponse, JSONResponse
+    prof = tg_profile.load_profiles()
+    p = prof.get(name, {}).get('avatar', '')
+    if p and os.path.isfile(p):
+        return FileResponse(p)
+    return JSONResponse(status_code=404, content={'detail': 'no avatar'})
 
 
 @app.post('/api/disconnect')

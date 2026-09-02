@@ -20,7 +20,7 @@ export interface LogEvent {
 }
 
 // 本地 API 鉴权 token（由后端通过 url query 注入）
-const TOKEN = new URLSearchParams(location.search).get('token') || '';
+export const TOKEN = new URLSearchParams(location.search).get('token') || '';
 
 async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
