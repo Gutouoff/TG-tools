@@ -167,7 +167,7 @@
   }
 
   // 右栏视图
-  let rightView = $state<'log' | 'passkey' | '2fa' | 'email' | 'devices'>('log');
+  let rightView = $state<'log' | 'passkey' | '2fa' | 'email' | 'devices' | 'profile' | 'whitelist' | 'settings'>('log');
   let passkeys = $state<any[]>([]);
   let devices = $state<any[]>([]);
   let has2fa = $state(false);
