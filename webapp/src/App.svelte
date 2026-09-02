@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, flushSync } from 'svelte';
   import {
     getAccounts,
     connectAccount,
@@ -35,6 +36,7 @@
     getSettings,
     saveSettings,
     getMe,
+    TOKEN,
     type Account,
     type LogEvent,
   } from './api';
@@ -43,6 +45,7 @@
 
   let accounts = $state<Account[]>([]);
   let filtered = $state<Account[]>([]);
+  let filterVersion = $state(0);
   let search = $state('');
   let current = $state<Account | null>(null);
   let connected = $state(false);
@@ -68,11 +71,13 @@
   function applyFilter() {
     const q = search.trim().toLowerCase();
     const base = groupFiltered();
-    filtered = q
+    const result = q
       ? base.filter((a) =>
           `${a.name} ${a.display} ${a.username} ${a.phone} ${a.uid}`.toLowerCase().includes(q),
         )
-      : base;
+      : [...base];
+    filtered.splice(0, filtered.length, ...result);
+    filterVersion++;
   }
 
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -86,8 +91,11 @@
   }
 
   async function loadAccounts() {
-    accounts = await getAccounts();
-    applyFilter();
+    const acc = await getAccounts();
+    flushSync(() => {
+      accounts = acc;
+      applyFilter();
+    });
   }
 
   async function onConnect(a: Account) {
@@ -394,8 +402,6 @@
     await loadAccounts();
   }
 
-  loadGroups();
-
   connectWS((e: LogEvent) => {
     if (e.type === 'log' && e.line) addLog(e.line);
     if (e.type === 'progress') {
@@ -409,7 +415,10 @@
     }
   });
 
-  loadAccounts();
+  onMount(() => {
+    loadGroups();
+    loadAccounts();
+  });
 </script>
 
 <header class="topbar">
@@ -434,7 +443,8 @@
     </div>
     <input class="search" placeholder="搜索账号…" bind:value={search} oninput={onSearch} />
     <ul class="list">
-      {#each filtered as a (a.name)}
+      {#key filterVersion}
+      {#each filtered as a}
         <li
           class="item"
           class:cur={current?.name === a.name}
@@ -456,6 +466,7 @@
           {/if}
         </li>
       {/each}
+      {/key}
     </ul>
   </aside>
 
