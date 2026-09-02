@@ -26,6 +26,11 @@
     updateUsername,
     updateBirthday,
     uploadAvatar,
+    getGroups,
+    createGroup,
+    moveAccount,
+    convertTdata,
+    importArchive,
     type Account,
     type LogEvent,
   } from './api';
@@ -48,11 +53,12 @@
 
   function applyFilter() {
     const q = search.trim().toLowerCase();
+    const base = groupFiltered();
     filtered = q
-      ? accounts.filter((a) =>
+      ? base.filter((a) =>
           `${a.name} ${a.display} ${a.username} ${a.phone} ${a.uid}`.toLowerCase().includes(q),
         )
-      : accounts;
+      : base;
   }
 
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -213,6 +219,78 @@
     wlGroups = r.groups;
   }
 
+  // 账号分组
+  let groups = $state<Record<string, string[]>>({});
+  let curGroup = $state('all');
+
+  async function loadGroups() {
+    groups = await getGroups();
+  }
+  function groupFiltered(): Account[] {
+    const grouped = new Set<string>();
+    for (const names of Object.values(groups)) for (const n of names) grouped.add(n);
+    if (curGroup === 'ungrouped') return accounts.filter((a) => !grouped.has(a.name));
+    if (curGroup !== 'all') return accounts.filter((a) => (groups[curGroup] || []).includes(a.name));
+    return accounts;
+  }
+  function selectGroup(g: string) {
+    curGroup = g;
+    applyFilter();
+  }
+  async function doCreateGroup() {
+    const name = prompt('输入分组名称：');
+    if (!name) return;
+    const r = await createGroup(name.trim());
+    if (r.ok) groups = r.groups;
+    else addLog(`新建失败: ${r.msg}`);
+  }
+  async function doMoveAccount(name: string, group: string) {
+    const r = await moveAccount(name, group);
+    if (r.ok) {
+      groups = r.groups;
+      applyFilter();
+    }
+  }
+  let ctxMenu = $state<{ x: number; y: number; name: string } | null>(null);
+  function onAccountContext(e: MouseEvent, a: Account) {
+    e.preventDefault();
+    ctxMenu = { x: e.clientX, y: e.clientY, name: a.name };
+  }
+  function closeCtx() {
+    ctxMenu = null;
+  }
+
+  // tdata 转换
+  async function doConvertTdata(a: Account) {
+    addLog(`正在转换 ${a.name} …`);
+    const r = await convertTdata(a.path);
+    addLog(r.ok ? `${a.name} 转换完成` : `${a.name} 转换失败: ${r.msg}`);
+    await loadAccounts();
+  }
+
+  // 拖放导入
+  function onDragOver(e: DragEvent) {
+    e.preventDefault();
+  }
+  async function onDrop(e: DragEvent) {
+    e.preventDefault();
+    const files = e.dataTransfer?.files;
+    if (!files?.length) return;
+    for (const f of Array.from(files)) {
+      if (!f.name.toLowerCase().endsWith('.zip')) continue;
+      addLog(`正在导入 ${f.name} …`);
+      const buf = await f.arrayBuffer();
+      let bin = '';
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      const r = await importArchive(btoa(bin), f.name.replace(/\.zip$/i, ''));
+      addLog(r.ok ? `导入完成: ${r.msg}` : `导入失败: ${r.msg}`);
+    }
+    await loadAccounts();
+  }
+
+  loadGroups();
+
   connectWS((e: LogEvent) => {
     if (e.type === 'log' && e.line) addLog(e.line);
     if (e.type === 'progress') {
@@ -238,7 +316,15 @@
 </header>
 
 <div class="layout">
-  <aside class="left">
+  <aside class="left" ondragover={onDragOver} ondrop={onDrop} onclick={closeCtx}>
+    <div class="groups">
+      {#each ['all', 'ungrouped', ...Object.keys(groups)] as g}
+        <button class="grp" class:on={curGroup === g} onclick={() => selectGroup(g)}>
+          {g === 'all' ? '全部' : g === 'ungrouped' ? '未分组' : g}
+        </button>
+      {/each}
+      <button class="grp add" onclick={doCreateGroup}>＋</button>
+    </div>
     <input class="search" placeholder="搜索账号…" bind:value={search} oninput={onSearch} />
     <ul class="list">
       {#each filtered as a (a.name)}
@@ -247,16 +333,30 @@
           class:cur={current?.name === a.name}
           ondblclick={() => onConnect(a)}
           onclick={() => (current = a)}
+          oncontextmenu={(e) => onAccountContext(e, a)}
         >
           <span class="avatar" style="background:{avatarColor(a.name)}">{a.display?.[0] || a.name[0] || '-'}</span>
           <span class="meta">
             <span class="nm">{a.display || a.name}</span>
             <span class="sub">@{a.username || a.phone || a.state}</span>
           </span>
+          {#if a.state === 'tdata'}
+            <button class="conv" onclick={(e) => { e.stopPropagation(); doConvertTdata(a); }}>转换</button>
+          {/if}
         </li>
       {/each}
     </ul>
   </aside>
+
+  {#if ctxMenu}
+    <div class="ctx" style="left:{ctxMenu.x}px;top:{ctxMenu.y}px" onclick={(e) => e.stopPropagation()}>
+      <div class="ctx-title">移动到组</div>
+      <button onclick={() => { doMoveAccount(ctxMenu.name, 'ungrouped'); closeCtx(); }}>未分组</button>
+      {#each Object.keys(groups) as g}
+        <button onclick={() => { doMoveAccount(ctxMenu.name, g); closeCtx(); }}>{g}</button>
+      {/each}
+    </div>
+  {/if}
 
   <section class="mid">
     <details class="card" open>
@@ -472,6 +572,69 @@
     font-size: 14px;
     outline: none;
     margin-bottom: 8px;
+  }
+  .groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .grp {
+    background: none;
+    border: 1px solid var(--md-sys-color-outline);
+    color: var(--md-sys-color-on-surface);
+    border-radius: 999px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .grp.on {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    border-color: var(--md-sys-color-primary);
+  }
+  .grp.add {
+    font-weight: 600;
+  }
+  .conv {
+    background: none;
+    border: 1px solid var(--md-sys-color-primary);
+    color: var(--md-sys-color-primary);
+    border-radius: 999px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+  .ctx {
+    position: fixed;
+    z-index: 999;
+    background: var(--md-sys-color-surface-container-high);
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-medium);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    padding: 4px;
+    min-width: 140px;
+    display: flex;
+    flex-direction: column;
+  }
+  .ctx-title {
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    padding: 4px 8px;
+  }
+  .ctx button {
+    background: none;
+    border: none;
+    text-align: left;
+    padding: 6px 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--md-sys-color-on-surface);
+    border-radius: 6px;
+  }
+  .ctx button:hover {
+    background: var(--md-sys-color-primary-container);
   }
   .list {
     list-style: none;

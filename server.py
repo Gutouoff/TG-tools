@@ -396,6 +396,158 @@ async def upload_avatar(body: dict):
     return {'ok': ok, 'msg': msg}
 
 
+# ---------- 账号分组 ----------
+GROUPS_FILE = os.path.join(tg_tool.SCRIPT_DIR, 'groups.json')
+
+
+def _load_groups():
+    try:
+        if os.path.isfile(GROUPS_FILE):
+            d = json.load(open(GROUPS_FILE, encoding='utf-8'))
+            if isinstance(d, dict):
+                return d
+    except Exception:
+        pass
+    return {}
+
+
+def _save_groups(groups):
+    try:
+        json.dump(groups, open(GROUPS_FILE, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+
+
+@app.get('/api/groups')
+async def groups():
+    return _load_groups()
+
+
+@app.post('/api/groups')
+async def create_group(body: dict):
+    name = (body.get('name') or '').strip()
+    groups = _load_groups()
+    if not name or name in groups:
+        return {'ok': False, 'msg': '分组名无效或已存在'}
+    groups[name] = []
+    _save_groups(groups)
+    return {'ok': True, 'groups': groups}
+
+
+@app.delete('/api/groups/{name}')
+async def delete_group(name: str):
+    groups = _load_groups()
+    groups.pop(name, None)
+    _save_groups(groups)
+    return {'ok': True, 'groups': groups}
+
+
+@app.post('/api/groups/move')
+async def move_account(body: dict):
+    name = body.get('name', '')
+    group = body.get('group', '')
+    groups = _load_groups()
+    for g in groups:
+        if name in groups[g]:
+            groups[g].remove(name)
+    if group and group != 'ungrouped':
+        groups.setdefault(group, []).append(name)
+    _save_groups(groups)
+    return {'ok': True, 'groups': groups}
+
+
+# ---------- tdata 转换 ----------
+@app.post('/api/convert-tdata')
+async def convert_tdata(body: dict):
+    eng = init_engine()
+    path = body.get('path', '')
+    if not path:
+        return {'ok': False, 'msg': '缺少账号路径'}
+    fut = eng.convert_tdata(path)
+    try:
+        ok = await asyncio.wait_for(asyncio.wrap_future(fut), 300)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': bool(ok), 'msg': '转换完成' if ok else '转换失败'}
+
+
+# ---------- 拖放导入账号 ----------
+def _account_kind(d):
+    if os.path.isdir(os.path.join(d, 'tdata')):
+        return 'tdata'
+    sess = glob.glob(os.path.join(d, '*.session'))
+    js = [f for f in glob.glob(os.path.join(d, '*.json')) if tg_tool._is_account_json(f)]
+    if sess and js:
+        return 'session'
+    return None
+
+
+def _find_account(d):
+    r = _account_kind(d)
+    if r:
+        return d, r
+    for sub in sorted(os.listdir(d)):
+        subd = os.path.join(d, sub)
+        if os.path.isdir(subd):
+            r = _account_kind(subd)
+            if r:
+                return subd, r
+    return None, None
+
+
+def _unique_target(root, name):
+    clean = name.strip() or '账号'
+    for ch in '\\/:*?"<>|':
+        clean = clean.replace(ch, '_')
+    cand = os.path.join(root, clean)
+    if not os.path.exists(cand):
+        return cand
+    i = 2
+    while os.path.exists(f'{cand}_{i}'):
+        i += 1
+    return f'{cand}_{i}'
+
+
+@app.post('/api/import')
+async def import_archive(body: dict):
+    import base64
+    import io
+    import zipfile
+    import tempfile
+    import shutil
+    b64 = body.get('data', '')
+    name = body.get('name', '账号')
+    if not b64:
+        return {'ok': False, 'msg': '缺少数据'}
+    try:
+        zip_bytes = base64.b64decode(b64)
+    except Exception:
+        return {'ok': False, 'msg': '数据无效'}
+    tmp = tempfile.mkdtemp(prefix='tgimport_')
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            zf.extractall(tmp)
+        src, kind = _find_account(tmp)
+        if src is None:
+            return {'ok': False, 'msg': '压缩包里没找到 tdata 或 session+json 账号结构'}
+        target = _unique_target(ROOT, name)
+        os.makedirs(target, exist_ok=True)
+        for entry in os.listdir(src):
+            s = os.path.join(src, entry)
+            d = os.path.join(target, entry)
+            if os.path.isdir(s):
+                shutil.copytree(s, d, dirs_exist_ok=True)
+            else:
+                shutil.copy2(s, d)
+        if kind == 'tdata':
+            eng = init_engine()
+            fut = eng.convert_tdata(target)
+            await asyncio.wait_for(asyncio.wrap_future(fut), 300)
+        return {'ok': True, 'msg': f'已导入 {os.path.basename(target)}'}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ---------- 静态前端 ----------
 if os.path.isdir(DIST):
     app.mount('/', StaticFiles(directory=DIST, html=True), name='static')

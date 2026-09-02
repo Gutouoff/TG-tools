@@ -132,3 +132,14 @@ export const updateUsername = (username: string) => postJson('/api/profile/usern
 export const updateBirthday = (day: number, month: number, year: number | null) =>
   postJson('/api/profile/birthday', { day, month, year });
 export const uploadAvatar = (data: string) => postJson('/api/avatar', { data });
+
+// ---------- 账号分组 ----------
+export const getGroups = (): Promise<Record<string, string[]>> => getJson('/api/groups');
+export const createGroup = (name: string) => postJson('/api/groups', { name });
+export const deleteGroup = (name: string) =>
+  fetch(`/api/groups/${encodeURIComponent(name)}`, { method: 'DELETE' }).then((r) => r.json());
+export const moveAccount = (name: string, group: string) => postJson('/api/groups/move', { name, group });
+
+// ---------- tdata 转换 / 导入 ----------
+export const convertTdata = (path: string) => postJson('/api/convert-tdata', { path });
+export const importArchive = (data: string, name: string) => postJson('/api/import', { data, name });
