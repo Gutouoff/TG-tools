@@ -1,0 +1,44 @@
+/* Material 3 主题 —— seed 蓝 #9BCFDC,浅色背景 #C7C7C7 */
+:root {
+  color-scheme: light;
+
+  /* primary: seed 蓝 #9BCFDC 的 tonal 派生(此处直接用 seed 作为 primary 近似) */
+  --md-sys-color-primary: #2a6d7d;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #b3e3ef;
+  --md-sys-color-on-primary-container: #001f26;
+
+  --md-sys-color-surface: #c7c7c7;
+  --md-sys-color-on-surface: #1a1c1d;
+  --md-sys-color-surface-variant: #dde4e6;
+  --md-sys-color-on-surface-variant: #41484a;
+  --md-sys-color-outline: #71787b;
+  --md-sys-color-surface-container: #dcdcdc;
+  --md-sys-color-surface-container-low: #e2e2e2;
+  --md-sys-color-surface-container-high: #d2d2d2;
+
+  --md-sys-color-error: #ba1a1a;
+  --md-sys-color-on-error: #ffffff;
+
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 16px;
+  --md-sys-shape-corner-large: 24px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+}
+
+#app {
+  height: 100%;
+}
