@@ -12,6 +12,8 @@ hiddenimports += collect_submodules('uvicorn')
 hiddenimports += collect_submodules('pywebview')
 hiddenimports += collect_submodules('websockets')
 hiddenimports += collect_submodules('starlette')
+hiddenimports += collect_submodules('qrcode')
+hiddenimports += collect_submodules('PIL')
 
 datas = [('界面文本.txt', '.')]
 datas += [('webapp/dist', 'webapp/dist')]

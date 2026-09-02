@@ -19,8 +19,11 @@ export interface LogEvent {
   data?: unknown;
 }
 
-// 本地 API 鉴权 token（由后端通过 url query 注入）
-export const TOKEN = new URLSearchParams(location.search).get('token') || '';
+// 本地 API 鉴权 token（优先 url query,其次后端注入到 index.html 的 window.__TG_TOKEN__）
+export const TOKEN =
+  new URLSearchParams(location.search).get('token') ||
+  (typeof window !== 'undefined' ? (window as any).__TG_TOKEN__ : '') ||
+  '';
 
 async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);

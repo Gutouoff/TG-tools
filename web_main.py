@@ -51,6 +51,19 @@ def main():
     port, token = server.start_server()
     url = f'http://127.0.0.1:{port}/?token={token}'
     print(f'[web] 后端: http://127.0.0.1:{port}/')
+    # 诊断: 记录本次端口/token 到 settings.json(排查用,可移除)
+    try:
+        _s = {}
+        if os.path.isfile(SETTINGS):
+            try:
+                _s = json.load(open(SETTINGS, encoding='utf-8'))
+            except Exception:
+                _s = {}
+        _s['_last_port'] = port
+        _s['_last_token'] = token
+        json.dump(_s, open(SETTINGS, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    except Exception:
+        pass
 
     w, h = _load_geometry()
     win = webview.create_window(

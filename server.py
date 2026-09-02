@@ -56,7 +56,10 @@ TOKEN = secrets.token_urlsafe(32)
 async def token_middleware(request, call_next):
     from fastapi.responses import JSONResponse
     if request.url.path.startswith('/api') and request.method != 'OPTIONS':
-        token = request.headers.get('X-TG-Token') or request.query_params.get('token', '')
+        token = request.headers.get('X-TG-Token') or ''
+        # <img> 标签无法带 header,仅头像图片端点放行 query token
+        if not token and request.url.path == '/api/avatar-image':
+            token = request.query_params.get('token', '')
         if token != TOKEN:
             return JSONResponse(status_code=401, content={'detail': 'unauthorized'})
     return await call_next(request)
@@ -241,8 +244,15 @@ async def avatar_image(name: str):
     from fastapi.responses import FileResponse, JSONResponse
     prof = tg_profile.load_profiles()
     p = prof.get(name, {}).get('avatar', '')
-    if p and os.path.isfile(p):
-        return FileResponse(p)
+    if p:
+        real = os.path.realpath(p)
+        av_dir = os.path.realpath(tg_profile.AVATAR_DIR)
+        try:
+            # 只允许读头像目录内的文件,防 profiles.json 被篡改后任意文件读取
+            if os.path.commonpath([real, av_dir]) == av_dir and os.path.isfile(real):
+                return FileResponse(real)
+        except ValueError:
+            pass
     return JSONResponse(status_code=404, content={'detail': 'no avatar'})
 
 
@@ -756,8 +766,20 @@ async def pack_account(body: dict):
 
 
 # ---------- 静态前端 ----------
+@app.get('/')
+async def index():
+    from fastapi.responses import HTMLResponse
+    index_path = os.path.join(DIST, 'index.html')
+    if not os.path.isfile(index_path):
+        return HTMLResponse('未找到前端资源', status_code=404)
+    html = open(index_path, encoding='utf-8').read()
+    inject = f'<script>window.__TG_TOKEN__={json.dumps(TOKEN)}</script>'
+    html = html.replace('</head>', inject + '</head>')
+    return HTMLResponse(html)
+
+
 if os.path.isdir(DIST):
-    app.mount('/', StaticFiles(directory=DIST, html=True), name='static')
+    app.mount('/assets', StaticFiles(directory=os.path.join(DIST, 'assets')), name='assets')
 
 
 def _pick_port() -> int:
