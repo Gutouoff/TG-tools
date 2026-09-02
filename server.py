@@ -11,6 +11,7 @@ import os
 import socket
 import sys
 import threading
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -36,7 +37,14 @@ if tg_tool.IS_FROZEN:
 else:
     ROOT = os.path.dirname(tg_tool.SCRIPT_DIR)
 
-app = FastAPI(title='TG工具箱', docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def lifespan(app):
+    global _loop
+    _loop = asyncio.get_event_loop()
+    yield
+
+
+app = FastAPI(title='TG工具箱', docs_url=None, redoc_url=None, lifespan=lifespan)
 
 # ---------- 引擎单例 + 回调桥接 ----------
 _loop = None

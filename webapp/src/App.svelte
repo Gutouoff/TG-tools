@@ -260,6 +260,26 @@
     ctxMenu = null;
   }
 
+  // 三栏宽度拖动
+  let leftW = $state(280);
+  let midW = $state(340);
+  let dragTarget = $state<'left' | 'mid' | null>(null);
+  function startDrag(e: MouseEvent, t: 'left' | 'mid') {
+    dragTarget = t;
+    e.preventDefault();
+  }
+  function onWinMouseMove(e: MouseEvent) {
+    if (!dragTarget) return;
+    if (dragTarget === 'left') {
+      leftW = Math.max(200, Math.min(500, e.clientX));
+    } else {
+      midW = Math.max(200, Math.min(700, e.clientX - leftW));
+    }
+  }
+  function onWinMouseUp() {
+    dragTarget = null;
+  }
+
   // tdata 转换
   async function doConvertTdata(a: Account) {
     addLog(`正在转换 ${a.name} …`);
@@ -315,8 +335,9 @@
   {/if}
 </header>
 
+<svelte:window onmousemove={onWinMouseMove} onmouseup={onWinMouseUp} />
 <div class="layout">
-  <aside class="left" ondragover={onDragOver} ondrop={onDrop} onclick={closeCtx}>
+  <aside class="left" style="width:{leftW}px" ondragover={onDragOver} ondrop={onDrop} onclick={closeCtx}>
     <div class="groups">
       {#each ['all', 'ungrouped', ...Object.keys(groups)] as g}
         <button class="grp" class:on={curGroup === g} onclick={() => selectGroup(g)}>
@@ -358,7 +379,9 @@
     </div>
   {/if}
 
-  <section class="mid">
+  <div class="splitter" onmousedown={(e) => startDrag(e, 'left')}></div>
+
+  <section class="mid" style="width:{midW}px">
     <details class="card" open>
       <summary>删除</summary>
       <div class="grid">
@@ -410,6 +433,8 @@
       </div>
     </details>
   </section>
+
+  <div class="splitter" onmousedown={(e) => startDrag(e, 'mid')}></div>
 
   <section class="right">
     {#if rightView === 'log'}
@@ -484,7 +509,15 @@
         <label>用户名（不带 @）</label>
         <input bind:value={editUsername} />
         <label>简介</label>
-        <textarea bind:value={editAbout} rows="3"></textarea>
+        <textarea
+          bind:value={editAbout}
+          rows="1"
+          oninput={(e) => {
+            const t = e.currentTarget;
+            t.style.height = 'auto';
+            t.style.height = t.scrollHeight + 'px';
+          }}
+        ></textarea>
         <label>生日（月 / 日 / 年）</label>
         <div class="row3">
           <input placeholder="月" bind:value={editMonth} />
@@ -546,11 +579,20 @@
     color: #a5d6a7;
   }
   .layout {
-    display: grid;
-    grid-template-columns: 320px 1fr 1.4fr;
-    gap: 8px;
+    display: flex;
+    gap: 6px;
     padding: 12px;
     height: calc(100% - 64px);
+  }
+  .splitter {
+    width: 6px;
+    cursor: col-resize;
+    flex-shrink: 0;
+    border-radius: 3px;
+  }
+  .splitter:hover,
+  .splitter:active {
+    background: var(--md-sys-color-primary-container);
   }
   .left,
   .mid,
@@ -561,6 +603,10 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    flex-shrink: 0;
+  }
+  .right {
+    flex: 1;
   }
   .search {
     width: 100%;
@@ -752,10 +798,15 @@
   .bi-meta {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-width: 0;
   }
   .bi-name {
     font-size: 16px;
     font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .bi-sub {
     font-size: 13px;
@@ -854,6 +905,7 @@
   }
   .edit-btn {
     margin-left: auto;
+    flex-shrink: 0;
     background: none;
     border: 1px solid var(--md-sys-color-primary);
     color: var(--md-sys-color-primary);
