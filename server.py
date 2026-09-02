@@ -165,7 +165,24 @@ async def connect(body: dict):
     if not path:
         return {'ok': False, 'msg': '缺少账号路径'}
     fut = eng.connect(path)
-    return {'ok': True, 'msg': '连接请求已提交'}
+    try:
+        info = await asyncio.wait_for(asyncio.wrap_future(fut), 60)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    # 登录后获取 username
+    try:
+        ok, me = await _call(eng.get_me, timeout=20)
+        info['username'] = (me or {}).get('username', '') if ok else ''
+    except Exception:
+        info['username'] = ''
+    return {'ok': True, 'info': _jsonable(info)}
+
+
+@app.get('/api/me')
+async def me():
+    eng = init_engine()
+    ok, data = await _call(eng.get_me)
+    return {'ok': ok, 'me': _jsonable(data) if ok else {}}
 
 
 @app.post('/api/disconnect')
@@ -452,14 +469,19 @@ async def delete_group(name: str):
 
 @app.post('/api/groups/move')
 async def move_account(body: dict):
+    """toggle 分组: 单账号可多分组。group='ungrouped' 表示移出所有组。"""
     name = body.get('name', '')
     group = body.get('group', '')
     groups = _load_groups()
-    for g in groups:
-        if name in groups[g]:
-            groups[g].remove(name)
-    if group and group != 'ungrouped':
-        groups.setdefault(group, []).append(name)
+    if group == 'ungrouped':
+        for g in groups:
+            if name in groups[g]:
+                groups[g].remove(name)
+    elif group:
+        if name in groups.get(group, []):
+            groups[group].remove(name)
+        else:
+            groups.setdefault(group, []).append(name)
     _save_groups(groups)
     return {'ok': True, 'groups': groups}
 
@@ -554,6 +576,98 @@ async def import_archive(body: dict):
         return {'ok': True, 'msg': f'已导入 {os.path.basename(target)}'}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ---------- 设置 ----------
+SETTINGS_FILE = os.path.join(tg_tool.SCRIPT_DIR, 'settings.json')
+
+DEFAULT_SETTINGS = {
+    'pack_naming': '{name}_账号包',
+    'pack_password': '',
+    'use_system_proxy': False,
+    'theme_seed': '#9BCFDC',
+    'theme_bg': '#C7C7C7',
+}
+
+
+def _load_settings():
+    try:
+        if os.path.isfile(SETTINGS_FILE):
+            s = json.load(open(SETTINGS_FILE, encoding='utf-8'))
+            if isinstance(s, dict):
+                merged = dict(DEFAULT_SETTINGS)
+                merged.update({k: v for k, v in s.items() if k in DEFAULT_SETTINGS})
+                return merged
+    except Exception:
+        pass
+    return dict(DEFAULT_SETTINGS)
+
+
+def _save_settings(s):
+    try:
+        json.dump(s, open(SETTINGS_FILE, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+
+
+@app.get('/api/settings')
+async def get_settings():
+    return _load_settings()
+
+
+@app.post('/api/settings')
+async def set_settings(body: dict):
+    s = _load_settings()
+    for k in DEFAULT_SETTINGS:
+        if k in body:
+            s[k] = body[k]
+    _save_settings(s)
+    return s
+
+
+# ---------- 打包账号(仅 tdata + session + json + 2fa.txt,zip + 剪贴板) ----------
+@app.post('/api/pack')
+async def pack_account(body: dict):
+    import zipfile
+    import subprocess
+    import datetime
+    path = body.get('path', '')
+    name = body.get('name', '')
+    if not path or not os.path.isdir(path):
+        return {'ok': False, 'msg': '账号路径无效'}
+    s = _load_settings()
+    naming = s.get('pack_naming', '{name}_账号包')
+    try:
+        base = naming.format(name=name, date=datetime.date.today().strftime('%Y%m%d'))
+    except Exception:
+        base = f'{name}_账号包'
+    zip_path = os.path.join(ROOT, f'{base}.zip')
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for entry in os.listdir(path):
+                full = os.path.join(path, entry)
+                low = entry.lower()
+                if low == 'tdata':
+                    for r2, dirs, files in os.walk(full):
+                        for f in files:
+                            fp = os.path.join(r2, f)
+                            zf.write(fp, os.path.relpath(fp, path))
+                elif entry.endswith('.session') or entry.endswith('.session-journal'):
+                    zf.write(full, entry)
+                elif entry.endswith('.json') and tg_tool._is_account_json(full):
+                    zf.write(full, entry)
+                elif low == '2fa.txt':
+                    zf.write(full, entry)
+    except Exception as e:
+        return {'ok': False, 'msg': f'打包失败: {str(e)[:200]}'}
+    clip = False
+    try:
+        subprocess.run(['powershell', '-NoProfile', '-Command', f'Set-Clipboard -Path "{zip_path}"'],
+                       capture_output=True, timeout=10)
+        clip = True
+    except Exception:
+        pass
+    return {'ok': True, 'msg': f'已打包并{"复制到剪贴板" if clip else "保存"}：{os.path.basename(zip_path)}'}
 
 
 # ---------- 静态前端 ----------

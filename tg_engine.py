@@ -858,6 +858,32 @@ class Engine:
                 self._gui_schedule(lambda msg=str(e): on_done(False, msg))
             return None
 
+    def get_me(self, on_done=None):
+        """获取当前登录账号的 username/姓名。返回 dict。"""
+        return self._submit(self._do_get_me(on_done))
+
+    async def _do_get_me(self, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            me = await self._client.get_me()
+            data = {
+                'username': getattr(me, 'username', '') or '',
+                'first': getattr(me, 'first_name', '') or '',
+                'last': getattr(me, 'last_name', '') or '',
+                'phone': getattr(me, 'phone', '') or '',
+            }
+            if on_done:
+                self._gui_schedule(lambda d=data: on_done(True, d))
+            return data
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
     def update_profile(self, first_name=None, last_name=None, about=None, on_done=None):
         """更新姓名/简介。"""
         return self._submit(self._do_update_profile(first_name, last_name, about, on_done))

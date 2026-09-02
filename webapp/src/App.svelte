@@ -31,6 +31,10 @@
     moveAccount,
     convertTdata,
     importArchive,
+    packAccount,
+    getSettings,
+    saveSettings,
+    getMe,
     type Account,
     type LogEvent,
   } from './api';
@@ -79,7 +83,66 @@
   async function onConnect(a: Account) {
     current = a;
     addLog(`正在连接 ${a.name} …`);
-    await connectAccount(a.path);
+    const r = await connectAccount(a.path);
+    if (r.ok && r.info) {
+      const uname = r.info.username || '';
+      if (uname) {
+        a.username = uname;
+        applyFilter();
+      }
+      addLog(`已连接 ${a.name}${uname ? ` (@${uname})` : ''}`);
+    } else {
+      addLog(`连接失败: ${r.msg || '未知错误'}`);
+    }
+  }
+
+  async function doDisconnect() {
+    await disconnect();
+    connected = false;
+    addLog('已断开连接');
+  }
+  async function doReconnect() {
+    if (!current) {
+      addLog('请先选择账号');
+      return;
+    }
+    await onConnect(current);
+  }
+  async function doPack() {
+    if (!current) {
+      addLog('请先选择账号');
+      return;
+    }
+    const r = await packAccount(current.path, current.name);
+    addLog(r.ok ? `打包完成: ${r.msg}` : `打包失败: ${r.msg}`);
+  }
+
+  // 速度滑块
+  let speedVal = $state(3);
+  const SPEED_NAMES = ['极快', '快速', '默认', '慢速', '极慢'];
+  function onSpeed(e: Event) {
+    const v = Number((e.currentTarget as HTMLInputElement).value);
+    speedVal = v;
+    setSpeed(v);
+  }
+
+  // 设置
+  let settings = $state<Record<string, string | boolean>>({});
+  let settingsOpen = $state(false);
+  async function loadSettings() {
+    settings = await getSettings();
+    settingsOpen = true;
+    rightView = 'settings';
+  }
+  async function doSaveSettings() {
+    await saveSettings(settings);
+    addLog('设置已保存');
+    applyTheme();
+  }
+  function applyTheme() {
+    const seed = (settings.theme_seed as string) || '#9BCFDC';
+    document.documentElement.style.setProperty('--md-sys-color-primary', seed);
+    document.documentElement.style.setProperty('--md-sys-color-primary-container', seed);
   }
 
   async function showWhitelist() {
@@ -330,9 +393,10 @@
 <header class="topbar">
   <span class="title">TG小号工具箱</span>
   <span class="conn" class:on={connected}>{connected ? '● 已连接' : '● 未连接'}</span>
-  {#if connected}
-    <button class="disconnect" onclick={disconnect}>断开</button>
-  {/if}
+  <button class="topbtn" onclick={doReconnect}>重新连接</button>
+  <button class="topbtn" onclick={doDisconnect}>断开连接</button>
+  <button class="topbtn" onclick={doPack}>打包</button>
+  <button class="topbtn" onclick={loadSettings}>设置</button>
 </header>
 
 <svelte:window onmousemove={onWinMouseMove} onmouseup={onWinMouseUp} />
@@ -356,10 +420,10 @@
           onclick={() => (current = a)}
           oncontextmenu={(e) => onAccountContext(e, a)}
         >
-          <span class="avatar" style="background:{avatarColor(a.name)}">{a.display?.[0] || a.name[0] || '-'}</span>
+          <span class="avatar" style="background:{avatarColor(a.name)}">{a.username?.[0] || a.display?.[0] || a.name[0] || '-'}</span>
           <span class="meta">
-            <span class="nm">{a.display || a.name}</span>
-            <span class="sub">@{a.username || a.phone || a.state}</span>
+            <span class="nm">{a.username ? '@' + a.username : (a.display || a.name)}</span>
+            <span class="sub">{a.username ? (a.display || a.phone || a.state) : (a.phone || a.state)}</span>
           </span>
           {#if a.state === 'tdata'}
             <button class="conv" onclick={(e) => { e.stopPropagation(); doConvertTdata(a); }}>转换</button>
@@ -371,11 +435,18 @@
 
   {#if ctxMenu}
     <div class="ctx" style="left:{ctxMenu.x}px;top:{ctxMenu.y}px" onclick={(e) => e.stopPropagation()}>
-      <div class="ctx-title">移动到组</div>
-      <button onclick={() => { doMoveAccount(ctxMenu.name, 'ungrouped'); closeCtx(); }}>未分组</button>
+      <div class="ctx-title">移动分组（可多选）</div>
       {#each Object.keys(groups) as g}
-        <button onclick={() => { doMoveAccount(ctxMenu.name, g); closeCtx(); }}>{g}</button>
+        <label class="ctx-check">
+          <input
+            type="checkbox"
+            checked={(groups[g] || []).includes(ctxMenu.name)}
+            onchange={() => doMoveAccount(ctxMenu.name, g)}
+          />
+          <span>{g}</span>
+        </label>
       {/each}
+      <button onclick={() => { doMoveAccount(ctxMenu.name, 'ungrouped'); closeCtx(); }}>移出所有分组</button>
     </div>
   {/if}
 
@@ -392,12 +463,8 @@
       </div>
       <div class="speed-row">
         <span class="speed-label">速度</span>
-        {#each ['极快', '快速', '默认', '慢速', '极慢'] as s, i}
-          <label class="speed-item">
-            <input type="radio" name="speed" value={i + 1} checked={i === 2} onchange={() => setSpeed(i + 1)} />
-            <span>{s}</span>
-          </label>
-        {/each}
+        <input class="speed-slider" type="range" min="1" max="5" step="1" value={speedVal} oninput={onSpeed} />
+        <span class="speed-val">{SPEED_NAMES[speedVal - 1]}</span>
       </div>
     </details>
 
@@ -553,6 +620,24 @@
           <li class="sec-item"><span>{g}</span><button class="danger" onclick={() => doRemoveGroup(g)}>移除</button></li>
         {/each}
       </ul>
+    {:else if rightView === 'settings'}
+      <div class="sec-head">
+        <h3>设置</h3>
+        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+      </div>
+      <div class="form">
+        <label>打包文件命名格式（{name}=账号名 {date}=日期）</label>
+        <input bind:value={settings.pack_naming} />
+        <label>默认压缩密码（暂未启用加密，先保存）</label>
+        <input bind:value={settings.pack_password} />
+        <label class="check-row">
+          <input type="checkbox" bind:checked={settings.use_system_proxy} />
+          <span>使用系统代理（检测到系统代理时使用）</span>
+        </label>
+        <label>主题色（seed 主色）</label>
+        <input type="color" bind:value={settings.theme_seed} onchange={() => applyTheme()} />
+        <md-filled-button onclick={doSaveSettings}>保存设置</md-filled-button>
+      </div>
     {/if}
   </section>
 </div>
@@ -704,19 +789,20 @@
     background: var(--md-sys-color-primary-container);
   }
   .avatar {
-    width: 40px;
-    height: 40px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
     display: grid;
     place-items: center;
     color: #fff;
     font-weight: 600;
     flex-shrink: 0;
+    font-size: 18px;
   }
   .avatar.big {
-    width: 56px;
-    height: 56px;
-    font-size: 20px;
+    width: 64px;
+    height: 64px;
+    font-size: 24px;
   }
   .meta {
     display: flex;
@@ -894,14 +980,21 @@
   .right md-outlined-button {
     margin-bottom: 8px;
   }
-  .disconnect {
+  .topbtn {
     background: none;
-    border: 1px solid #b0bec5;
+    border: 1px solid #78909c;
     color: #eceff1;
     border-radius: 999px;
     padding: 5px 14px;
     cursor: pointer;
     font-size: 13px;
+    margin-left: 8px;
+  }
+  .topbtn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .conn {
+    margin-right: 12px;
   }
   .edit-btn {
     margin-left: auto;
@@ -951,5 +1044,79 @@
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 8px;
+  }
+  .speed-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--md-sys-color-primary-container);
+    outline: none;
+    margin: 0 8px;
+    padding: 0;
+  }
+  .speed-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--md-sys-color-primary);
+    cursor: pointer;
+  }
+  .speed-val {
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    min-width: 28px;
+  }
+  .ctx-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--md-sys-color-on-surface);
+  }
+  .ctx-check input {
+    margin: 0;
+  }
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--md-sys-color-on-surface-variant);
+    margin-top: 6px;
+  }
+  .check-row input {
+    width: auto;
+    margin: 0;
+  }
+  input[type='color'] {
+    height: 40px;
+    padding: 2px;
+    cursor: pointer;
+  }
+  /* 美化滚动条 */
+  .list::-webkit-scrollbar,
+  .log::-webkit-scrollbar,
+  .sec-list::-webkit-scrollbar,
+  .form::-webkit-scrollbar {
+    width: 8px;
+  }
+  .list::-webkit-scrollbar-thumb,
+  .log::-webkit-scrollbar-thumb,
+  .sec-list::-webkit-scrollbar-thumb,
+  .form::-webkit-scrollbar-thumb {
+    background: #b0bec5;
+    border-radius: 4px;
+  }
+  .list::-webkit-scrollbar-track,
+  .log::-webkit-scrollbar-track,
+  .sec-list::-webkit-scrollbar-track,
+  .form::-webkit-scrollbar-track {
+    background: transparent;
   }
 </style>

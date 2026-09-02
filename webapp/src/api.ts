@@ -143,3 +143,9 @@ export const moveAccount = (name: string, group: string) => postJson('/api/group
 // ---------- tdata 转换 / 导入 ----------
 export const convertTdata = (path: string) => postJson('/api/convert-tdata', { path });
 export const importArchive = (data: string, name: string) => postJson('/api/import', { data, name });
+
+// ---------- 打包 / 设置 / 我 ----------
+export const packAccount = (path: string, name: string) => postJson('/api/pack', { path, name });
+export const getSettings = () => getJson('/api/settings');
+export const saveSettings = (s: object) => postJson('/api/settings', s);
+export const getMe = () => getJson('/api/me');
