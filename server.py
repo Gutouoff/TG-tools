@@ -67,6 +67,9 @@ _engine = None
 
 
 def _emit(data: dict):
+    # 日志行统一打码手机号(引擎日志不走 tg_tool.log,补一层)
+    if data.get('type') == 'log' and data.get('line'):
+        data = {**data, 'line': tg_tool._mask_phone_text(data['line'])}
     if _loop:
         try:
             asyncio.run_coroutine_threadsafe(_ws_broadcast(data), _loop)
@@ -109,6 +112,14 @@ def _clean_name(name):
     clean = clean.replace('..', '_')
     clean = clean.strip('_') or '账号'
     return clean
+
+
+def _as_int(v, default=0):
+    """请求字段安全转 int,非法输入回退默认值(避免 500)。"""
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
 
 
 def _jsonable(obj):
@@ -281,7 +292,7 @@ async def get_speed():
 @app.put('/api/speed')
 async def set_speed(body: dict):
     eng = init_engine()
-    idx = int(body.get('speed', 3))
+    idx = _as_int(body.get('speed', 3), 3)
     eng.set_speed(idx)
     return {'ok': True, 'speed': idx}
 
@@ -297,7 +308,7 @@ async def whitelist():
 
 @app.post('/api/whitelist/user')
 async def add_user(body: dict):
-    uid = int(body.get('id', 0))
+    uid = _as_int(body.get('id', 0))
     if uid:
         tg_tool.USER_WHITELIST.add(uid)
         tg_tool.save_whitelist()
@@ -306,7 +317,7 @@ async def add_user(body: dict):
 
 @app.delete('/api/whitelist/user')
 async def del_user(body: dict):
-    uid = int(body.get('id', 0))
+    uid = _as_int(body.get('id', 0))
     tg_tool.USER_WHITELIST.discard(uid)
     tg_tool.save_whitelist()
     return {'ok': True, 'users': sorted(int(u) for u in tg_tool.USER_WHITELIST)}
@@ -314,7 +325,7 @@ async def del_user(body: dict):
 
 @app.post('/api/whitelist/group')
 async def add_group(body: dict):
-    gid = int(body.get('id', 0))
+    gid = _as_int(body.get('id', 0))
     if gid:
         tg_tool.GROUP_WHITELIST.add(gid)
         tg_tool.save_whitelist()
@@ -323,7 +334,7 @@ async def add_group(body: dict):
 
 @app.delete('/api/whitelist/group')
 async def del_group(body: dict):
-    gid = int(body.get('id', 0))
+    gid = _as_int(body.get('id', 0))
     tg_tool.GROUP_WHITELIST.discard(gid)
     tg_tool.save_whitelist()
     return {'ok': True, 'groups': sorted(int(g) for g in tg_tool.GROUP_WHITELIST)}
@@ -379,7 +390,22 @@ async def delete_passkey(body: dict):
 async def init_passkey():
     eng = init_engine()
     ok, data = await _call(eng.init_passkey_registration)
-    return {'ok': ok, 'qr': data if ok else ''}
+    if not ok:
+        return {'ok': False, 'msg': str(data)}
+    # 生成 fido:/ URI 二维码图片(base64 PNG)
+    import base64
+    import io
+    import qrcode
+    b64 = base64.urlsafe_b64encode(str(data).encode('utf-8')).decode('ascii').rstrip('=')
+    uri = f'fido:/{b64}'
+    qr = qrcode.QRCode(border=2)
+    qr.add_data(uri)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='black', back_color='white')
+    buf = io.BytesIO()
+    img.save(buf, 'PNG')
+    img_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+    return {'ok': True, 'qr': uri, 'img': img_b64}
 
 
 @app.get('/api/2fa')
@@ -451,8 +477,10 @@ async def update_username(body: dict):
 @app.post('/api/profile/birthday')
 async def update_birthday(body: dict):
     eng = init_engine()
+    year = body.get('year')
+    year = _as_int(year) if year not in (None, '', 0) else None
     ok, data = await _call(eng.update_birthday,
-                           int(body.get('day', 0)), int(body.get('month', 0)), body.get('year'))
+                           _as_int(body.get('day', 0)), _as_int(body.get('month', 0)), year)
     return {'ok': ok, 'msg': data}
 
 
@@ -755,5 +783,5 @@ def start_server(port: int = 0):
 
 if __name__ == '__main__':
     p = _pick_port()
-    print(f'后端启动于 http://127.0.0.1:{p}')
-    uvicorn.run(app, host='127.0.0.1', port=p, log_level='info')
+    print(f'后端启动于 http://127.0.0.1:{p}/?token={TOKEN}')
+    uvicorn.run(app, host='127.0.0.1', port=p, log_level='warning')

@@ -35,7 +35,6 @@
     getSettings,
     saveSettings,
     getMe,
-    TOKEN,
     type Account,
     type LogEvent,
   } from './api';
@@ -128,12 +127,14 @@
     addLog(r.ok ? `打包完成: ${r.msg}` : `打包失败: ${r.msg}`);
   }
 
-  // 速度分段(慢/中/快 -> 引擎档位 4/3/2)
+  // 速度分段(五档: 极快/快速/默认/慢速/极慢)
   let speedVal = $state(3);
   const SPEED_SEG: Array<[string, number]> = [
-    ['慢', 4],
-    ['中', 3],
-    ['快', 2],
+    ['极快', 1],
+    ['快速', 2],
+    ['默认', 3],
+    ['慢速', 4],
+    ['极慢', 5],
   ];
   function onSpeed(v: number) {
     speedVal = v;
@@ -198,9 +199,16 @@
     addLog('通行密钥已删除');
     await loadPasskeys();
   }
+  let pkQrImg = $state('');
   async function doInitPasskey() {
     const r = await initPasskey();
-    addLog(r.ok ? '二维码已生成' : `生成失败: ${r}`);
+    if (r.ok && r.img) {
+      pkQrImg = `data:image/png;base64,${r.img}`;
+      addLog('二维码已生成，请用手机扫码绑定通行密钥');
+    } else {
+      pkQrImg = '';
+      addLog(`生成失败: ${r.msg || r}`);
+    }
   }
   async function doDeleteDevice(hash: number) {
     await deleteDevice(hash);
@@ -539,6 +547,11 @@
         <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
       </div>
       <md-filled-button onclick={doInitPasskey}>＋ 添加通行密钥</md-filled-button>
+      {#if pkQrImg}
+        <div class="qr-box">
+          <img class="qr-img" src={pkQrImg} alt="通行密钥二维码" />
+        </div>
+      {/if}
       <ul class="sec-list">
         {#each passkeys as pk}
           <li class="sec-item">
@@ -1069,33 +1082,9 @@
     grid-template-columns: 1fr 1fr 1fr;
     gap: 8px;
   }
-  .speed-slider {
-    -webkit-appearance: none;
-    appearance: none;
-    flex: 1;
-    height: 6px;
-    border-radius: 3px;
-    background: var(--md-sys-color-primary-container);
-    outline: none;
-    margin: 0 8px;
-    padding: 0;
-  }
-  .speed-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--md-sys-color-primary);
-    cursor: pointer;
-  }
-  .speed-val {
-    font-size: 12px;
-    color: var(--md-sys-color-on-surface-variant);
-    min-width: 28px;
-  }
   .speed-seg {
     display: flex;
+    flex: 1;
     border: 1px solid var(--md-sys-color-outline);
     border-radius: 999px;
     overflow: hidden;
@@ -1103,9 +1092,9 @@
   .seg {
     background: none;
     border: none;
-    padding: 6px 18px;
+    padding: 6px 0;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 12px;
     color: var(--md-sys-color-on-surface);
     flex: 1;
   }
@@ -1139,6 +1128,16 @@
   .check-row input {
     width: auto;
     margin: 0;
+  }
+  .qr-box {
+    display: flex;
+    justify-content: center;
+    padding: 12px 0;
+  }
+  .qr-img {
+    width: 200px;
+    height: 200px;
+    border-radius: var(--md-sys-shape-corner-medium);
   }
   input[type='color'] {
     height: 40px;
