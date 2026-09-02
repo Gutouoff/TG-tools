@@ -7,6 +7,7 @@ export interface Account {
   uid: string;
   display: string;
   avatar: string;
+  country: string;
 }
 
 export interface LogEvent {
@@ -165,6 +166,7 @@ export const importArchive = (data: string, name: string) => postJson('/api/impo
 
 // ---------- 打包 / 设置 / 我 ----------
 export const packAccount = (path: string, name: string) => postJson('/api/pack', { path, name });
+export const fetchAvatars = () => postJson('/api/fetch-avatars');
 export const getSettings = () => getJson('/api/settings');
 export const saveSettings = (s: object) => postJson('/api/settings', s);
 export const getMe = () => getJson('/api/me');

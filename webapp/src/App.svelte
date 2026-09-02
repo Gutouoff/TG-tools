@@ -33,6 +33,7 @@
     convertTdata,
     importArchive,
     packAccount,
+    fetchAvatars,
     getSettings,
     saveSettings,
     getMe,
@@ -108,6 +109,7 @@
         a.username = uname;
         applyFilter();
       }
+      markOnline(a.name, true);
       addLog(`已连接 ${a.name}${uname ? ` (@${uname})` : ''}`);
     } else {
       addLog(`连接失败: ${r.msg || '未知错误'}`);
@@ -117,6 +119,7 @@
   async function doDisconnect() {
     await disconnect();
     connected = false;
+    if (current) markOnline(current.name, false);
     addLog('已断开连接');
   }
   async function doReconnect() {
@@ -133,6 +136,21 @@
     }
     const r = await packAccount(current.path, current.name);
     addLog(r.ok ? `打包完成: ${r.msg}` : `打包失败: ${r.msg}`);
+  }
+
+  // 在线账号集合(头像右下角橘点)
+  let onlineNames = $state<Set<string>>(new Set());
+  function markOnline(name: string, on: boolean) {
+    const next = new Set(onlineNames);
+    if (on) next.add(name);
+    else next.delete(name);
+    onlineNames = next;
+  }
+
+  async function doFetchAvatars() {
+    addLog('开始一键获取头像(后台,每号间隔1s)…');
+    const r = await fetchAvatars();
+    addLog(r.ok ? '头像获取任务已启动' : `失败: ${r.msg}`);
   }
 
   // 速度分段(五档: 极快/快速/默认/慢速/极慢)
@@ -153,9 +171,13 @@
   let settings = $state<Record<string, string | boolean>>({});
   let settingsOpen = $state(false);
   async function loadSettings() {
-    settings = await getSettings();
-    settingsOpen = true;
     rightView = 'settings';
+    try {
+      settings = await getSettings();
+    } catch (e) {
+      settings = { pack_naming: '{name}_账号包', pack_password: '', use_system_proxy: false, theme_seed: '#9BCFDC' };
+    }
+    settingsOpen = true;
   }
   async function doSaveSettings() {
     await saveSettings(settings);
@@ -452,14 +474,19 @@
           onclick={() => (current = a)}
           oncontextmenu={(e) => onAccountContext(e, a)}
         >
-          {#if a.avatar && !avatarFailed.has(a.name)}
-            <img class="avatar" src={avatarUrl(a)} alt="" onerror={() => onAvatarError(a.name)} />
-          {:else}
-            <span class="avatar" style="background:{avatarColor(a.name)}">{a.username?.[0] || a.display?.[0] || a.name[0] || '-'}</span>
-          {/if}
+          <div class="avatar-wrap">
+            {#if a.avatar && !avatarFailed.has(a.name)}
+              <img class="avatar" src={avatarUrl(a)} alt="" onerror={() => onAvatarError(a.name)} />
+            {:else}
+              <span class="avatar" style="background:{avatarColor(a.name)}">{a.display?.[0] || a.username?.[0] || a.name[0] || '-'}</span>
+            {/if}
+            {#if onlineNames.has(a.name)}
+              <span class="online-dot"></span>
+            {/if}
+          </div>
           <span class="meta">
-            <span class="nm">{a.username ? '@' + a.username : (a.display || a.name)}</span>
-            <span class="sub">{a.username ? (a.display || a.phone || a.state) : (a.phone || a.state)}</span>
+            <span class="nm">{a.display || a.name}{a.username ? ` (@${a.username})` : ''}</span>
+            <span class="sub">{a.country ? `${a.country} · ` : ''}{a.phone ? `+${a.phone}` : a.state}</span>
           </span>
           {#if a.state === 'tdata'}
             <button class="conv" onclick={(e) => { e.stopPropagation(); doConvertTdata(a); }}>转换</button>
@@ -537,6 +564,7 @@
       <div class="grid">
         <md-outlined-button onclick={() => updateTelegram()}>更新本体</md-outlined-button>
         <md-outlined-button onclick={loadWhitelist}>白名单管理</md-outlined-button>
+        <md-outlined-button onclick={doFetchAvatars}>一键获取头像</md-outlined-button>
       </div>
     </details>
   </section>
@@ -846,6 +874,20 @@
   }
   img.avatar {
     object-fit: cover;
+  }
+  .avatar-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .online-dot {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ff9100;
+    border: 2px solid var(--md-sys-color-surface-container);
   }
   .avatar.big {
     width: 64px;

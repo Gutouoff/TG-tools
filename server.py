@@ -176,6 +176,17 @@ async def ping():
 
 
 # ---------- 账号列表 ----------
+def _country_of(phone):
+    """区号最长前缀匹配 -> (两字母码, 中文名)。"""
+    best = None
+    for code, (cc, name) in tg_profile.PHONE_CODE_MAP.items():
+        if phone.startswith(code) and (best is None or len(code) > len(best[0])):
+            best = (code, cc, name)
+    if best:
+        return best[1], best[2]
+    return '', ''
+
+
 def _scan_accounts():
     raw = tg_engine.scan_accounts(ROOT)
     prof = tg_profile.load_profiles()
@@ -203,6 +214,8 @@ def _scan_accounts():
         if p.get('first') or p.get('last'):
             a['display'] = (str(p.get('first') or '') + ' ' +
                             str(p.get('last') or '')).strip()
+        cc, cname = _country_of(a['phone'])
+        a['country'] = cname
         out.append(a)
     return out
 
@@ -236,6 +249,18 @@ async def me():
     eng = init_engine()
     ok, data = await _call(eng.get_me)
     return {'ok': ok, 'me': _jsonable(data) if ok else {}}
+
+
+@app.post('/api/fetch-avatars')
+async def fetch_avatars():
+    """一键获取所有账号头像/资料(复用 tg_profile 后台刷新,增量落盘)。"""
+    def on_update(name, info):
+        _emit({'type': 'progress', 'label': f'拉取 {name}', 'done': 0, 'total': 0})
+    try:
+        tg_profile.start_refresh(ROOT, on_update)
+        return {'ok': True, 'msg': '已开始后台获取头像'}
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
 
 
 @app.get('/api/avatar-image')
