@@ -98,15 +98,55 @@
   </aside>
 
   <section class="mid">
-    <div class="btns">
-      <md-filled-button onclick={() => postTask('/api/tasks/delete-contacts')}>删联系人</md-filled-button>
-      <md-outlined-button onclick={() => postTask('/api/tasks/scan-dialogs')}>扫描对话</md-outlined-button>
-      <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'users' })}>删对话</md-outlined-button>
-      <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'bots' })}>删机器人</md-outlined-button>
-      <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'groups' })}>删频道</md-outlined-button>
-      <md-outlined-button onclick={disconnect}>断开</md-outlined-button>
-      <md-outlined-button onclick={() => postTask('/api/tasks/stop')}>停止</md-outlined-button>
-    </div>
+    <details class="card" open>
+      <summary>删除</summary>
+      <div class="grid">
+        <md-filled-button onclick={() => postTask('/api/tasks/delete-contacts')}>删联系人</md-filled-button>
+        <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'users' })}>删对话</md-outlined-button>
+        <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'bots' })}>删机器人</md-outlined-button>
+        <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'groups' })}>删频道</md-outlined-button>
+      </div>
+      <div class="speed-row">
+        <span class="speed-label">速度</span>
+        {#each ['极快', '快速', '默认', '慢速', '极慢'] as s, i}
+          <label class="speed-item">
+            <input type="radio" name="speed" value={i + 1} checked={i === 2} />
+            <span>{s}</span>
+          </label>
+        {/each}
+      </div>
+    </details>
+
+    <details class="card" open>
+      <summary>基本信息</summary>
+      <div class="bi">
+        <span class="avatar big" style="background:{avatarColor(current?.name || '-')}">
+          {current?.display?.[0] || current?.name?.[0] || '-'}
+        </span>
+        <div class="bi-meta">
+          <div class="bi-name">{current?.display || current?.name || '未选择账号'}</div>
+          <div class="bi-sub">@{current?.username || current?.phone || '-'}</div>
+        </div>
+      </div>
+    </details>
+
+    <details class="card">
+      <summary>安全</summary>
+      <div class="grid">
+        <md-outlined-button>两步验证</md-outlined-button>
+        <md-outlined-button>通行密钥</md-outlined-button>
+        <md-outlined-button>邮箱登录</md-outlined-button>
+        <md-outlined-button>登录设备</md-outlined-button>
+      </div>
+    </details>
+
+    <details class="card">
+      <summary>其他设置</summary>
+      <div class="grid">
+        <md-outlined-button>更新本体</md-outlined-button>
+        <md-outlined-button>白名单管理</md-outlined-button>
+      </div>
+    </details>
   </section>
 
   <section class="right">
@@ -126,8 +166,8 @@
     align-items: center;
     height: 64px;
     padding: 0 24px;
-    background: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
+    background: #37474f;
+    color: #eceff1;
   }
   .title {
     font-size: 20px;
@@ -136,9 +176,10 @@
   .conn {
     margin-left: auto;
     font-size: 13px;
+    color: #b0bec5;
   }
   .conn.on {
-    color: #2e7d32;
+    color: #a5d6a7;
   }
   .layout {
     display: grid;
@@ -199,6 +240,11 @@
     font-weight: 600;
     flex-shrink: 0;
   }
+  .avatar.big {
+    width: 56px;
+    height: 56px;
+    font-size: 20px;
+  }
   .meta {
     display: flex;
     flex-direction: column;
@@ -218,10 +264,75 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .btns {
+  .card {
+    background: var(--md-sys-color-surface);
+    border-radius: var(--md-sys-shape-corner-large);
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .card summary {
+    padding: 12px 16px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 15px;
+    list-style: none;
+    display: flex;
+    align-items: center;
+  }
+  .card summary::before {
+    content: '▸';
+    margin-right: 8px;
+    transition: transform 0.15s;
+    font-size: 12px;
+  }
+  .card[open] summary::before {
+    content: '▾';
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 0 16px 12px;
+  }
+  .grid md-filled-button,
+  .grid md-outlined-button {
+    width: 100%;
+  }
+  .speed-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px 12px;
+    flex-wrap: wrap;
+  }
+  .speed-label {
+    font-size: 13px;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .speed-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .bi {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px 12px;
+  }
+  .bi-meta {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+  }
+  .bi-name {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .bi-sub {
+    font-size: 13px;
+    color: var(--md-sys-color-on-surface-variant);
   }
   .prog {
     display: flex;
