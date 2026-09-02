@@ -85,3 +85,30 @@ async function whitelistWrite(url: string, id: number) {
 
 export const addWhitelistUser = (id: number) => whitelistWrite('/api/whitelist/user', id);
 export const addWhitelistGroup = (id: number) => whitelistWrite('/api/whitelist/group', id);
+
+// ---------- 安全功能 ----------
+async function getJson(url: string) {
+  const r = await fetch(url);
+  return r.json();
+}
+async function postJson(url: string, body: object = {}) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+
+export const getPasskeys = () => getJson('/api/passkeys');
+export const deletePasskey = (id: string) => postJson('/api/passkeys/delete', { id });
+export const initPasskey = () => postJson('/api/passkeys/init');
+
+export const get2FA = () => getJson('/api/2fa');
+export const set2FA = (current: string, newPwd: string) => postJson('/api/2fa/set', { current, new: newPwd });
+
+export const sendEmailCode = (email: string) => postJson('/api/email/send', { email });
+export const verifyEmailCode = (code: string) => postJson('/api/email/verify', { code });
+
+export const getDevices = () => getJson('/api/devices');
+export const deleteDevice = (hash: number) => postJson('/api/devices/delete', { hash });

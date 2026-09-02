@@ -8,6 +8,15 @@
     setSpeed,
     updateTelegram,
     getWhitelist,
+    getPasskeys,
+    deletePasskey,
+    initPasskey,
+    get2FA,
+    set2FA,
+    sendEmailCode,
+    verifyEmailCode,
+    getDevices,
+    deleteDevice,
     type Account,
     type LogEvent,
   } from './api';
@@ -62,6 +71,61 @@
     const wl = await getWhitelist();
     addLog(`白名单用户: ${wl.users.join(', ') || '无'}`);
     addLog(`白名单群/频道: ${wl.groups.join(', ') || '无'}`);
+  }
+
+  // 右栏视图
+  let rightView = $state<'log' | 'passkey' | '2fa' | 'email' | 'devices'>('log');
+  let passkeys = $state<any[]>([]);
+  let devices = $state<any[]>([]);
+  let has2fa = $state(false);
+  let emailInput = $state('');
+  let codeInput = $state('');
+  let new2fa = $state('');
+  let cur2fa = $state('');
+
+  async function loadPasskeys() {
+    rightView = 'passkey';
+    const r = await getPasskeys();
+    passkeys = r.ok ? r.passkeys : [];
+  }
+  async function loadDevices() {
+    rightView = 'devices';
+    const r = await getDevices();
+    devices = r.ok ? r.devices : [];
+  }
+  async function load2FA() {
+    rightView = '2fa';
+    const r = await get2FA();
+    has2fa = r.has_2fa ?? false;
+  }
+  function showEmail() {
+    rightView = 'email';
+  }
+  async function doDeletePasskey(id: string) {
+    await deletePasskey(id);
+    addLog('通行密钥已删除');
+    await loadPasskeys();
+  }
+  async function doInitPasskey() {
+    const r = await initPasskey();
+    addLog(r.ok ? '二维码已生成' : `生成失败: ${r}`);
+  }
+  async function doDeleteDevice(hash: number) {
+    await deleteDevice(hash);
+    addLog('设备已注销');
+    await loadDevices();
+  }
+  async function doSendEmail() {
+    const r = await sendEmailCode(emailInput);
+    addLog(r.ok ? '验证码已发送' : `发送失败: ${r.msg}`);
+  }
+  async function doVerifyEmail() {
+    const r = await verifyEmailCode(codeInput);
+    addLog(r.ok ? '邮箱绑定成功' : `验证失败: ${r.msg}`);
+  }
+  async function doSet2FA() {
+    const r = await set2FA(cur2fa, new2fa);
+    addLog(r.ok ? '2FA 设置成功' : `设置失败: ${r.msg}`);
   }
 
   connectWS((e: LogEvent) => {
@@ -142,10 +206,10 @@
     <details class="card">
       <summary>安全</summary>
       <div class="grid">
-        <md-outlined-button>两步验证</md-outlined-button>
-        <md-outlined-button>通行密钥</md-outlined-button>
-        <md-outlined-button>邮箱登录</md-outlined-button>
-        <md-outlined-button>登录设备</md-outlined-button>
+        <md-outlined-button onclick={load2FA}>两步验证</md-outlined-button>
+        <md-outlined-button onclick={loadPasskeys}>通行密钥</md-outlined-button>
+        <md-outlined-button onclick={showEmail}>邮箱登录</md-outlined-button>
+        <md-outlined-button onclick={loadDevices}>登录设备</md-outlined-button>
       </div>
     </details>
 
@@ -159,13 +223,66 @@
   </section>
 
   <section class="right">
-    <div class="prog">
-      <span>{progress.label || '无任务'}</span>
-      <span>{progress.total ? `${progress.done}/${progress.total}` : ''}</span>
-    </div>
-    <ul class="log">
-      {#each logs as l}<li>{l}</li>{/each}
-    </ul>
+    {#if rightView === 'log'}
+      <div class="prog">
+        <span>{progress.label || '无任务'}</span>
+        <span>{progress.total ? `${progress.done}/${progress.total}` : ''}</span>
+      </div>
+      <ul class="log">
+        {#each logs as l}<li>{l}</li>{/each}
+      </ul>
+    {:else if rightView === 'passkey'}
+      <div class="sec-head">
+        <h3>通行密钥</h3>
+        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+      </div>
+      <md-filled-button onclick={doInitPasskey}>＋ 添加通行密钥</md-filled-button>
+      <ul class="sec-list">
+        {#each passkeys as pk}
+          <li class="sec-item">
+            <span>{pk.name || '（未命名）'}</span>
+            <button class="danger" onclick={() => doDeletePasskey(pk.id)}>删除</button>
+          </li>
+        {/each}
+      </ul>
+      {#if !passkeys.length}<p class="empty">暂无通行密钥</p>{/if}
+    {:else if rightView === '2fa'}
+      <div class="sec-head">
+        <h3>两步验证</h3>
+        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+      </div>
+      <p>当前状态：{has2fa ? '已开启' : '未开启'}</p>
+      {#if has2fa}
+        <input placeholder="当前密码" bind:value={cur2fa} />
+      {/if}
+      <input placeholder="新密码" bind:value={new2fa} />
+      <md-filled-button onclick={doSet2FA}>设置/修改</md-filled-button>
+    {:else if rightView === 'email'}
+      <div class="sec-head">
+        <h3>邮箱登录</h3>
+        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+      </div>
+      <input placeholder="邮箱地址" bind:value={emailInput} />
+      <md-outlined-button onclick={doSendEmail}>发送验证码</md-outlined-button>
+      <input placeholder="验证码" bind:value={codeInput} />
+      <md-filled-button onclick={doVerifyEmail}>验证绑定</md-filled-button>
+    {:else if rightView === 'devices'}
+      <div class="sec-head">
+        <h3>登录设备</h3>
+        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+      </div>
+      <ul class="sec-list">
+        {#each devices as d}
+          <li class="sec-item">
+            <span>{d.device_model || '未知设备'}{d.current ? '（本设备）' : ''}</span>
+            {#if !d.current}
+              <button class="danger" onclick={() => doDeleteDevice(d.hash)}>删除</button>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+      {#if !devices.length}<p class="empty">暂无设备</p>{/if}
+    {/if}
   </section>
 </div>
 
@@ -363,5 +480,66 @@
     padding: 2px 0;
     white-space: pre-wrap;
     word-break: break-all;
+  }
+  .sec-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .sec-head h3 {
+    margin: 0;
+    font-size: 17px;
+  }
+  .back {
+    background: none;
+    border: none;
+    color: var(--md-sys-color-primary);
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .sec-list {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .sec-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--md-sys-color-outline);
+    font-size: 14px;
+  }
+  .danger {
+    background: none;
+    border: 1px solid var(--md-sys-color-error);
+    color: var(--md-sys-color-error);
+    border-radius: 999px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .empty {
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 13px;
+    margin: 8px 0;
+  }
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: 999px;
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    font-size: 14px;
+    outline: none;
+    margin-bottom: 8px;
+  }
+  .right md-filled-button,
+  .right md-outlined-button {
+    margin-bottom: 8px;
   }
 </style>
