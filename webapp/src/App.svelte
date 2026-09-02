@@ -5,6 +5,9 @@
     disconnect,
     postTask,
     connectWS,
+    setSpeed,
+    updateTelegram,
+    getWhitelist,
     type Account,
     type LogEvent,
   } from './api';
@@ -53,6 +56,12 @@
     current = a;
     addLog(`正在连接 ${a.name} …`);
     await connectAccount(a.path);
+  }
+
+  async function showWhitelist() {
+    const wl = await getWhitelist();
+    addLog(`白名单用户: ${wl.users.join(', ') || '无'}`);
+    addLog(`白名单群/频道: ${wl.groups.join(', ') || '无'}`);
   }
 
   connectWS((e: LogEvent) => {
@@ -110,7 +119,7 @@
         <span class="speed-label">速度</span>
         {#each ['极快', '快速', '默认', '慢速', '极慢'] as s, i}
           <label class="speed-item">
-            <input type="radio" name="speed" value={i + 1} checked={i === 2} />
+            <input type="radio" name="speed" value={i + 1} checked={i === 2} onchange={() => setSpeed(i + 1)} />
             <span>{s}</span>
           </label>
         {/each}
@@ -143,8 +152,8 @@
     <details class="card">
       <summary>其他设置</summary>
       <div class="grid">
-        <md-outlined-button>更新本体</md-outlined-button>
-        <md-outlined-button>白名单管理</md-outlined-button>
+        <md-outlined-button onclick={() => updateTelegram()}>更新本体</md-outlined-button>
+        <md-outlined-button onclick={showWhitelist}>白名单管理</md-outlined-button>
       </div>
     </details>
   </section>

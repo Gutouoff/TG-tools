@@ -56,3 +56,32 @@ export function connectWS(onMessage: (e: LogEvent) => void): WebSocket {
   };
   return ws;
 }
+
+export async function setSpeed(speed: number) {
+  await fetch('/api/speed', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ speed }),
+  });
+}
+
+export async function updateTelegram() {
+  return postTask('/api/update-telegram');
+}
+
+export async function getWhitelist(): Promise<{ users: number[]; groups: number[] }> {
+  const r = await fetch('/api/whitelist');
+  return r.json();
+}
+
+async function whitelistWrite(url: string, id: number) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  return r.json();
+}
+
+export const addWhitelistUser = (id: number) => whitelistWrite('/api/whitelist/user', id);
+export const addWhitelistGroup = (id: number) => whitelistWrite('/api/whitelist/group', id);
