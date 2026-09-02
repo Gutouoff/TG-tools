@@ -8,6 +8,10 @@
     setSpeed,
     updateTelegram,
     getWhitelist,
+    addWhitelistUser,
+    addWhitelistGroup,
+    removeWhitelistUser,
+    removeWhitelistGroup,
     getPasskeys,
     deletePasskey,
     initPasskey,
@@ -17,6 +21,11 @@
     verifyEmailCode,
     getDevices,
     deleteDevice,
+    getProfile,
+    updateProfile,
+    updateUsername,
+    updateBirthday,
+    uploadAvatar,
     type Account,
     type LogEvent,
   } from './api';
@@ -128,6 +137,82 @@
     addLog(r.ok ? '2FA 设置成功' : `设置失败: ${r.msg}`);
   }
 
+  // 资料编辑
+  let editFirstName = $state('');
+  let editLastName = $state('');
+  let editUsername = $state('');
+  let editAbout = $state('');
+  let editDay = $state('');
+  let editMonth = $state('');
+  let editYear = $state('');
+
+  async function loadProfile() {
+    rightView = 'profile';
+    editFirstName = current?.display || '';
+    editUsername = current?.username || '';
+    const r = await getProfile();
+    if (r.ok && r.profile) {
+      editAbout = r.profile.about || '';
+      if (r.profile.birthday) {
+        editDay = String(r.profile.birthday.day || '');
+        editMonth = String(r.profile.birthday.month || '');
+        editYear = String(r.profile.birthday.year || '');
+      }
+    }
+  }
+  async function doSaveProfile() {
+    await updateUsername(editUsername);
+    await updateProfile(editFirstName, editLastName, editAbout);
+    if (editDay && editMonth) {
+      await updateBirthday(Number(editDay), Number(editMonth), editYear ? Number(editYear) : null);
+    }
+    addLog('资料已提交更新');
+  }
+  async function doUploadAvatar(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    const buf = await file.arrayBuffer();
+    let bin = '';
+    const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    await uploadAvatar(btoa(bin));
+    addLog('头像已上传');
+  }
+
+  // 白名单管理
+  let wlUsers = $state<number[]>([]);
+  let wlGroups = $state<number[]>([]);
+  let wlUserInput = $state('');
+  let wlGroupInput = $state('');
+
+  async function loadWhitelist() {
+    rightView = 'whitelist';
+    const wl = await getWhitelist();
+    wlUsers = wl.users;
+    wlGroups = wl.groups;
+  }
+  async function doAddUser() {
+    if (!wlUserInput) return;
+    const r = await addWhitelistUser(Number(wlUserInput));
+    wlUsers = r.users;
+    wlUserInput = '';
+  }
+  async function doAddGroup() {
+    if (!wlGroupInput) return;
+    const r = await addWhitelistGroup(Number(wlGroupInput));
+    wlGroups = r.groups;
+    wlGroupInput = '';
+  }
+  async function doRemoveUser(id: number) {
+    const r = await removeWhitelistUser(id);
+    wlUsers = r.users;
+  }
+  async function doRemoveGroup(id: number) {
+    const r = await removeWhitelistGroup(id);
+    wlGroups = r.groups;
+  }
+
   connectWS((e: LogEvent) => {
     if (e.type === 'log' && e.line) addLog(e.line);
     if (e.type === 'progress') {
@@ -147,6 +232,9 @@
 <header class="topbar">
   <span class="title">TG小号工具箱</span>
   <span class="conn" class:on={connected}>{connected ? '● 已连接' : '● 未连接'}</span>
+  {#if connected}
+    <button class="disconnect" onclick={disconnect}>断开</button>
+  {/if}
 </header>
 
 <div class="layout">
@@ -200,6 +288,7 @@
           <div class="bi-name">{current?.display || current?.name || '未选择账号'}</div>
           <div class="bi-sub">@{current?.username || current?.phone || '-'}</div>
         </div>
+        <button class="edit-btn" onclick={loadProfile}>编辑</button>
       </div>
     </details>
 
@@ -217,7 +306,7 @@
       <summary>其他设置</summary>
       <div class="grid">
         <md-outlined-button onclick={() => updateTelegram()}>更新本体</md-outlined-button>
-        <md-outlined-button onclick={showWhitelist}>白名单管理</md-outlined-button>
+        <md-outlined-button onclick={loadWhitelist}>白名单管理</md-outlined-button>
       </div>
     </details>
   </section>
@@ -282,6 +371,55 @@
         {/each}
       </ul>
       {#if !devices.length}<p class="empty">暂无设备</p>{/if}
+    {:else if rightView === 'profile'}
+      <div class="sec-head">
+        <h3>编辑资料</h3>
+        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+      </div>
+      <div class="form">
+        <label>名字</label>
+        <input bind:value={editFirstName} />
+        <label>姓氏</label>
+        <input bind:value={editLastName} />
+        <label>用户名（不带 @）</label>
+        <input bind:value={editUsername} />
+        <label>简介</label>
+        <textarea bind:value={editAbout} rows="3"></textarea>
+        <label>生日（月 / 日 / 年）</label>
+        <div class="row3">
+          <input placeholder="月" bind:value={editMonth} />
+          <input placeholder="日" bind:value={editDay} />
+          <input placeholder="年" bind:value={editYear} />
+        </div>
+        <label>头像</label>
+        <input type="file" accept="image/*" onchange={doUploadAvatar} />
+        <md-filled-button onclick={doSaveProfile}>保存</md-filled-button>
+      </div>
+    {:else if rightView === 'whitelist'}
+      <div class="sec-head">
+        <h3>白名单管理</h3>
+        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+      </div>
+      <h4>用户白名单</h4>
+      <div class="row2">
+        <input placeholder="用户 ID" bind:value={wlUserInput} />
+        <md-outlined-button onclick={doAddUser}>添加</md-outlined-button>
+      </div>
+      <ul class="sec-list">
+        {#each wlUsers as u}
+          <li class="sec-item"><span>{u}</span><button class="danger" onclick={() => doRemoveUser(u)}>移除</button></li>
+        {/each}
+      </ul>
+      <h4>群/频道白名单</h4>
+      <div class="row2">
+        <input placeholder="群 ID" bind:value={wlGroupInput} />
+        <md-outlined-button onclick={doAddGroup}>添加</md-outlined-button>
+      </div>
+      <ul class="sec-list">
+        {#each wlGroups as g}
+          <li class="sec-item"><span>{g}</span><button class="danger" onclick={() => doRemoveGroup(g)}>移除</button></li>
+        {/each}
+      </ul>
     {/if}
   </section>
 </div>
@@ -541,5 +679,62 @@
   .right md-filled-button,
   .right md-outlined-button {
     margin-bottom: 8px;
+  }
+  .disconnect {
+    background: none;
+    border: 1px solid #b0bec5;
+    color: #eceff1;
+    border-radius: 999px;
+    padding: 5px 14px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .edit-btn {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--md-sys-color-primary);
+    color: var(--md-sys-color-primary);
+    border-radius: 999px;
+    padding: 5px 14px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .form label {
+    font-size: 13px;
+    color: var(--md-sys-color-on-surface-variant);
+    margin-top: 6px;
+  }
+  .form textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    font-size: 14px;
+    outline: none;
+    font-family: inherit;
+    resize: vertical;
+  }
+  .row2 {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .row2 input {
+    margin-bottom: 0;
+  }
+  .row3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
   }
 </style>

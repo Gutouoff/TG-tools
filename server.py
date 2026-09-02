@@ -381,6 +381,21 @@ async def update_birthday(body: dict):
     return {'ok': ok, 'msg': data}
 
 
+@app.post('/api/avatar')
+async def upload_avatar(body: dict):
+    import base64
+    b64 = body.get('data', '')
+    if not b64:
+        return {'ok': False, 'msg': '缺少图片数据'}
+    try:
+        data = base64.b64decode(b64)
+    except Exception:
+        return {'ok': False, 'msg': '图片数据无效'}
+    eng = init_engine()
+    ok, msg = await _call(eng.upload_avatar, data)
+    return {'ok': ok, 'msg': msg}
+
+
 # ---------- 静态前端 ----------
 if os.path.isdir(DIST):
     app.mount('/', StaticFiles(directory=DIST, html=True), name='static')

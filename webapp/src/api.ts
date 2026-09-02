@@ -86,6 +86,17 @@ async function whitelistWrite(url: string, id: number) {
 export const addWhitelistUser = (id: number) => whitelistWrite('/api/whitelist/user', id);
 export const addWhitelistGroup = (id: number) => whitelistWrite('/api/whitelist/group', id);
 
+async function whitelistDelete(url: string, id: number) {
+  const r = await fetch(url, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  return r.json();
+}
+export const removeWhitelistUser = (id: number) => whitelistDelete('/api/whitelist/user', id);
+export const removeWhitelistGroup = (id: number) => whitelistDelete('/api/whitelist/group', id);
+
 // ---------- 安全功能 ----------
 async function getJson(url: string) {
   const r = await fetch(url);
@@ -112,3 +123,12 @@ export const verifyEmailCode = (code: string) => postJson('/api/email/verify', {
 
 export const getDevices = () => getJson('/api/devices');
 export const deleteDevice = (hash: number) => postJson('/api/devices/delete', { hash });
+
+// ---------- 资料编辑 ----------
+export const getProfile = () => getJson('/api/profile');
+export const updateProfile = (first_name: string, last_name: string, about: string) =>
+  postJson('/api/profile/update', { first_name, last_name, about });
+export const updateUsername = (username: string) => postJson('/api/profile/username', { username });
+export const updateBirthday = (day: number, month: number, year: number | null) =>
+  postJson('/api/profile/birthday', { day, month, year });
+export const uploadAvatar = (data: string) => postJson('/api/avatar', { data });
