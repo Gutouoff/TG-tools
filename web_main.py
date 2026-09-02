@@ -48,9 +48,9 @@ def main():
     tg_tool.load_whitelist()
     tg_tool.load_proxy_cfg()
 
-    port = server.start_server()
-    url = f'http://127.0.0.1:{port}/'
-    print(f'[web] 后端: {url}')
+    port, token = server.start_server()
+    url = f'http://127.0.0.1:{port}/?token={token}'
+    print(f'[web] 后端: http://127.0.0.1:{port}/')
 
     w, h = _load_geometry()
     win = webview.create_window(

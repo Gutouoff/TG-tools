@@ -4,6 +4,8 @@ Python + Telethon 的 Telegram 小号批量维护工具：删联系人、删对�
 
 > ⚠️ 本仓库**只含代码，不含任何账号数据**。账号 session、tdata、API 凭据全部留在本地账号目录，永不入库（见 `.gitignore`）。
 
+> 🔒 `*.session`、`tdata/`、`*.json`（含 api_id/api_hash）、`2fa.txt` 均为**明文登录态**，等同于账号密码，务必对存放账号的磁盘做加密（如 BitLocker）。
+
 ## 架构
 
 ```

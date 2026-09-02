@@ -8,6 +8,8 @@ import asyncio
 import glob
 import json
 import os
+import re
+import secrets
 import socket
 import sys
 import threading
@@ -46,6 +48,18 @@ async def lifespan(app):
 
 app = FastAPI(title='TG工具箱', docs_url=None, redoc_url=None, lifespan=lifespan)
 
+# 本地 API 鉴权 token
+TOKEN = secrets.token_urlsafe(32)
+
+
+@app.middleware('http')
+async def token_middleware(request, call_next):
+    from fastapi.responses import JSONResponse
+    if request.url.path.startswith('/api') and request.method != 'OPTIONS':
+        if request.headers.get('X-TG-Token') != TOKEN:
+            return JSONResponse(status_code=401, content={'detail': 'unauthorized'})
+    return await call_next(request)
+
 # ---------- 引擎单例 + 回调桥接 ----------
 _loop = None
 _engine = None
@@ -71,6 +85,29 @@ def init_engine():
         )
         _engine.start()
     return _engine
+
+
+def _ensure_in_root(p):
+    """校验路径必须落在 ROOT 内,越界抛 400。返回 realpath。"""
+    from fastapi import HTTPException
+    if not p:
+        raise HTTPException(status_code=400, detail='缺少路径')
+    real = os.path.realpath(p)
+    root_real = os.path.realpath(ROOT)
+    try:
+        if os.path.commonpath([real, root_real]) != root_real:
+            raise HTTPException(status_code=400, detail='路径越界')
+    except ValueError:
+        raise HTTPException(status_code=400, detail='路径越界')
+    return real
+
+
+def _clean_name(name):
+    """清洗名称: 只保留中文/字母/数字/下划线/短横线,禁止路径分隔符与命令字符。"""
+    clean = re.sub(r'[^\w\u4e00-\u9fff-]', '_', name or '')
+    clean = clean.replace('..', '_')
+    clean = clean.strip('_') or '账号'
+    return clean
 
 
 def _jsonable(obj):
@@ -105,6 +142,9 @@ async def _ws_broadcast(data: dict):
 
 @app.websocket('/ws')
 async def ws_endpoint(ws: WebSocket):
+    if ws.query_params.get('token', '') != TOKEN:
+        await ws.close(code=4001)
+        return
     await ws.accept()
     _ws_clients.add(ws)
     try:
@@ -161,9 +201,7 @@ async def accounts():
 @app.post('/api/connect')
 async def connect(body: dict):
     eng = init_engine()
-    path = body.get('path', '')
-    if not path:
-        return {'ok': False, 'msg': '缺少账号路径'}
+    path = _ensure_in_root(body.get('path', ''))
     fut = eng.connect(path)
     try:
         info = await asyncio.wait_for(asyncio.wrap_future(fut), 60)
@@ -490,9 +528,7 @@ async def move_account(body: dict):
 @app.post('/api/convert-tdata')
 async def convert_tdata(body: dict):
     eng = init_engine()
-    path = body.get('path', '')
-    if not path:
-        return {'ok': False, 'msg': '缺少账号路径'}
+    path = _ensure_in_root(body.get('path', ''))
     fut = eng.convert_tdata(path)
     try:
         ok = await asyncio.wait_for(asyncio.wrap_future(fut), 300)
@@ -546,16 +582,32 @@ async def import_archive(body: dict):
     import tempfile
     import shutil
     b64 = body.get('data', '')
-    name = body.get('name', '账号')
+    name = _clean_name(body.get('name', '账号'))
     if not b64:
         return {'ok': False, 'msg': '缺少数据'}
     try:
         zip_bytes = base64.b64decode(b64)
     except Exception:
         return {'ok': False, 'msg': '数据无效'}
+    if len(zip_bytes) > 1024 * 1024 * 1024:
+        return {'ok': False, 'msg': '压缩包过大'}
     tmp = tempfile.mkdtemp(prefix='tgimport_')
     try:
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            infos = zf.infolist()
+            if len(infos) > 10000:
+                return {'ok': False, 'msg': '压缩包条目过多'}
+            total = sum(i.file_size for i in infos)
+            if total > 1024 * 1024 * 1024:
+                return {'ok': False, 'msg': '解压总大小超限'}
+            tmp_real = os.path.realpath(tmp)
+            for info in infos:
+                target = os.path.realpath(os.path.join(tmp, info.filename))
+                try:
+                    if os.path.commonpath([target, tmp_real]) != tmp_real:
+                        return {'ok': False, 'msg': '压缩包路径越界'}
+                except ValueError:
+                    return {'ok': False, 'msg': '压缩包路径越界'}
             zf.extractall(tmp)
         src, kind = _find_account(tmp)
         if src is None:
@@ -629,11 +681,10 @@ async def set_settings(body: dict):
 @app.post('/api/pack')
 async def pack_account(body: dict):
     import zipfile
-    import subprocess
     import datetime
-    path = body.get('path', '')
-    name = body.get('name', '')
-    if not path or not os.path.isdir(path):
+    path = _ensure_in_root(body.get('path', ''))
+    name = _clean_name(body.get('name', ''))
+    if not os.path.isdir(path):
         return {'ok': False, 'msg': '账号路径无效'}
     s = _load_settings()
     naming = s.get('pack_naming', '{name}_账号包')
@@ -641,6 +692,7 @@ async def pack_account(body: dict):
         base = naming.format(name=name, date=datetime.date.today().strftime('%Y%m%d'))
     except Exception:
         base = f'{name}_账号包'
+    base = _clean_name(base)
     zip_path = os.path.join(ROOT, f'{base}.zip')
     try:
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -660,14 +712,7 @@ async def pack_account(body: dict):
                     zf.write(full, entry)
     except Exception as e:
         return {'ok': False, 'msg': f'打包失败: {str(e)[:200]}'}
-    clip = False
-    try:
-        subprocess.run(['powershell', '-NoProfile', '-Command', f'Set-Clipboard -Path "{zip_path}"'],
-                       capture_output=True, timeout=10)
-        clip = True
-    except Exception:
-        pass
-    return {'ok': True, 'msg': f'已打包并{"复制到剪贴板" if clip else "保存"}：{os.path.basename(zip_path)}'}
+    return {'ok': True, 'msg': f'已打包：{os.path.basename(zip_path)}'}
 
 
 # ---------- 静态前端 ----------
@@ -693,7 +738,7 @@ def start_server(port: int = 0):
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
-    return port
+    return port, TOKEN
 
 
 if __name__ == '__main__':

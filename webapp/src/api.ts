@@ -19,36 +19,52 @@ export interface LogEvent {
   data?: unknown;
 }
 
+// 本地 API 鉴权 token（由后端通过 url query 注入）
+const TOKEN = new URLSearchParams(location.search).get('token') || '';
+
+async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (TOKEN) headers.set('X-TG-Token', TOKEN);
+  return fetch(url, { ...init, headers });
+}
+
+function jsonHeaders(extra?: Record<string, string>): Headers {
+  const h = new Headers(extra);
+  h.set('Content-Type', 'application/json');
+  if (TOKEN) h.set('X-TG-Token', TOKEN);
+  return h;
+}
+
 export async function getAccounts(): Promise<Account[]> {
-  const r = await fetch('/api/accounts');
+  const r = await apiFetch('/api/accounts');
   return r.json();
 }
 
 export async function connectAccount(path: string) {
-  const r = await fetch('/api/connect', {
+  const r = await apiFetch('/api/connect', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({ path }),
   });
   return r.json();
 }
 
 export async function disconnect() {
-  const r = await fetch('/api/disconnect', { method: 'POST' });
+  const r = await apiFetch('/api/disconnect', { method: 'POST', headers: jsonHeaders() });
   return r.json();
 }
 
 export async function postTask(url: string, body?: object) {
-  const r = await fetch(url, {
+  const r = await apiFetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify(body ?? {}),
   });
   return r.json();
 }
 
 export function connectWS(onMessage: (e: LogEvent) => void): WebSocket {
-  const ws = new WebSocket(`ws://${location.host}/ws`);
+  const ws = new WebSocket(`ws://${location.host}/ws?token=${encodeURIComponent(TOKEN)}`);
   ws.onmessage = (ev) => {
     try {
       onMessage(JSON.parse(ev.data));
@@ -58,9 +74,9 @@ export function connectWS(onMessage: (e: LogEvent) => void): WebSocket {
 }
 
 export async function setSpeed(speed: number) {
-  await fetch('/api/speed', {
+  await apiFetch('/api/speed', {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({ speed }),
   });
 }
@@ -70,14 +86,14 @@ export async function updateTelegram() {
 }
 
 export async function getWhitelist(): Promise<{ users: number[]; groups: number[] }> {
-  const r = await fetch('/api/whitelist');
+  const r = await apiFetch('/api/whitelist');
   return r.json();
 }
 
 async function whitelistWrite(url: string, id: number) {
-  const r = await fetch(url, {
+  const r = await apiFetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({ id }),
   });
   return r.json();
@@ -87,9 +103,9 @@ export const addWhitelistUser = (id: number) => whitelistWrite('/api/whitelist/u
 export const addWhitelistGroup = (id: number) => whitelistWrite('/api/whitelist/group', id);
 
 async function whitelistDelete(url: string, id: number) {
-  const r = await fetch(url, {
+  const r = await apiFetch(url, {
     method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({ id }),
   });
   return r.json();
@@ -99,13 +115,13 @@ export const removeWhitelistGroup = (id: number) => whitelistDelete('/api/whitel
 
 // ---------- 安全功能 ----------
 async function getJson(url: string) {
-  const r = await fetch(url);
+  const r = await apiFetch(url);
   return r.json();
 }
 async function postJson(url: string, body: object = {}) {
-  const r = await fetch(url, {
+  const r = await apiFetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify(body),
   });
   return r.json();
@@ -137,7 +153,7 @@ export const uploadAvatar = (data: string) => postJson('/api/avatar', { data });
 export const getGroups = (): Promise<Record<string, string[]>> => getJson('/api/groups');
 export const createGroup = (name: string) => postJson('/api/groups', { name });
 export const deleteGroup = (name: string) =>
-  fetch(`/api/groups/${encodeURIComponent(name)}`, { method: 'DELETE' }).then((r) => r.json());
+  apiFetch(`/api/groups/${encodeURIComponent(name)}`, { method: 'DELETE' }).then((r) => r.json());
 export const moveAccount = (name: string, group: string) => postJson('/api/groups/move', { name, group });
 
 // ---------- tdata 转换 / 导入 ----------

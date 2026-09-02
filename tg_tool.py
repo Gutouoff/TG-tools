@@ -450,7 +450,21 @@ def init_log():
     return path
 
 
+_PHONE_RE = re.compile(r'(?<!\d)(\+?\d{1,3}[-\s]?)?(\d{3})\d{4}(\d{4})(?!\d)')
+
+
+def _mask_phone_text(s):
+    """日志里对手机号打码: 13812345678 -> 138****5678。"""
+    try:
+        return _PHONE_RE.sub(lambda m: f"{m.group(1) or ''}{m.group(2)}****{m.group(3)}", s)
+    except Exception:
+        return s
+
+
 def log(msg):
+    if not isinstance(msg, str):
+        msg = str(msg)
+    msg = _mask_phone_text(msg)
     ts = time.strftime('%H:%M:%S')
     line = f'[{ts}] {msg}'
     try:
@@ -1128,6 +1142,28 @@ def _running_under_workdir():
     return procs
 
 
+def _verify_telegram_signature(exe_path):
+    """校验 Telegram.exe 的 Authenticode 代码签名(官方 Telegram FZ-LLC)。
+
+    返回签名者 subject 字符串;校验失败/无签名/签名者非 Telegram 返回空串。
+    """
+    ps = (
+        "$s = Get-AuthenticodeSignature '%s'; "
+        "if ($s.Status -eq 'Valid' -and $s.SignerCertificate) "
+        "{ $s.SignerCertificate.Subject } else { '' }" % exe_path
+    )
+    try:
+        out = subprocess.run(
+            ['powershell', '-NoProfile', '-Command', ps],
+            capture_output=True, timeout=60).stdout
+        text = (out or b'').decode('utf-8', errors='replace').strip()
+    except Exception:
+        return ''
+    if text and 'Telegram' in text:
+        return text
+    return ''
+
+
 def task_update_telegram():
     log(T('t112', WORKDIR))
     targets = _find_targets()
@@ -1210,6 +1246,10 @@ def task_update_telegram():
         new_tg = os.path.join(ext, 'Telegram.exe')
         if os.path.getsize(new_tg) < 50 * 1024 * 1024:
             die(T('t131'))
+        signer = _verify_telegram_signature(new_tg)
+        if not signer:
+            die('更新中止：Telegram.exe 代码签名校验失败（可能被篡改），已删除临时文件，未覆盖任何文件。')
+        log(f'签名校验通过：{signer}')
 
         new_sizes = {w: os.path.getsize(os.path.join(ext, w))
                      for w in EXE_NAMES if os.path.isfile(os.path.join(ext, w))}
