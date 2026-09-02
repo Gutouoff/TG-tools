@@ -20,7 +20,10 @@ import tg_tool
 import tg_engine
 import tg_profile
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    BASE = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+else:
+    BASE = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(BASE, 'webapp', 'dist')
 
 # 账号根目录(与旧 tg_ui 的 ROOT 逻辑一致)
