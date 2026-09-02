@@ -1,24 +1,38 @@
 @echo off
 chcp 65001 >nul
-title 部署 TG工具箱GUI
+title 部署 TG工具箱
 echo ============================================
-echo   TG工具箱GUI 部署脚本
-echo   把 dist\TG工具箱GUI 复制到 D:\Desktop\TG小号\
+echo   TG工具箱 部署脚本
 echo ============================================
 echo.
+echo 选择要部署的版本:
+echo   [1] Web 版   (TG工具箱Web, 推荐, Material 3 界面)
+echo   [2] Tkinter 版 (TG工具箱GUI, 旧版)
+echo.
+set /p CHOICE=请输入 1 或 2 (回车=1): 
 
-set SRC=%~dp0dist\TG工具箱GUI
-set DST=D:\Desktop\TG小号\TG工具箱GUI
-
-if not exist "%SRC%\TG工具箱GUI.exe" (
-    echo [!] 没找到 %SRC%\TG工具箱GUI.exe
-    echo     请先用 PyInstaller 打包: python -m PyInstaller TG工具箱GUI.spec --noconfirm
+if "%CHOICE%"=="" set CHOICE=1
+if "%CHOICE%"=="1" set NAME=TG工具箱Web
+if "%CHOICE%"=="2" set NAME=TG工具箱GUI
+if "%NAME%"=="" (
+    echo [!] 无效选择
     pause
     exit /b 1
 )
 
+set SRC=%~dp0dist\%NAME%
+set DST=D:\Desktop\TG小号\%NAME%
+
+if not exist "%SRC%\%NAME%.exe" (
+    echo [!] 没找到 %SRC%\%NAME%.exe
+    echo     请先打包: python -m PyInstaller %NAME%.spec --noconfirm
+    pause
+    exit /b 1
+)
+
+echo.
 echo [1/4] 关闭正在运行的工具箱...
-taskkill /F /IM TG工具箱GUI.exe >nul 2>&1
+taskkill /F /IM %NAME%.exe >nul 2>&1
 timeout /t 1 /nobreak >nul
 
 echo [2/4] 删除旧版本...
@@ -34,6 +48,5 @@ if exist "D:\Desktop\TG小号\工具箱\avatars" (
 )
 
 echo.
-echo 部署完成! 桌面快捷方式指向的位置已更新。
-echo 双击桌面「TG工具箱GUI」即可使用。
+echo 部署完成! 双击 D:\Desktop\TG小号\%NAME%\%NAME%.exe 即可。
 pause
