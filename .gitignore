@@ -13,6 +13,7 @@ profiles.json
 nicknames.json
 settings.json
 whitelist.json
+groups.json
 backups/
 logs/
 avatars/
