@@ -380,8 +380,8 @@ class Engine:
             return
         self._cancel.clear()
         self._task_running = True
-        label = {'privates': '删除全部私聊', 'groups': '退出群组/频道',
-                 'all': '全部执行(私聊+群组/频道)'}.get(choice, choice)
+        label = {'users': '删除私聊', 'bots': '拉黑机器人', 'groups': '退出群组/频道',
+                 'privates': '删除全部私聊', 'all': '全部执行'}.get(choice, choice)
         self._state('task_start', label)
         try:
             client, me = self._client, self._me
@@ -429,7 +429,14 @@ class Engine:
                 await client.delete_dialog(d.entity, revoke=True)
                 await client(BlockRequest(id=d.entity))
 
-            if choice in ('privates', 'all'):
+            if choice == 'users':
+                await self._backup_dialogs(users + deleted, 'privates')
+                await self._run_dialog_action(client, deleted, T('t107'), del_user)
+                await self._run_dialog_action(client, users, T('t109'), del_user)
+            elif choice == 'bots':
+                await self._backup_dialogs(bots, 'bots')
+                await self._run_dialog_action(client, bots, T('t108'), block_bot)
+            elif choice in ('privates', 'all'):
                 await self._backup_dialogs(all_privates, 'privates')
                 await self._run_dialog_action(client, deleted, T('t107'), del_user)
                 await self._run_dialog_action(client, bots, T('t108'), block_bot)
@@ -624,6 +631,343 @@ class Engine:
             else:
                 self._gui_schedule(lambda: on_done(False, '未找到该用户/群组'))
         return ent
+
+    def disconnect(self):
+        """断开当前账号连接(不重连)。"""
+        return self._submit(self._do_disconnect())
+
+    async def _do_disconnect(self):
+        with self._lock:
+            if self._client:
+                try:
+                    await self._client.disconnect()
+                except Exception:
+                    pass
+                self._client = None
+            self._me = None
+        return None
+
+    # ---------- 安全: passkey / 邮箱 / 2FA ----------
+
+    def get_password_info(self, on_done=None):
+        """读 2FA 状态 + 当前邮箱。返回 account.Password。"""
+        return self._submit(self._do_get_password_info(on_done))
+
+    async def _do_get_password_info(self, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.account import GetPasswordRequest
+            res = await self._client(GetPasswordRequest())
+            if on_done:
+                self._gui_schedule(lambda r=res: on_done(True, r))
+            return res
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def get_passkeys(self, on_done=None):
+        """列出账号已有的 passkey。返回 list[Passkey]。"""
+        return self._submit(self._do_get_passkeys(on_done))
+
+    async def _do_get_passkeys(self, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.account import GetPasskeysRequest
+            res = await self._client(GetPasskeysRequest())
+            keys = list(getattr(res, 'passkeys', []) or [])
+            if on_done:
+                self._gui_schedule(lambda r=keys: on_done(True, r))
+            return keys
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def delete_passkey(self, key_id, on_done=None):
+        return self._submit(self._do_delete_passkey(key_id, on_done))
+
+    async def _do_delete_passkey(self, key_id, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.account import DeletePasskeyRequest
+            res = await self._client(DeletePasskeyRequest(id=key_id))
+            if on_done:
+                self._gui_schedule(lambda r=res: on_done(True, r))
+            return res
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def set_2fa(self, current_password, new_password, on_done=None):
+        """设置/修改两步验证密码。current_password 未设时可传 ''。"""
+        return self._submit(self._do_set_2fa(current_password, new_password, on_done))
+
+    async def _do_set_2fa(self, current_password, new_password, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            await self._client.edit_2fa(current_password=current_password or None,
+                                        new_password=new_password)
+            if on_done:
+                self._gui_schedule(lambda: on_done(True, '2FA 已设置'))
+            return True
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def send_verify_email_code(self, email, on_done=None):
+        """给邮箱发送验证码(绑定登录邮箱)。"""
+        return self._submit(self._do_send_verify_email_code(email, on_done))
+
+    async def _do_send_verify_email_code(self, email, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.account import SendVerifyEmailCodeRequest
+            from telethon.tl.types import EmailVerifyPurposeLoginSetup
+            res = await self._client(SendVerifyEmailCodeRequest(
+                purpose=EmailVerifyPurposeLoginSetup(), email=email))
+            if on_done:
+                self._gui_schedule(lambda r=res: on_done(True, r))
+            return res
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def verify_email(self, code, on_done=None):
+        """用验证码完成邮箱绑定。"""
+        return self._submit(self._do_verify_email(code, on_done))
+
+    async def _do_verify_email(self, code, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.account import VerifyEmailRequest
+            from telethon.tl.types import EmailVerifyPurposeLoginSetup, EmailVerificationCode
+            res = await self._client(VerifyEmailRequest(
+                purpose=EmailVerifyPurposeLoginSetup(),
+                verification=EmailVerificationCode(code=code)))
+            if on_done:
+                self._gui_schedule(lambda r=res: on_done(True, r))
+            return res
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def get_authorizations(self, on_done=None):
+        """列出登录设备(本设备置顶,其余按官方顺序)。返回 list[Authorization]。"""
+        return self._submit(self._do_get_authorizations(on_done))
+
+    async def _do_get_authorizations(self, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.account import GetAuthorizationsRequest
+            res = await self._client(GetAuthorizationsRequest())
+            auths = list(getattr(res, 'authorizations', []) or [])
+            # 本设备置顶,其余按最后活跃时间倒序(接近官方排序)
+            def _key(a):
+                t = getattr(a, 'date_active', None)
+                return (0 if getattr(a, 'current', False) else 1,
+                        -(t.timestamp() if t else 0))
+            auths.sort(key=_key)
+            if on_done:
+                self._gui_schedule(lambda r=auths: on_done(True, r))
+            return auths
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def init_passkey_registration(self, on_done=None):
+        """发起 passkey 注册,返回二维码内容(WebAuthn publicKey JSON)。"""
+        return self._submit(self._do_init_passkey_registration(on_done))
+
+    async def _do_init_passkey_registration(self, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.account import InitPasskeyRegistrationRequest
+            res = await self._client(InitPasskeyRegistrationRequest())
+            data = getattr(getattr(res, 'options', None), 'data', '') or ''
+            if on_done:
+                self._gui_schedule(lambda d=data: on_done(True, d))
+            return data
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def get_full_info(self, on_done=None):
+        """读取账号完整资料(简介/生日/关联频道)。返回 dict。"""
+        return self._submit(self._do_get_full_info(on_done))
+
+    async def _do_get_full_info(self, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.users import GetFullUserRequest
+            from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest
+            full = await self._client(GetFullUserRequest(id='me'))
+            chans = await self._client(GetAdminedPublicChannelsRequest())
+            data = {
+                'about': getattr(full.full_user, 'about', '') or '',
+                'birthday': getattr(full.full_user, 'birthday', None),
+                'channels': list(getattr(chans, 'chats', []) or []),
+            }
+            if on_done:
+                self._gui_schedule(lambda d=data: on_done(True, d))
+            return data
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def update_profile(self, first_name=None, last_name=None, about=None, on_done=None):
+        """更新姓名/简介。"""
+        return self._submit(self._do_update_profile(first_name, last_name, about, on_done))
+
+    async def _do_update_profile(self, first_name, last_name, about, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.account import UpdateProfileRequest
+            await self._client(UpdateProfileRequest(first_name=first_name,
+                                                    last_name=last_name,
+                                                    about=about))
+            if on_done:
+                self._gui_schedule(lambda: on_done(True, '资料已更新'))
+            return True
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def update_username(self, username, on_done=None):
+        return self._submit(self._do_update_username(username, on_done))
+
+    async def _do_update_username(self, username, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.account import UpdateUsernameRequest
+            await self._client(UpdateUsernameRequest(username=username))
+            if on_done:
+                self._gui_schedule(lambda: on_done(True, '用户名已更新'))
+            return True
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def update_birthday(self, day, month, year, on_done=None):
+        return self._submit(self._do_update_birthday(day, month, year, on_done))
+
+    async def _do_update_birthday(self, day, month, year, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.account import UpdateBirthdayRequest
+            from telethon.tl.types import Birthday
+            await self._client(UpdateBirthdayRequest(
+                birthday=Birthday(day=day, month=month, year=year)))
+            if on_done:
+                self._gui_schedule(lambda: on_done(True, '生日已更新'))
+            return True
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def upload_avatar(self, file_bytes, on_done=None):
+        """上传头像(file_bytes 为 PNG 图片字节)。"""
+        return self._submit(self._do_upload_avatar(file_bytes, on_done))
+
+    async def _do_upload_avatar(self, file_bytes, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            import io
+            from telethon.tl.functions.photos import UploadProfilePhotoRequest
+            f = io.BytesIO(file_bytes)
+            f.name = 'avatar.png'
+            uploaded = await self._client.upload_file(f)
+            await self._client(UploadProfilePhotoRequest(file=uploaded))
+            if on_done:
+                self._gui_schedule(lambda: on_done(True, '头像已更新'))
+            return True
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def reset_authorization(self, auth_hash, on_done=None):
+        """注销某个在线设备(terminate session)。"""
+        return self._submit(self._do_reset_authorization(auth_hash, on_done))
+
+    async def _do_reset_authorization(self, auth_hash, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.account import ResetAuthorizationRequest
+            await self._client(ResetAuthorizationRequest(hash=auth_hash))
+            if on_done:
+                self._gui_schedule(lambda: on_done(True, '设备已注销'))
+            return True
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
 
     def convert_tdata(self, account_dir):
         return self._submit(self._do_convert_tdata(account_dir))

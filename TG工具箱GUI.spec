@@ -9,6 +9,7 @@ hiddenimports += collect_submodules('telethon')
 hiddenimports += collect_submodules('opentele')
 hiddenimports += ['windnd']
 hiddenimports += collect_submodules('ttkbootstrap')
+hiddenimports += collect_submodules('qrcode')
 
 datas = [('界面文本.txt', '.')]
 datas += collect_data_files('ttkbootstrap')
