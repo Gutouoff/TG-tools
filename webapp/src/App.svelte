@@ -55,6 +55,16 @@
     return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
   }
 
+  let avatarFailed = $state<Set<string>>(new Set());
+  function onAvatarError(name: string) {
+    const next = new Set(avatarFailed);
+    next.add(name);
+    avatarFailed = next;
+  }
+  function avatarUrl(a: Account): string {
+    return `/api/avatar-image?name=${encodeURIComponent(a.name)}&token=${encodeURIComponent(TOKEN)}`;
+  }
+
   function applyFilter() {
     const q = search.trim().toLowerCase();
     const base = groupFiltered();
@@ -117,11 +127,16 @@
     addLog(r.ok ? `打包完成: ${r.msg}` : `打包失败: ${r.msg}`);
   }
 
-  // 速度滑块
+  // 速度分段(五档: 极快/快速/默认/慢速/极慢)
   let speedVal = $state(3);
-  const SPEED_NAMES = ['极快', '快速', '默认', '慢速', '极慢'];
-  function onSpeed(e: Event) {
-    const v = Number((e.currentTarget as HTMLInputElement).value);
+  const SPEED_SEG: Array<[string, number]> = [
+    ['极快', 1],
+    ['快速', 2],
+    ['默认', 3],
+    ['慢速', 4],
+    ['极慢', 5],
+  ];
+  function onSpeed(v: number) {
     speedVal = v;
     setSpeed(v);
   }
@@ -184,9 +199,16 @@
     addLog('通行密钥已删除');
     await loadPasskeys();
   }
+  let pkQrImg = $state('');
   async function doInitPasskey() {
     const r = await initPasskey();
-    addLog(r.ok ? '二维码已生成' : `生成失败: ${r}`);
+    if (r.ok && r.img) {
+      pkQrImg = `data:image/png;base64,${r.img}`;
+      addLog('二维码已生成，请用手机扫码绑定通行密钥');
+    } else {
+      pkQrImg = '';
+      addLog(`生成失败: ${r.msg || r}`);
+    }
   }
   async function doDeleteDevice(hash: number) {
     await deleteDevice(hash);
@@ -420,7 +442,11 @@
           onclick={() => (current = a)}
           oncontextmenu={(e) => onAccountContext(e, a)}
         >
-          <span class="avatar" style="background:{avatarColor(a.name)}">{a.username?.[0] || a.display?.[0] || a.name[0] || '-'}</span>
+          {#if a.avatar && !avatarFailed.has(a.name)}
+            <img class="avatar" src={avatarUrl(a)} alt="" onerror={() => onAvatarError(a.name)} />
+          {:else}
+            <span class="avatar" style="background:{avatarColor(a.name)}">{a.username?.[0] || a.display?.[0] || a.name[0] || '-'}</span>
+          {/if}
           <span class="meta">
             <span class="nm">{a.username ? '@' + a.username : (a.display || a.name)}</span>
             <span class="sub">{a.username ? (a.display || a.phone || a.state) : (a.phone || a.state)}</span>
@@ -463,8 +489,11 @@
       </div>
       <div class="speed-row">
         <span class="speed-label">速度</span>
-        <input class="speed-slider" type="range" min="1" max="5" step="1" value={speedVal} oninput={onSpeed} />
-        <span class="speed-val">{SPEED_NAMES[speedVal - 1]}</span>
+        <div class="speed-seg">
+          {#each SPEED_SEG as [label, v]}
+            <button class="seg" class:on={speedVal === v} onclick={() => onSpeed(v)}>{label}</button>
+          {/each}
+        </div>
       </div>
     </details>
 
@@ -518,6 +547,11 @@
         <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
       </div>
       <md-filled-button onclick={doInitPasskey}>＋ 添加通行密钥</md-filled-button>
+      {#if pkQrImg}
+        <div class="qr-box">
+          <img class="qr-img" src={pkQrImg} alt="通行密钥二维码" />
+        </div>
+      {/if}
       <ul class="sec-list">
         {#each passkeys as pk}
           <li class="sec-item">
@@ -799,6 +833,9 @@
     flex-shrink: 0;
     font-size: 18px;
   }
+  img.avatar {
+    object-fit: cover;
+  }
   .avatar.big {
     width: 64px;
     height: 64px;
@@ -1045,30 +1082,28 @@
     grid-template-columns: 1fr 1fr 1fr;
     gap: 8px;
   }
-  .speed-slider {
-    -webkit-appearance: none;
-    appearance: none;
+  .speed-seg {
+    display: flex;
     flex: 1;
-    height: 6px;
-    border-radius: 3px;
-    background: var(--md-sys-color-primary-container);
-    outline: none;
-    margin: 0 8px;
-    padding: 0;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: 999px;
+    overflow: hidden;
   }
-  .speed-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--md-sys-color-primary);
+  .seg {
+    background: none;
+    border: none;
+    padding: 6px 0;
     cursor: pointer;
-  }
-  .speed-val {
     font-size: 12px;
-    color: var(--md-sys-color-on-surface-variant);
-    min-width: 28px;
+    color: var(--md-sys-color-on-surface);
+    flex: 1;
+  }
+  .seg + .seg {
+    border-left: 1px solid var(--md-sys-color-outline);
+  }
+  .seg.on {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
   }
   .ctx-check {
     display: flex;
@@ -1093,6 +1128,16 @@
   .check-row input {
     width: auto;
     margin: 0;
+  }
+  .qr-box {
+    display: flex;
+    justify-content: center;
+    padding: 12px 0;
+  }
+  .qr-img {
+    width: 200px;
+    height: 200px;
+    border-radius: var(--md-sys-shape-corner-medium);
   }
   input[type='color'] {
     height: 40px;

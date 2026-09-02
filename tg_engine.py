@@ -745,9 +745,9 @@ class Engine:
             return None
         try:
             from telethon.tl.functions.account import SendVerifyEmailCodeRequest
-            from telethon.tl.types import EmailVerifyPurposeLoginSetup
+            from telethon.tl.types import EmailVerifyPurposeLoginChange
             res = await self._client(SendVerifyEmailCodeRequest(
-                purpose=EmailVerifyPurposeLoginSetup(), email=email))
+                purpose=EmailVerifyPurposeLoginChange(), email=email))
             if on_done:
                 self._gui_schedule(lambda r=res: on_done(True, r))
             return res
@@ -768,9 +768,9 @@ class Engine:
             return None
         try:
             from telethon.tl.functions.account import VerifyEmailRequest
-            from telethon.tl.types import EmailVerifyPurposeLoginSetup, EmailVerificationCode
+            from telethon.tl.types import EmailVerifyPurposeLoginChange, EmailVerificationCode
             res = await self._client(VerifyEmailRequest(
-                purpose=EmailVerifyPurposeLoginSetup(),
+                purpose=EmailVerifyPurposeLoginChange(),
                 verification=EmailVerificationCode(code=code)))
             if on_done:
                 self._gui_schedule(lambda r=res: on_done(True, r))

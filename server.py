@@ -378,7 +378,22 @@ async def delete_passkey(body: dict):
 async def init_passkey():
     eng = init_engine()
     ok, data = await _call(eng.init_passkey_registration)
-    return {'ok': ok, 'qr': data if ok else ''}
+    if not ok:
+        return {'ok': False, 'msg': str(data)}
+    # 生成 fido:/ URI 二维码图片(base64 PNG)
+    import base64
+    import io
+    import qrcode
+    b64 = base64.urlsafe_b64encode(str(data).encode('utf-8')).decode('ascii').rstrip('=')
+    uri = f'fido:/{b64}'
+    qr = qrcode.QRCode(border=2)
+    qr.add_data(uri)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='black', back_color='white')
+    buf = io.BytesIO()
+    img.save(buf, 'PNG')
+    img_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+    return {'ok': True, 'qr': uri, 'img': img_b64}
 
 
 @app.get('/api/2fa')
