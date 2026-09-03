@@ -279,14 +279,25 @@
     await loadPasskeys();
   }
   let pkQrImg = $state('');
+  let pkQrUri = $state('');
   async function doInitPasskey() {
     const r = await initPasskey();
     if (r.ok && r.img) {
       pkQrImg = `data:image/png;base64,${r.img}`;
+      pkQrUri = r.qr || '';
       addLog('二维码已生成，请用手机扫码绑定通行密钥');
     } else {
       pkQrImg = '';
+      pkQrUri = '';
       addLog(`生成失败: ${r.msg || r}`);
+    }
+  }
+  async function copyPkUri() {
+    try {
+      await navigator.clipboard.writeText(pkQrUri);
+      addLog('二维码内容已复制到剪贴板');
+    } catch (e) {
+      addLog('复制失败');
     }
   }
   async function doDeleteDevice(hash: number) {
@@ -656,6 +667,12 @@
         <div class="qr-box">
           <img class="qr-img" src={pkQrImg} alt="通行密钥二维码" />
         </div>
+        {#if pkQrUri}
+          <div class="qr-uri">
+            <span class="qr-uri-text">{pkQrUri.length > 80 ? pkQrUri.slice(0, 80) + '…' : pkQrUri}</span>
+            <button class="back" onclick={copyPkUri}>复制内容</button>
+          </div>
+        {/if}
       {/if}
       <ul class="sec-list">
         {#each passkeys as pk}
@@ -706,6 +723,17 @@
       <div class="sec-head">
         <h3>编辑资料</h3>
         <button class="back" onclick={() => setView('log')}>← 返回</button>
+      </div>
+      <div class="bi">
+        {#if current?.avatar && !avatarFailed.has(current.name)}
+          <img class="avatar big" src={avatarUrl(current)} alt="" onerror={() => onAvatarError(current.name)} />
+        {:else}
+          <span class="avatar big" style="background:{avatarColor(current?.name || '-')}">{current?.display?.[0] || current?.name?.[0] || '-'}</span>
+        {/if}
+        <div class="bi-meta">
+          <div class="bi-name">{current?.display || current?.name || '未选择账号'}</div>
+          <div class="bi-sub">@{current?.username || '-'}</div>
+        </div>
       </div>
       <div class="form">
         <label>名字</label>
@@ -1410,6 +1438,22 @@
     width: 200px;
     height: 200px;
     border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .qr-uri {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    margin-top: 4px;
+    background: var(--md-sys-color-surface);
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .qr-uri-text {
+    font-size: 11px;
+    font-family: 'Consolas', monospace;
+    word-break: break-all;
+    flex: 1;
+    color: var(--md-sys-color-on-surface-variant);
   }
   input[type='color'] {
     height: 40px;
