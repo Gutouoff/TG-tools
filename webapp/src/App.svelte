@@ -186,7 +186,7 @@
   async function loadSettings() {
     settings = {
       pack_naming: '{name}_账号包', pack_password: '',
-      theme_seed: '#9BCFDC', theme_bg: '#C7C7C7', theme_dark: '#d2d2d2', theme_topbar: '#37474f',
+      theme_seed: '#009688', theme_bg: '#F7FAF9', theme_dark: '#FFFFFF', theme_topbar: '#00796B',
       proxy_mode: 'none', proxy_scheme: 'socks5', proxy_host: '', proxy_port: '',
     };
     settingsOpen = true;
@@ -204,10 +204,10 @@
     applyTheme();
   }
   function applyTheme() {
-    const seed = (settings.theme_seed as string) || '#9BCFDC';
-    const bg = (settings.theme_bg as string) || '#C7C7C7';
-    const dark = (settings.theme_dark as string) || '#d2d2d2';
-    const topbar = (settings.theme_topbar as string) || '#37474f';
+    const seed = (settings.theme_seed as string) || '#009688';
+    const bg = (settings.theme_bg as string) || '#F7FAF9';
+    const dark = (settings.theme_dark as string) || '#FFFFFF';
+    const topbar = (settings.theme_topbar as string) || '#00796B';
     const root = document.documentElement.style;
     root.setProperty('--md-sys-color-primary', seed);
     root.setProperty('--md-sys-color-primary-container', seed);
@@ -795,8 +795,8 @@
     align-items: center;
     height: 64px;
     padding: 0 24px;
-    background: var(--topbar-color, #37474f);
-    color: #eceff1;
+    background: var(--topbar-color, #00796B);
+    color: #FFFFFF;
   }
   .title {
     font-size: 20px;
@@ -805,10 +805,10 @@
   .conn {
     margin-left: auto;
     font-size: 13px;
-    color: #b0bec5;
+    color: var(--md-sys-color-on-primary);
   }
   .conn.on {
-    color: #a5d6a7;
+    color: var(--status-success);
   }
   .layout {
     display: flex;
@@ -1152,8 +1152,8 @@
   }
   .topbtn {
     background: none;
-    border: 1px solid #78909c;
-    color: #eceff1;
+    border: 1px solid var(--md-sys-color-primary-container);
+    color: #FFFFFF;
     border-radius: 999px;
     padding: 5px 14px;
     cursor: pointer;
@@ -1353,7 +1353,7 @@
   .log::-webkit-scrollbar-thumb,
   .sec-list::-webkit-scrollbar-thumb,
   .form::-webkit-scrollbar-thumb {
-    background: #b0bec5;
+    background: var(--scrollbar-color);
     border-radius: 4px;
   }
   .list::-webkit-scrollbar-track,

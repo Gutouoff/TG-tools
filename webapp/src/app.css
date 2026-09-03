@@ -1,28 +1,31 @@
-/* Material 3 主题 —— seed 蓝 #9BCFDC,浅色背景 #C7C7C7 */
+/* LocalSend-inspired Material 3 主题 —— Teal 主色、浅青背景 */
 :root {
   color-scheme: light;
 
-  /* primary: seed 蓝 #9BCFDC 的 tonal 派生(此处直接用 seed 作为 primary 近似) */
-  --md-sys-color-primary: #2a6d7d;
+  --md-sys-color-primary: #009688;
   --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-primary-container: #b3e3ef;
-  --md-sys-color-on-primary-container: #001f26;
+  --md-sys-color-primary-container: #B2DFDB;
+  --md-sys-color-on-primary-container: #00201D;
 
-  --md-sys-color-surface: #c7c7c7;
-  --md-sys-color-on-surface: #1a1c1d;
-  --md-sys-color-surface-variant: #dde4e6;
-  --md-sys-color-on-surface-variant: #41484a;
-  --md-sys-color-outline: #71787b;
-  --md-sys-color-surface-container: #dcdcdc;
-  --md-sys-color-surface-container-low: #e2e2e2;
-  --md-sys-color-surface-container-high: #d2d2d2;
+  --md-sys-color-surface: #F7FAF9;
+  --md-sys-color-on-surface: #17201E;
+  --md-sys-color-surface-variant: #E8F5F3;
+  --md-sys-color-on-surface-variant: #60706C;
+  --md-sys-color-outline: #B8CCC8;
+  --md-sys-color-surface-container: #FFFFFF;
+  --md-sys-color-surface-container-low: #F0F7F5;
+  --md-sys-color-surface-container-high: #E8F5F3;
 
-  --md-sys-color-error: #ba1a1a;
+  --md-sys-color-error: #D9534F;
   --md-sys-color-on-error: #ffffff;
 
   --md-sys-shape-corner-small: 8px;
   --md-sys-shape-corner-medium: 16px;
   --md-sys-shape-corner-large: 24px;
+  --topbar-color: #00796B;
+  --status-warning: #F2994A;
+  --status-success: #2E9B73;
+  --scrollbar-color: #9ABAB3;
 }
 
 * {
