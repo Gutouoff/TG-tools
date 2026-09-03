@@ -922,6 +922,10 @@
     flex-direction: column;
     flex-shrink: 0;
   }
+  .left,
+  .mid {
+    overflow-y: auto;
+  }
   .right {
     flex: 1;
   }
