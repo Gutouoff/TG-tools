@@ -415,12 +415,18 @@ async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=No
     # BLE 扫描,等待手机广播 caBLE advert
     loop = asyncio.get_event_loop()
     advert_future = loop.create_future()
+    seen_uuids = set()
 
     def _detect(_device, adv):
         if advert_future.done():
             return
         for uuid_str, data in (adv.service_data or {}).items():
-            if str(uuid_str).lower() not in _CABLE_SERVICE_UUIDS:
+            u = str(uuid_str).lower()
+            if u not in seen_uuids:
+                seen_uuids.add(u)
+                if on_state:
+                    on_state(f'adv:{u}:{len(data)}')
+            if u not in _CABLE_SERVICE_UUIDS:
                 continue
             eid = decrypt_advert(data, eid_key)
             if eid is not None:
@@ -428,11 +434,20 @@ async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=No
                 return
 
     scanner = BleakScanner(detection_callback=_detect)
-    await scanner.start()
+    try:
+        await scanner.start()
+    except Exception as e:
+        raise RuntimeError(f'蓝牙扫描启动失败(电脑需有蓝牙且开启): {e}')
     try:
         eid = await asyncio.wait_for(advert_future, timeout=timeout_s)
+    except asyncio.TimeoutError:
+        raise RuntimeError(
+            f'等待手机扫码超时({timeout_s}s)。请确认电脑蓝牙已开启,且手机与电脑蓝牙可互相发现')
     finally:
-        await scanner.stop()
+        try:
+            await scanner.stop()
+        except Exception:
+            pass
 
     nonce, routing_id, domain = eid_components(eid)
     tunnel_domain = TUNNEL_DOMAINS[domain]

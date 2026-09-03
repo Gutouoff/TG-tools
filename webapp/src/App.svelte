@@ -507,7 +507,10 @@
         addLog(`[通行密钥异常] ${String(e.data ?? '')}`);
         pkQrImg = '';
       }
-      if (e.status === 'passkey_scanning') addLog('[通行密钥] 等待手机扫码…');
+      if (e.status === 'passkey_scanning') addLog('[通行密钥] 等待手机扫码…(电脑蓝牙需已开启)');
+      if (e.status && e.status.startsWith('passkey_adv:')) {
+        addLog(`[蓝牙] 发现广播 ${e.status.slice(11)}`);
+      }
       if (e.status === 'passkey_connecting') addLog('[通行密钥] 蓝牙连接中…');
       if (e.status === 'passkey_handshake') addLog('[通行密钥] 安全握手…');
       if (e.status === 'passkey_awaiting') addLog('[通行密钥] 等待手机确认注册…');
