@@ -183,10 +183,11 @@
   const THEME_COLORS = ['#9BCFDC', '#66BB6A', '#9C27B0', '#FF9800'];
   let settings = $state<Record<string, string | boolean>>({});
   let settingsOpen = $state(false);
+  let themeMode = $derived((settings.theme_mode as string) || 'light');
   async function loadSettings() {
     settings = {
       pack_naming: '{name}_账号包', pack_password: '',
-      theme_seed: '#009688', theme_bg: '#F7FAF9', theme_dark: '#FFFFFF', theme_topbar: '#00796B',
+      theme_seed: '#009688', theme_bg: '#F7FAF9', theme_dark: '#FFFFFF', theme_topbar: '#00796B', theme_mode: 'light',
       proxy_mode: 'none', proxy_scheme: 'socks5', proxy_host: '', proxy_port: '',
     };
     settingsOpen = true;
@@ -203,7 +204,24 @@
     addLog('设置已保存');
     applyTheme();
   }
+  function toggleTheme() {
+    settings = { ...settings, theme_mode: settings.theme_mode === 'dark' ? 'light' : 'dark' };
+    applyTheme();
+    saveSettings(settings).catch(() => {});
+  }
   function applyTheme() {
+    const mode = (settings.theme_mode as string) || 'light';
+    document.documentElement.dataset.theme = mode;
+    if (mode === 'dark') {
+      // 深色模式用 app.css 的 data-theme 变量集,不覆盖系统色
+      const root = document.documentElement.style;
+      root.removeProperty('--md-sys-color-primary');
+      root.removeProperty('--md-sys-color-surface');
+      root.removeProperty('--md-sys-color-surface-container');
+      root.removeProperty('--topbar-color');
+      root.removeProperty('--md-sys-color-primary-container');
+      return;
+    }
     const seed = (settings.theme_seed as string) || '#009688';
     const bg = (settings.theme_bg as string) || '#F7FAF9';
     const dark = (settings.theme_dark as string) || '#FFFFFF';
@@ -491,6 +509,9 @@
   <button class="topbtn" onclick={doReconnect}>重新连接</button>
   <button class="topbtn" onclick={doDisconnect}>断开连接</button>
   <button class="topbtn" onclick={doPack}>打包</button>
+  <button class="topbtn iconbtn" onclick={toggleTheme} title={themeMode === 'dark' ? '切换到浅色' : '切换到深色'}>
+    {themeMode === 'dark' ? '☀️' : '🌙'}
+  </button>
   <button class="topbtn" onclick={loadSettings}>设置</button>
 </header>
 
@@ -774,6 +795,12 @@
           <input bind:value={settings.proxy_port} placeholder="7890" />
         {/if}
 
+        <label>主题模式</label>
+        <select bind:value={settings.theme_mode} onchange={() => applyTheme()}>
+          <option value="light">浅色</option>
+          <option value="dark">深色</option>
+        </select>
+
         <label>按钮 / 主色</label>
         <input type="color" bind:value={settings.theme_seed} onchange={() => applyTheme()} />
         <label>背景浅色</label>
@@ -844,12 +871,13 @@
     width: 100%;
     padding: 10px 12px;
     border: 1px solid var(--md-sys-color-outline);
-    border-radius: 999px;
+    border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-surface);
     color: var(--md-sys-color-on-surface);
     font-size: 14px;
     outline: none;
     margin-bottom: 8px;
+    transition: border-color 0.15s, box-shadow 0.15s;
   }
   .groups {
     display: flex;
@@ -861,10 +889,16 @@
     background: none;
     border: 1px solid var(--md-sys-color-outline);
     color: var(--md-sys-color-on-surface);
-    border-radius: 999px;
-    padding: 4px 10px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 4px 12px;
     cursor: pointer;
     font-size: 12px;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .grp:hover:not(.on) {
+    background: var(--hover-overlay);
+    border-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-primary);
   }
   .grp.on {
     background: var(--md-sys-color-primary);
@@ -878,11 +912,16 @@
     background: none;
     border: 1px solid var(--md-sys-color-primary);
     color: var(--md-sys-color-primary);
-    border-radius: 999px;
-    padding: 2px 8px;
+    border-radius: var(--md-sys-shape-corner-small);
+    padding: 2px 10px;
     cursor: pointer;
     font-size: 11px;
     flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+  }
+  .conv:hover {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
   }
   .ctx {
     position: fixed;
@@ -960,7 +999,7 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #ff9100;
+    background: var(--status-online);
     border: 2px solid var(--md-sys-color-surface-container);
   }
   .avatar.big {
@@ -1105,6 +1144,12 @@
     color: var(--md-sys-color-primary);
     cursor: pointer;
     font-size: 13px;
+    padding: 4px 10px;
+    border-radius: var(--md-sys-shape-corner-small);
+    transition: background 0.15s;
+  }
+  .back:hover {
+    background: var(--hover-overlay);
   }
   .sec-list {
     list-style: none;
@@ -1125,10 +1170,15 @@
     background: none;
     border: 1px solid var(--md-sys-color-error);
     color: var(--md-sys-color-error);
-    border-radius: 999px;
-    padding: 4px 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 4px 14px;
     cursor: pointer;
     font-size: 12px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .danger:hover {
+    background: var(--md-sys-color-error);
+    color: var(--md-sys-color-on-error);
   }
   .empty {
     color: var(--md-sys-color-on-surface-variant);
@@ -1139,12 +1189,20 @@
     width: 100%;
     padding: 10px 12px;
     border: 1px solid var(--md-sys-color-outline);
-    border-radius: 999px;
+    border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-surface);
     color: var(--md-sys-color-on-surface);
     font-size: 14px;
     outline: none;
     margin-bottom: 8px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  input:focus,
+  select:focus,
+  textarea:focus,
+  .search:focus {
+    border-color: var(--md-sys-color-primary);
+    box-shadow: var(--focus-ring);
   }
   .right md-filled-button,
   .right md-outlined-button {
@@ -1152,16 +1210,23 @@
   }
   .topbtn {
     background: none;
-    border: 1px solid var(--md-sys-color-primary-container);
+    border: 1px solid rgba(255, 255, 255, 0.4);
     color: #FFFFFF;
-    border-radius: 999px;
+    border-radius: var(--md-sys-shape-corner-medium);
     padding: 5px 14px;
     cursor: pointer;
     font-size: 13px;
     margin-left: 8px;
+    transition: background 0.15s, border-color 0.15s;
   }
   .topbtn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.7);
+  }
+  .iconbtn {
+    padding: 5px 10px;
+    font-size: 14px;
+    line-height: 1;
   }
   .conn {
     margin-right: 12px;
@@ -1172,10 +1237,14 @@
     background: none;
     border: 1px solid var(--md-sys-color-primary);
     color: var(--md-sys-color-primary);
-    border-radius: 999px;
+    border-radius: var(--md-sys-shape-corner-medium);
     padding: 5px 14px;
     cursor: pointer;
     font-size: 12px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .edit-btn:hover {
+    background: var(--hover-overlay);
   }
   .form {
     display: flex;
@@ -1188,12 +1257,13 @@
     width: 100%;
     padding: 10px 12px;
     border: 1px solid var(--md-sys-color-outline);
-    border-radius: 999px;
+    border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-surface);
     color: var(--md-sys-color-on-surface);
     font-size: 14px;
     outline: none;
     margin-bottom: 8px;
+    transition: border-color 0.15s, box-shadow 0.15s;
   }
   .modal-mask {
     position: fixed;
@@ -1284,7 +1354,7 @@
     display: flex;
     flex: 1;
     border: 1px solid var(--md-sys-color-outline);
-    border-radius: 999px;
+    border-radius: var(--md-sys-shape-corner-medium);
     overflow: hidden;
   }
   .seg {
@@ -1295,6 +1365,10 @@
     font-size: 12px;
     color: var(--md-sys-color-on-surface);
     flex: 1;
+    transition: background 0.15s, color 0.15s;
+  }
+  .seg:hover:not(.on) {
+    background: var(--hover-overlay);
   }
   .seg + .seg {
     border-left: 1px solid var(--md-sys-color-outline);

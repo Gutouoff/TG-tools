@@ -754,6 +754,7 @@ DEFAULT_SETTINGS = {
     'theme_bg': '#C7C7C7',
     'theme_dark': '#d2d2d2',
     'theme_topbar': '#37474f',
+    'theme_mode': 'light',
     'proxy_mode': 'none',
     'proxy_scheme': 'socks5',
     'proxy_host': '',

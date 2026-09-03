@@ -25,7 +25,40 @@
   --topbar-color: #00796B;
   --status-warning: #F2994A;
   --status-success: #2E9B73;
+  --status-online: #FF9100;
   --scrollbar-color: #9ABAB3;
+  --hover-overlay: rgba(0, 150, 136, 0.08);
+  --focus-ring: 0 0 0 2px rgba(0, 150, 136, 0.25);
+}
+
+/* 深色模式 */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --md-sys-color-primary: #83DCCF;
+  --md-sys-color-on-primary: #003731;
+  --md-sys-color-primary-container: #005047;
+  --md-sys-color-on-primary-container: #A7F3E8;
+
+  --md-sys-color-surface: #101413;
+  --md-sys-color-on-surface: #DFE4E1;
+  --md-sys-color-surface-variant: #3F4947;
+  --md-sys-color-on-surface-variant: #BFCCC8;
+  --md-sys-color-outline: #89938F;
+  --md-sys-color-surface-container: #1C2724;
+  --md-sys-color-surface-container-low: #161D1A;
+  --md-sys-color-surface-container-high: #24332F;
+
+  --md-sys-color-error: #FFB4AB;
+  --md-sys-color-on-error: #690005;
+
+  --topbar-color: #003731;
+  --status-warning: #FFB74D;
+  --status-success: #7BDCB5;
+  --status-online: #FF9100;
+  --scrollbar-color: #3E4D49;
+  --hover-overlay: rgba(131, 220, 207, 0.12);
+  --focus-ring: 0 0 0 2px rgba(131, 220, 207, 0.35);
 }
 
 * {
