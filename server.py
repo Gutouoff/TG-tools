@@ -846,20 +846,31 @@ def _copy_file_to_clipboard(path):
         return False
 
 
+def _collect_account_files(src, dst):
+    """把账号目录里需要打包的文件收集到 dst。"""
+    for entry in os.listdir(src):
+        full = os.path.join(src, entry)
+        low = entry.lower()
+        if low == 'tdata':
+            shutil.copytree(full, os.path.join(dst, entry), dirs_exist_ok=True)
+        elif entry.endswith('.session') or entry.endswith('.session-journal'):
+            shutil.copy2(full, os.path.join(dst, entry))
+        elif entry.endswith('.json') and tg_tool._is_account_json(full):
+            shutil.copy2(full, os.path.join(dst, entry))
+        elif low == '2fa.txt':
+            shutil.copy2(full, os.path.join(dst, entry))
+
+
 @app.post('/api/pack')
 async def pack_account(body: dict):
     import datetime
+    import zipfile
     path = _ensure_in_root(body.get('path', ''))
     name = _clean_name(body.get('name', ''))
     if not os.path.isdir(path):
         return {'ok': False, 'msg': '账号路径无效'}
     s = _load_settings()
     password = str(s.get('pack_password') or '')
-    if not password:
-        return {'ok': False, 'msg': '请先设置打包密码，禁止生成明文账号包'}
-    seven = shutil.which('7z') or shutil.which('7za')
-    if not seven:
-        return {'ok': False, 'msg': '未找到 7-Zip，无法生成加密账号包'}
     naming = s.get('pack_naming', '{name}_账号包')
     try:
         base = naming.format(name=name, date=datetime.date.today().strftime('%Y%m%d'))
@@ -867,41 +878,59 @@ async def pack_account(body: dict):
         base = f'{name}_账号包'
     base = _clean_name(base)
     zip_path = os.path.join(ROOT, f'{base}.zip')
-    staging = os.path.join(ROOT, f'.{base}_pack_staging')
-    try:
-        if os.path.exists(staging):
-            shutil.rmtree(staging, ignore_errors=True)
-        os.makedirs(staging)
-        for entry in os.listdir(path):
-            full = os.path.join(path, entry)
-            low = entry.lower()
-            if low == 'tdata':
-                shutil.copytree(full, os.path.join(staging, entry), dirs_exist_ok=True)
-            elif entry.endswith('.session') or entry.endswith('.session-journal'):
-                shutil.copy2(full, os.path.join(staging, entry))
-            elif entry.endswith('.json') and tg_tool._is_account_json(full):
-                shutil.copy2(full, os.path.join(staging, entry))
-            elif low == '2fa.txt':
-                shutil.copy2(full, os.path.join(staging, entry))
-        if os.path.exists(zip_path):
-            os.remove(zip_path)
-        proc = subprocess.run(
-            [seven, 'a', '-tzip', '-mem=AES256', f'-p{password}', '-y', zip_path, '.'],
-            cwd=staging, capture_output=True, timeout=120,
-        )
-        if proc.returncode != 0 or not os.path.isfile(zip_path):
-            raise RuntimeError((proc.stderr or proc.stdout).decode(errors='replace')[-200:])
-    except Exception as e:
+
+    if password:
+        # 有密码: 7z AES-256 加密
+        seven = shutil.which('7z') or shutil.which('7za')
+        if not seven:
+            return {'ok': False, 'msg': '未找到 7-Zip，无法生成加密账号包'}
+        staging = os.path.join(ROOT, f'.{base}_pack_staging')
         try:
-            if os.path.isfile(zip_path):
+            if os.path.exists(staging):
+                shutil.rmtree(staging, ignore_errors=True)
+            os.makedirs(staging)
+            _collect_account_files(path, staging)
+            if os.path.exists(zip_path):
                 os.remove(zip_path)
-        except OSError:
-            pass
-        return {'ok': False, 'msg': f'加密打包失败: {str(e)[:200]}'}
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
+            proc = subprocess.run(
+                [seven, 'a', '-tzip', '-mem=AES256', f'-p{password}', '-y', zip_path, '.'],
+                cwd=staging, capture_output=True, timeout=120,
+            )
+            if proc.returncode != 0 or not os.path.isfile(zip_path):
+                raise RuntimeError((proc.stderr or proc.stdout).decode(errors='replace')[-200:])
+        except Exception as e:
+            try:
+                if os.path.isfile(zip_path):
+                    os.remove(zip_path)
+            except OSError:
+                pass
+            return {'ok': False, 'msg': f'加密打包失败: {str(e)[:200]}'}
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        clip = _copy_file_to_clipboard(zip_path)
+        return {'ok': True, 'msg': f'已加密打包{"并复制到剪贴板" if clip else ""}：{os.path.basename(zip_path)}'}
+
+    # 无密码: zipfile 明文
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for entry in os.listdir(path):
+                full = os.path.join(path, entry)
+                low = entry.lower()
+                if low == 'tdata':
+                    for r2, dirs, files in os.walk(full):
+                        for f in files:
+                            fp = os.path.join(r2, f)
+                            zf.write(fp, os.path.relpath(fp, path))
+                elif entry.endswith('.session') or entry.endswith('.session-journal'):
+                    zf.write(full, entry)
+                elif entry.endswith('.json') and tg_tool._is_account_json(full):
+                    zf.write(full, entry)
+                elif low == '2fa.txt':
+                    zf.write(full, entry)
+    except Exception as e:
+        return {'ok': False, 'msg': f'打包失败: {str(e)[:200]}'}
     clip = _copy_file_to_clipboard(zip_path)
-    return {'ok': True, 'msg': f'已加密打包{"并复制到剪贴板" if clip else ""}：{os.path.basename(zip_path)}'}
+    return {'ok': True, 'msg': f'已打包{"并复制到剪贴板" if clip else ""}：{os.path.basename(zip_path)}'}
 
 
 # ---------- 静态前端 ----------
