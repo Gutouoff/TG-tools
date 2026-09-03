@@ -306,10 +306,13 @@ async def avatar_image(name: str):
     p = prof.get(name, {}).get('avatar', '')
     if p:
         real = os.path.realpath(p)
-        av_dir = os.path.realpath(tg_profile.AVATAR_DIR)
+        # 允许的头像目录: exe 的 avatars + 旧工具箱的 avatars(历史缓存)
+        allowed = [os.path.realpath(tg_profile.AVATAR_DIR),
+                   os.path.realpath(os.path.join(ROOT, '工具箱', 'avatars'))]
         try:
-            # 只允许读头像目录内的文件,防 profiles.json 被篡改后任意文件读取
-            if os.path.commonpath([real, av_dir]) == av_dir and os.path.isfile(real):
+            ok = os.path.isfile(real) and any(
+                os.path.commonpath([real, d]) == d for d in allowed)
+            if ok:
                 media = _guess_image_media(real)
                 return FileResponse(real, media_type=media) if media else FileResponse(real)
         except ValueError:
