@@ -713,6 +713,8 @@ DEFAULT_SETTINGS = {
     'pack_password': '',
     'theme_seed': '#9BCFDC',
     'theme_bg': '#C7C7C7',
+    'theme_dark': '#d2d2d2',
+    'theme_topbar': '#37474f',
     'proxy_mode': 'none',
     'proxy_scheme': 'socks5',
     'proxy_host': '',

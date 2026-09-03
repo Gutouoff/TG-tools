@@ -188,10 +188,10 @@ async def _fetch_one(loop, name, d, cfg_path, cfg):
     if client is None:
         return None
     try:
-        await client.connect()
-        if not await client.is_user_authorized():
+        await asyncio.wait_for(client.connect(), timeout=20)
+        if not await asyncio.wait_for(client.is_user_authorized(), timeout=10):
             return None
-        me = await client.get_me()
+        me = await asyncio.wait_for(client.get_me(), timeout=15)
         info = {
             'username': me.username or '',
             'first': me.first_name or '',

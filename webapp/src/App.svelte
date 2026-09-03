@@ -173,12 +173,14 @@
   let settingsOpen = $state(false);
   async function loadSettings() {
     settings = {
-      pack_naming: '{name}_账号包', pack_password: '', theme_seed: '#9BCFDC',
+      pack_naming: '{name}_账号包', pack_password: '',
+      theme_seed: '#9BCFDC', theme_bg: '#C7C7C7', theme_dark: '#d2d2d2', theme_topbar: '#37474f',
       proxy_mode: 'none', proxy_scheme: 'socks5', proxy_host: '', proxy_port: '',
     };
     settingsOpen = true;
     try {
       settings = await getSettings();
+      applyTheme();
     } catch (e) {
       // 保持默认值
     }
@@ -191,8 +193,15 @@
   }
   function applyTheme() {
     const seed = (settings.theme_seed as string) || '#9BCFDC';
-    document.documentElement.style.setProperty('--md-sys-color-primary', seed);
-    document.documentElement.style.setProperty('--md-sys-color-primary-container', seed);
+    const bg = (settings.theme_bg as string) || '#C7C7C7';
+    const dark = (settings.theme_dark as string) || '#d2d2d2';
+    const topbar = (settings.theme_topbar as string) || '#37474f';
+    const root = document.documentElement.style;
+    root.setProperty('--md-sys-color-primary', seed);
+    root.setProperty('--md-sys-color-primary-container', seed);
+    root.setProperty('--md-sys-color-surface', bg);
+    root.setProperty('--md-sys-color-surface-container', dark);
+    root.setProperty('--topbar-color', topbar);
   }
 
   async function showWhitelist() {
@@ -447,9 +456,15 @@
     }
   });
 
-  onMount(() => {
+  onMount(async () => {
     loadGroups();
     loadAccounts();
+    try {
+      settings = await getSettings();
+      applyTheme();
+    } catch (e) {
+      // 保持默认主题
+    }
   });
 </script>
 
@@ -739,18 +754,14 @@
           <input bind:value={settings.proxy_port} placeholder="7890" />
         {/if}
 
-        <label>色调</label>
-        <div class="swatches">
-          {#each THEME_COLORS as c}
-            <button
-              class="swatch"
-              class:on={settings.theme_seed === c}
-              style="background:{c}"
-              onclick={() => { settings.theme_seed = c; applyTheme(); }}
-            ></button>
-          {/each}
-          <input type="color" bind:value={settings.theme_seed} onchange={() => applyTheme()} />
-        </div>
+        <label>按钮 / 主色</label>
+        <input type="color" bind:value={settings.theme_seed} onchange={() => applyTheme()} />
+        <label>背景浅色</label>
+        <input type="color" bind:value={settings.theme_bg} onchange={() => applyTheme()} />
+        <label>背景深色（卡片）</label>
+        <input type="color" bind:value={settings.theme_dark} onchange={() => applyTheme()} />
+        <label>顶栏颜色</label>
+        <input type="color" bind:value={settings.theme_topbar} onchange={() => applyTheme()} />
 
         <md-filled-button onclick={doSaveSettings}>保存设置</md-filled-button>
       </div>
@@ -764,7 +775,7 @@
     align-items: center;
     height: 64px;
     padding: 0 24px;
-    background: #37474f;
+    background: var(--topbar-color, #37474f);
     color: #eceff1;
   }
   .title {
