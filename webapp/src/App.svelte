@@ -118,6 +118,7 @@
         if (av.ok && av.info && av.info.avatar) {
           a.avatar = av.info.avatar;
           avatarFailed = new Set([...avatarFailed].filter((n) => n !== a.name));
+          applyFilter();
         }
       } catch (e) {
         // 忽略头像刷新失败
