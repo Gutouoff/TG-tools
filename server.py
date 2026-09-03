@@ -460,18 +460,61 @@ async def delete_passkey(body: dict):
     return {'ok': ok, 'msg': data}
 
 
+# ---------- Telegram 官方 caBLE passkey QR 格式(对照 tdesktop webauthn/cable_core.cpp) ----------
+CABLE_TUNNEL_DOMAINS = ["cable.ua5v.com", "cable.auth.com"]
+
+
+def _bytes_to_digits(data: bytes) -> str:
+    """BytesToDigits: 每 7 字节按小端转固定宽度十进制数(前导零),对应官方实现。"""
+    widths = [0, 3, 5, 8, 10, 13, 15, 17]
+    out = []
+    i = 0
+    n = len(data)
+    while i < n:
+        take = min(7, n - i)
+        value = 0
+        for j in range(take):
+            value |= data[i + j] << (8 * j)
+        out.append(str(value).zfill(widths[take]))
+        i += take
+    return ''.join(out)
+
+
+def _make_cable_qr_uri():
+    """生成 caBLE makeCredential QR: FIDO:/ + digits(CBOR(cable 参数))。"""
+    import secrets as _sec
+    import time
+    import cbor2
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import serialization
+    priv = ec.generate_private_key(ec.SECP256R1())
+    pub_bytes = priv.public_key().public_bytes(
+        encoding=serialization.Encoding.X962,
+        format=serialization.PublicFormat.CompressedPoint)
+    secret = _sec.token_bytes(16)
+    cbor_map = {
+        0: pub_bytes,              # identity 公钥(压缩 X9.62, 33 字节)
+        1: secret,                 # 16 字节随机 secret
+        2: len(CABLE_TUNNEL_DOMAINS),  # tunnel 域名数量 = 2
+        3: int(time.time()),       # 时间戳
+        4: False,                  # 保留布尔
+        5: b'mc',                  # makeCredential
+    }
+    cbor_bytes = cbor2.dumps(cbor_map)
+    return 'FIDO:/' + _bytes_to_digits(cbor_bytes)
+
+
 @app.post('/api/passkeys/init')
 async def init_passkey():
     eng = init_engine()
     ok, data = await _call(eng.init_passkey_registration)
     if not ok:
         return {'ok': False, 'msg': str(data)}
-    # 生成 fido:/ URI 二维码图片(base64 PNG)
+    # 生成官方 caBLE QR(内容为配对参数,手机扫码后走蓝牙 caBLE 流程)
     import base64
     import io
     import qrcode
-    b64 = base64.urlsafe_b64encode(str(data).encode('utf-8')).decode('ascii').rstrip('=')
-    uri = f'fido:/{b64}'
+    uri = _make_cable_qr_uri()
     qr = qrcode.QRCode(border=2)
     qr.add_data(uri)
     qr.make(fit=True)
