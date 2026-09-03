@@ -45,6 +45,7 @@ echo [4/4] 补充头像与资料缓存...
 if exist "D:\Desktop\TG小号\工具箱\avatars" (
     if not exist "%DST%\avatars" mkdir "%DST%\avatars"
     copy /y "D:\Desktop\TG小号\工具箱\avatars\*.png" "%DST%\avatars\" >nul
+    copy /y "D:\Desktop\TG小号\工具箱\avatars\*.jpg" "%DST%\avatars\" >nul
 )
 for %%F in (profiles.json whitelist.json nicknames.json) do (
     if exist "D:\Desktop\TG小号\工具箱\%%F" copy /y "D:\Desktop\TG小号\工具箱\%%F" "%DST%\%%F" >nul

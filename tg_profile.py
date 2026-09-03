@@ -112,7 +112,8 @@ def save_profiles(prof):
 
 
 def avatar_path(name):
-    return os.path.join(AVATAR_DIR, f'{name}.png')
+    # Telegram 头像本质是 JPEG,存 .jpg 避免 JPEG 字节塞进 .png 导致前端 content-type 不匹配
+    return os.path.join(AVATAR_DIR, f'{name}.jpg')
 
 
 # 白名单昵称缓存(联网验证用户时顺手记录)
@@ -200,13 +201,14 @@ async def _fetch_one(loop, name, d, cfg_path, cfg):
             'uid': str(me.id),
             'dc': str(getattr(client.session, 'dc_id', '') or ''),
         }
-        # 头像
+        # 头像: 用 download_profile_photo(走 dc_id / InputPeerPhotoFileLocation,
+        # 头像在别的 DC 也能拉),写入 .jpg 保持字节与扩展名一致
         try:
-            photos = await asyncio.wait_for(client.get_profile_photos('me', limit=1), timeout=20)
-            if photos:
-                os.makedirs(AVATAR_DIR, exist_ok=True)
-                await asyncio.wait_for(client.download_media(photos[0], avatar_path(name)), timeout=30)
-                info['avatar'] = avatar_path(name)
+            os.makedirs(AVATAR_DIR, exist_ok=True)
+            path = await asyncio.wait_for(
+                client.download_profile_photo(me, avatar_path(name)), timeout=30)
+            if path:
+                info['avatar'] = path
         except Exception:
             pass
         return info
@@ -219,7 +221,8 @@ async def _fetch_one(loop, name, d, cfg_path, cfg):
 
 def _worker(root, on_update):
     """后台线程: 串行刷全部账号(每号间隔 1s 防风控),增量落盘。
-    on_update 返回 True = 取消。已连接账号跳过(防 session 冲突)。"""
+    on_update 返回 True = 取消。已连接账号跳过(防 session 冲突)。
+    全部结束后回调 on_update(None, None) 作为完成信号。"""
     prof = load_profiles()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -235,6 +238,10 @@ def _worker(root, on_update):
             except Exception:
                 info = None
             if info:
+                # 本次没拉到新头像时保留旧缓存头像,避免重复刷新把已有图抹掉
+                old = prof.get(name, {})
+                if not info.get('avatar') and old.get('avatar'):
+                    info['avatar'] = old['avatar']
                 prof[name] = info
                 save_profiles(prof)
             if on_update:
@@ -242,6 +249,11 @@ def _worker(root, on_update):
             loop.run_until_complete(asyncio.sleep(1.0))
     finally:
         loop.close()
+    if on_update:
+        try:
+            on_update(None, None)   # 完成信号
+        except Exception:
+            pass
 
 
 def start_refresh(root, on_update=None):

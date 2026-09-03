@@ -29,3 +29,6 @@ dist/
 # 前端构建
 node_modules/
 webapp/dist/
+
+# 工具临时目录
+.zcode/

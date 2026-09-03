@@ -255,12 +255,33 @@ async def me():
 async def fetch_avatars():
     """一键获取所有账号头像/资料(复用 tg_profile 后台刷新,增量落盘)。"""
     def on_update(name, info):
-        _emit({'type': 'progress', 'label': f'拉取 {name}', 'done': 0, 'total': 0})
+        if name is None:
+            _emit({'type': 'avatars_done'})
+        else:
+            _emit({'type': 'progress', 'label': f'拉取 {name}', 'done': 0, 'total': 0})
     try:
         tg_profile.start_refresh(ROOT, on_update)
         return {'ok': True, 'msg': '已开始后台获取头像'}
     except Exception as e:
         return {'ok': False, 'msg': str(e)}
+
+
+def _guess_image_media(path):
+    """按文件头字节判断真实图片类型(兼容历史头像 JPEG 字节存成 .png 的情况)。"""
+    try:
+        with open(path, 'rb') as f:
+            head = f.read(16)
+    except Exception:
+        return None
+    if head[:3] == b'\xff\xd8\xff':
+        return 'image/jpeg'
+    if head[:8] == b'\x89PNG\r\n\x1a\n':
+        return 'image/png'
+    if head[:6] in (b'GIF87a', b'GIF89a'):
+        return 'image/gif'
+    if head[:4] == b'RIFF' and head[8:12] == b'WEBP':
+        return 'image/webp'
+    return None
 
 
 @app.get('/api/avatar-image')
@@ -275,7 +296,8 @@ async def avatar_image(name: str):
         try:
             # 只允许读头像目录内的文件,防 profiles.json 被篡改后任意文件读取
             if os.path.commonpath([real, av_dir]) == av_dir and os.path.isfile(real):
-                return FileResponse(real)
+                media = _guess_image_media(real)
+                return FileResponse(real, media_type=media) if media else FileResponse(real)
         except ValueError:
             pass
     return JSONResponse(status_code=404, content={'detail': 'no avatar'})

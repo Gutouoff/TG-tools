@@ -11,7 +11,7 @@ export interface Account {
 }
 
 export interface LogEvent {
-  type: 'log' | 'progress' | 'state';
+  type: 'log' | 'progress' | 'state' | 'avatars_done';
   line?: string;
   done?: number;
   total?: number;

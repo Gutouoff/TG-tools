@@ -454,6 +454,11 @@
       if (e.status === 'done') addLog('[完成]');
       if (e.status === 'error') addLog(`[错误] ${String(e.data ?? '')}`);
     }
+    if (e.type === 'avatars_done') {
+      addLog('[头像获取完成]');
+      avatarFailed = new Set();
+      loadAccounts();
+    }
   });
 
   onMount(async () => {
