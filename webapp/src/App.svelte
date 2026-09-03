@@ -279,6 +279,10 @@
         const parsed = JSON.parse(init.publicKey);
         // Telegram 返回 {"publicKey": {...}},内层才是 WebAuthn options
         const options = parsed.publicKey || parsed;
+        // WebAuthn 要求 rp.id 匹配页面域名,本地程序是 localhost,改成本机 host
+        if (options.rp) {
+          options.rp.id = location.hostname;
+        }
         // WebAuthn 要求 challenge/user.id 是 BufferSource,Telegram 给的是 base64url 字符串
         options.challenge = b64urlToBuf(options.challenge);
         if (options.user && options.user.id) {
