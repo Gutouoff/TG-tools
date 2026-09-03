@@ -256,10 +256,20 @@
   let new2fa = $state('');
   let cur2fa = $state('');
 
+  let pkOptions = $state<any>(null);
   async function loadPasskeys() {
     setView('passkey');
     const r = await getPasskeys();
     passkeys = r.ok ? r.passkeys : [];
+    // 预取 WebAuthn 注册参数(避免点击时 await 丢失 user gesture)
+    try {
+      const init = await initPasskey();
+      if (init.ok && init.publicKey) {
+        pkOptions = JSON.parse(init.publicKey);
+      }
+    } catch (e) {
+      pkOptions = null;
+    }
   }
   async function loadDevices() {
     setView('devices');
@@ -289,16 +299,14 @@
     return b64(buf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
   async function doInitPasskey() {
+    if (!pkOptions) {
+      addLog('注册参数未准备好，请重新进入通行密钥页');
+      return;
+    }
     try {
-      const r = await initPasskey();
-      if (!r.ok || !r.publicKey) {
-        addLog(`生成失败: ${r.msg || '无注册参数'}`);
-        return;
-      }
-      addLog('请在系统弹窗中选择设备完成通行密钥注册(可选手持设备跨设备)…');
-      const options = JSON.parse(r.publicKey);
+      addLog('请在系统弹窗中选择设备完成通行密钥注册(可选跨设备)…');
       const credential = (await navigator.credentials.create({
-        publicKey: options,
+        publicKey: pkOptions,
       })) as PublicKeyCredential;
       const resp = credential.response as AuthenticatorAttestationResponse;
       const credId = credential.id;
