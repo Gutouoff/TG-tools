@@ -64,7 +64,11 @@
   let avatarFailed = $state<Set<string>>(new Set());
   // 卡片折叠记忆
   let cardOpen = $state<Record<string, boolean>>({});
+  // 恢复保存的折叠状态前,忽略浏览器对初始 open 属性派发的 toggle 事件,
+  // 否则默认状态会被写回 settings.json 覆盖用户保存的值
+  let cardOpenRestored = false;
   function onCardToggle(name: string, open: boolean) {
+    if (!cardOpenRestored) return;
     cardOpen = { ...cardOpen, [name]: open };
     saveSettings({ card_open: cardOpen }).catch(() => {});
   }
@@ -539,7 +543,13 @@
         flushSync(() => {
           cardOpen = co as Record<string, boolean>;
         });
+        // 恢复后把 details 元素的 open 同步到保存值(flushSync 不一定触发 open 属性更新)
+        for (const el of document.querySelectorAll('details.card')) {
+          const name = el.getAttribute('data-card');
+          if (name && name in cardOpen) el.open = !!cardOpen[name];
+        }
       }
+      cardOpenRestored = true;
     } catch (e) {
       // 保持默认主题
     }
@@ -626,7 +636,7 @@
   <div class="splitter" onmousedown={(e) => startDrag(e, 'left')}></div>
 
   <section class="mid" style="width:{midW}px">
-    <details class="card" open={isCardOpen('删除', true)} ontoggle={(e) => onCardToggle('删除', (e.currentTarget as HTMLDetailsElement).open)}>
+    <details class="card" data-card="删除" open={isCardOpen('删除', true)} ontoggle={(e) => onCardToggle('删除', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>删除</summary>
       <div class="grid">
         <md-filled-button onclick={() => postTask('/api/tasks/delete-contacts')}>删联系人</md-filled-button>
@@ -644,7 +654,7 @@
       </div>
     </details>
 
-    <details class="card" open={isCardOpen('基本信息', true)} ontoggle={(e) => onCardToggle('基本信息', (e.currentTarget as HTMLDetailsElement).open)}>
+    <details class="card" data-card="基本信息" open={isCardOpen('基本信息', true)} ontoggle={(e) => onCardToggle('基本信息', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>基本信息</summary>
       <div class="bi">
         {#if current?.avatar && !avatarFailed.has(current.name)}
@@ -662,7 +672,7 @@
       </div>
     </details>
 
-    <details class="card" open={isCardOpen('安全', false)} ontoggle={(e) => onCardToggle('安全', (e.currentTarget as HTMLDetailsElement).open)}>
+    <details class="card" data-card="安全" open={isCardOpen('安全', false)} ontoggle={(e) => onCardToggle('安全', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>安全</summary>
       <div class="grid">
         <md-outlined-button onclick={load2FA}>两步验证</md-outlined-button>
@@ -672,7 +682,7 @@
       </div>
     </details>
 
-    <details class="card" open={isCardOpen('其他设置', false)} ontoggle={(e) => onCardToggle('其他设置', (e.currentTarget as HTMLDetailsElement).open)}>
+    <details class="card" data-card="其他设置" open={isCardOpen('其他设置', false)} ontoggle={(e) => onCardToggle('其他设置', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>其他设置</summary>
       <div class="grid">
         <md-outlined-button onclick={() => updateTelegram()}>更新本体</md-outlined-button>
