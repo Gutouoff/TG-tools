@@ -49,7 +49,8 @@ def main():
     tg_tool.load_proxy_cfg()
 
     port, token = server.start_server()
-    url = f'http://127.0.0.1:{port}/?token={token}'
+    # 用 localhost(不是 127.0.0.1),WebAuthn 的 rp.id 才能匹配(localhost 是特殊例外)
+    url = f'http://localhost:{port}/?token={token}'
 
     w, h = _load_geometry()
     win = webview.create_window(

@@ -568,7 +568,9 @@
       applyTheme();
       const co = (settings as any).card_open;
       if (co && typeof co === 'object') {
-        cardOpen = co as Record<string, boolean>;
+        flushSync(() => {
+          cardOpen = co as Record<string, boolean>;
+        });
       }
     } catch (e) {
       // 保持默认主题
