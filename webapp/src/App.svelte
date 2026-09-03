@@ -34,6 +34,7 @@
     importArchive,
     packAccount,
     fetchAvatars,
+    refreshAvatar,
     getSettings,
     saveSettings,
     getMe,
@@ -111,6 +112,16 @@
       }
       markOnline(a.name, true);
       addLog(`已连接 ${a.name}${uname ? ` (@${uname})` : ''}`);
+      // 连接成功后刷新一次头像
+      try {
+        const av = await refreshAvatar(a.name);
+        if (av.ok && av.info && av.info.avatar) {
+          a.avatar = av.info.avatar;
+          avatarFailed = new Set([...avatarFailed].filter((n) => n !== a.name));
+        }
+      } catch (e) {
+        // 忽略头像刷新失败
+      }
     } else {
       addLog(`连接失败: ${r.msg || '未知错误'}`);
     }
@@ -515,8 +526,11 @@
             {/if}
           </div>
           <span class="meta">
-            <span class="nm">{a.display || a.name}{a.username ? ` (@${a.username})` : ''}</span>
-            <span class="sub">{a.country ? `${a.country} · ` : ''}{a.phone ? `+${a.phone}` : a.state}</span>
+            <span class="nm">
+              {a.display || a.name}
+              {#if a.username}<span class="uname">{a.username}</span>{/if}
+            </span>
+            <span class="sub">{a.country ? `${a.country} ` : ''}{a.phone ? `+${a.phone}` : a.state}</span>
           </span>
           {#if a.state === 'tdata'}
             <button class="conv" onclick={(e) => { e.stopPropagation(); doConvertTdata(a); }}>转换</button>
@@ -964,6 +978,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .uname {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--md-sys-color-on-surface-variant);
+    margin-left: 4px;
   }
   .sub {
     font-size: 12px;

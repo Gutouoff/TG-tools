@@ -286,6 +286,18 @@ def _guess_image_media(path):
     return None
 
 
+@app.post('/api/refresh-avatar')
+async def refresh_avatar(body: dict):
+    """连接账号后刷新单个账号头像(后台线程,同步等待)。"""
+    name = body.get('name', '')
+    if not name:
+        return {'ok': False, 'msg': '缺少账号名'}
+    def _run():
+        return tg_profile.refresh_one(ROOT, name)
+    info = await asyncio.to_thread(_run)
+    return {'ok': info is not None, 'info': _jsonable(info) if info else {}}
+
+
 @app.get('/api/avatar-image')
 async def avatar_image(name: str):
     """返回账号头像图片(供前端 <img> 加载,失败 404 回退色块)。"""

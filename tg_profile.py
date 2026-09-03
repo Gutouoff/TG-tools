@@ -261,3 +261,31 @@ def start_refresh(root, on_update=None):
     t = threading.Thread(target=_worker, args=(root, on_update), daemon=True)
     t.start()
     return t
+
+
+def refresh_one(root, name):
+    """连接单个账号拉一次头像+资料,同步返回 info dict 或 None。"""
+    import tg_tool
+    js = tg_tool._account_jsons(os.path.join(root, name))
+    if not js:
+        return None
+    try:
+        cfg = json.load(open(js[0], encoding='utf-8'))
+    except Exception:
+        return None
+    loop = asyncio.new_event_loop()
+    try:
+        info = loop.run_until_complete(
+            asyncio.wait_for(_fetch_one(loop, name, os.path.join(root, name), js[0], cfg), timeout=90))
+    except Exception:
+        info = None
+    finally:
+        loop.close()
+    if info:
+        prof = load_profiles()
+        old = prof.get(name, {})
+        if not info.get('avatar') and old.get('avatar'):
+            info['avatar'] = old['avatar']
+        prof[name] = info
+        save_profiles(prof)
+    return info
