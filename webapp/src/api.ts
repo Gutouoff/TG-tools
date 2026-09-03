@@ -68,7 +68,8 @@ export async function postTask(url: string, body?: object) {
 }
 
 export function connectWS(onMessage: (e: LogEvent) => void): WebSocket {
-  const ws = new WebSocket(`ws://${location.host}/ws?token=${encodeURIComponent(TOKEN)}`);
+  const wsScheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${wsScheme}://${location.host}/ws?token=${encodeURIComponent(TOKEN)}`);
   ws.onmessage = (ev) => {
     try {
       onMessage(JSON.parse(ev.data));

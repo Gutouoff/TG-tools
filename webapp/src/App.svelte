@@ -732,8 +732,8 @@
       <div class="form">
         <label>打包文件命名格式（name=账号名 date=日期）</label>
         <input bind:value={settings.pack_naming} />
-        <label>默认压缩密码（暂未启用加密）</label>
-        <input bind:value={settings.pack_password} />
+        <label>默认压缩密码（使用 AES-256 加密）</label>
+        <input type="password" autocomplete="new-password" bind:value={settings.pack_password} />
 
         <label>代理模式</label>
         <select bind:value={settings.proxy_mode}>
