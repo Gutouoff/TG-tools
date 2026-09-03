@@ -753,6 +753,42 @@ async def set_settings(body: dict):
 
 
 # ---------- 打包账号(仅 tdata + session + json + 2fa.txt,zip + 剪贴板) ----------
+def _copy_file_to_clipboard(path):
+    """复制文件到剪贴板(CF_HDROP),纯 ctypes 无 shell 注入。"""
+    import ctypes
+    from ctypes import wintypes
+    try:
+        CF_HDROP = 15
+        GMEM_MOVEABLE = 0x0002
+        GMEM_ZEROINIT = 0x0040
+
+        class DROPFILES(ctypes.Structure):
+            _fields_ = [('pFiles', wintypes.DWORD),
+                        ('pt', wintypes.POINT),
+                        ('fNC', wintypes.BOOL),
+                        ('fWide', wintypes.BOOL)]
+
+        df = DROPFILES()
+        df.pFiles = ctypes.sizeof(DROPFILES)
+        df.fWide = True
+        head = ctypes.string_at(ctypes.addressof(df), ctypes.sizeof(DROPFILES))
+        payload = head + path.encode('utf-16-le') + b'\x00\x00'
+
+        kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32
+        hmem = kernel32.GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, len(payload))
+        ptr = kernel32.GlobalLock(hmem)
+        ctypes.memmove(ptr, payload, len(payload))
+        kernel32.GlobalUnlock(hmem)
+        user32.OpenClipboard(None)
+        user32.EmptyClipboard()
+        user32.SetClipboardData(CF_HDROP, hmem)
+        user32.CloseClipboard()
+        return True
+    except Exception:
+        return False
+
+
 @app.post('/api/pack')
 async def pack_account(body: dict):
     import zipfile
@@ -787,7 +823,8 @@ async def pack_account(body: dict):
                     zf.write(full, entry)
     except Exception as e:
         return {'ok': False, 'msg': f'打包失败: {str(e)[:200]}'}
-    return {'ok': True, 'msg': f'已打包：{os.path.basename(zip_path)}'}
+    clip = _copy_file_to_clipboard(zip_path)
+    return {'ok': True, 'msg': f'已打包{"并复制到剪贴板" if clip else ""}：{os.path.basename(zip_path)}'}
 
 
 # ---------- 静态前端 ----------

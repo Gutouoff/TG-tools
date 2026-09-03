@@ -171,13 +171,14 @@
   let settings = $state<Record<string, string | boolean>>({});
   let settingsOpen = $state(false);
   async function loadSettings() {
+    settings = { pack_naming: '{name}_账号包', pack_password: '', use_system_proxy: false, theme_seed: '#9BCFDC' };
     rightView = 'settings';
+    settingsOpen = true;
     try {
       settings = await getSettings();
     } catch (e) {
-      settings = { pack_naming: '{name}_账号包', pack_password: '', use_system_proxy: false, theme_seed: '#9BCFDC' };
+      // 保持默认值
     }
-    settingsOpen = true;
   }
   async function doSaveSettings() {
     await saveSettings(settings);
