@@ -62,6 +62,17 @@
   }
 
   let avatarFailed = $state<Set<string>>(new Set());
+  // 卡片折叠记忆
+  let cardOpen = $state<Record<string, boolean>>({});
+  function onCardToggle(name: string, open: boolean) {
+    cardOpen = { ...cardOpen, [name]: open };
+    try {
+      localStorage.setItem('cardOpen', JSON.stringify(cardOpen));
+    } catch (e) {}
+  }
+  function isCardOpen(name: string, def: boolean): boolean {
+    return cardOpen[name] ?? def;
+  }
   function onAvatarError(name: string) {
     const next = new Set(avatarFailed);
     next.add(name);
@@ -265,7 +276,9 @@
     try {
       const init = await initPasskey();
       if (init.ok && init.publicKey) {
-        const options = JSON.parse(init.publicKey);
+        const parsed = JSON.parse(init.publicKey);
+        // Telegram 返回 {"publicKey": {...}},内层才是 WebAuthn options
+        const options = parsed.publicKey || parsed;
         // WebAuthn 要求 challenge/user.id 是 BufferSource,Telegram 给的是 base64url 字符串
         options.challenge = b64urlToBuf(options.challenge);
         if (options.user && options.user.id) {
@@ -549,6 +562,9 @@
     loadGroups();
     loadAccounts();
     try {
+      cardOpen = JSON.parse(localStorage.getItem('cardOpen') || '{}');
+    } catch (e) {}
+    try {
       settings = await getSettings();
       applyTheme();
     } catch (e) {
@@ -637,7 +653,7 @@
   <div class="splitter" onmousedown={(e) => startDrag(e, 'left')}></div>
 
   <section class="mid" style="width:{midW}px">
-    <details class="card" open>
+    <details class="card" open={isCardOpen('删除', true)} ontoggle={(e) => onCardToggle('删除', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>删除</summary>
       <div class="grid">
         <md-filled-button onclick={() => postTask('/api/tasks/delete-contacts')}>删联系人</md-filled-button>
@@ -655,7 +671,7 @@
       </div>
     </details>
 
-    <details class="card" open>
+    <details class="card" open={isCardOpen('基本信息', true)} ontoggle={(e) => onCardToggle('基本信息', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>基本信息</summary>
       <div class="bi">
         {#if current?.avatar && !avatarFailed.has(current.name)}
@@ -673,7 +689,7 @@
       </div>
     </details>
 
-    <details class="card">
+    <details class="card" open={isCardOpen('安全', false)} ontoggle={(e) => onCardToggle('安全', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>安全</summary>
       <div class="grid">
         <md-outlined-button onclick={load2FA}>两步验证</md-outlined-button>
@@ -683,7 +699,7 @@
       </div>
     </details>
 
-    <details class="card">
+    <details class="card" open={isCardOpen('其他设置', false)} ontoggle={(e) => onCardToggle('其他设置', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>其他设置</summary>
       <div class="grid">
         <md-outlined-button onclick={() => updateTelegram()}>更新本体</md-outlined-button>
