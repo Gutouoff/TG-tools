@@ -385,8 +385,9 @@ def parse_public_key_options(public_key_json: str) -> dict:
 # ---------- 完整注册流程 ----------
 _MSG_CTAP = 0x01
 _CABLE_SERVICE_UUIDS = (
-    "0000fde2-0000-1000-8000-00805f9b34fb",  # Google caBLE
-    "0000fff9-0000-1000-8000-00805f9b34fb",  # FIDO caBLE
+    "0000fde2-0000-1000-8000-00805f9b34fb",  # Google caBLE(旧)
+    "0000fff9-0000-1000-8000-00805f9b34fb",  # FIDO caBLE(旧)
+    "0000fcf1-0000-1000-8000-00805f9b34fb",  # Chromium caBLE(新,2024+)
 )
 
 
@@ -432,6 +433,8 @@ async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=No
             if eid is not None:
                 advert_future.set_result(eid)
                 return
+            if on_state:
+                on_state(f'decrypt_fail:{len(data)}')
 
     scanner = BleakScanner(detection_callback=_detect)
     try:
