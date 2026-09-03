@@ -265,36 +265,10 @@
   let new2fa = $state('');
   let cur2fa = $state('');
 
-  let pkOptions = $state<any>(null);
   async function loadPasskeys() {
     setView('passkey');
     const r = await getPasskeys();
     passkeys = r.ok ? r.passkeys : [];
-    // 预取 WebAuthn 注册参数(避免点击时 await 丢失 user gesture)
-    try {
-      const init = await initPasskey();
-      if (init.ok && init.publicKey) {
-        const parsed = JSON.parse(init.publicKey);
-        // Telegram 返回 {"publicKey": {...}},内层才是 WebAuthn options
-        const options = parsed.publicKey || parsed;
-        // WebAuthn 要求 rp.id 匹配页面域名,本地程序用 localhost(IP 不被 WebAuthn 接受)
-        if (options.rp) {
-          options.rp.id = 'localhost';
-        }
-        // WebAuthn 要求 challenge/user.id 是 BufferSource,Telegram 给的是 base64url 字符串
-        options.challenge = b64urlToBuf(options.challenge);
-        if (options.user && options.user.id) {
-          options.user.id = b64urlToBuf(options.user.id);
-        }
-        pkOptions = options;
-      } else {
-        pkOptions = null;
-        addLog(`注册参数预取失败: ${init.msg || JSON.stringify(init)}`);
-      }
-    } catch (e) {
-      pkOptions = null;
-      addLog(`注册参数预取异常: ${String(e)}`);
-    }
   }
   async function loadDevices() {
     setView('devices');
@@ -314,48 +288,19 @@
     addLog('通行密钥已删除');
     await loadPasskeys();
   }
-  function b64(buf: ArrayBuffer): string {
-    const bytes = new Uint8Array(buf);
-    let bin = '';
-    for (const b of bytes) bin += String.fromCharCode(b);
-    return btoa(bin);
-  }
-  function b64url(buf: ArrayBuffer): string {
-    return b64(buf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  }
-  function b64urlToBuf(s: string): ArrayBuffer {
-    const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
-    const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
-    const bin = atob(b64 + pad);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return bytes.buffer;
-  }
+  let pkQrImg = $state('');
   async function doInitPasskey() {
-    if (!pkOptions) {
-      addLog('注册参数未准备好，请重新进入通行密钥页');
-      return;
-    }
     try {
-      addLog('请在系统弹窗中选择设备完成通行密钥注册(可选跨设备)…');
-      const credential = (await navigator.credentials.create({
-        publicKey: pkOptions,
-      })) as PublicKeyCredential;
-      const resp = credential.response as AuthenticatorAttestationResponse;
-      const credId = credential.id;
-      const rawId = b64url(credential.rawId);
-      const clientData = new TextDecoder().decode(resp.clientDataJSON);
-      const attestation = b64(resp.attestationObject);
-      const rr = await registerPasskey({
-        id: credId,
-        raw_id: rawId,
-        client_data: clientData,
-        attestation,
-      });
-      addLog(rr.ok ? '通行密钥注册成功' : `注册失败: ${rr.msg}`);
-      if (rr.ok) await loadPasskeys();
+      addLog('正在生成通行密钥二维码…');
+      const r = await initPasskey();
+      if (!r.ok) {
+        addLog(`生成失败: ${r.msg || JSON.stringify(r)}`);
+        return;
+      }
+      pkQrImg = `data:image/png;base64,${r.img}`;
+      addLog('请用手机扫描二维码，通过蓝牙连接后完成通行密钥注册');
     } catch (e) {
-      addLog(`注册异常: ${String(e)}`);
+      addLog(`生成异常: ${String(e)}`);
     }
   }
   async function doDeleteDevice(hash: number) {
@@ -552,6 +497,20 @@
       if (e.status === 'connect_fail') connected = false;
       if (e.status === 'done') addLog('[完成]');
       if (e.status === 'error') addLog(`[错误] ${String(e.data ?? '')}`);
+      if (e.status === 'passkey_done') {
+        const d = e.data as any;
+        addLog(d?.ok ? '[通行密钥注册成功]' : `[注册失败] ${d?.msg ?? ''}`);
+        pkQrImg = '';
+        loadPasskeys();
+      }
+      if (e.status === 'passkey_error') {
+        addLog(`[通行密钥异常] ${String(e.data ?? '')}`);
+        pkQrImg = '';
+      }
+      if (e.status === 'passkey_scanning') addLog('[通行密钥] 等待手机扫码…');
+      if (e.status === 'passkey_connecting') addLog('[通行密钥] 蓝牙连接中…');
+      if (e.status === 'passkey_handshake') addLog('[通行密钥] 安全握手…');
+      if (e.status === 'passkey_awaiting') addLog('[通行密钥] 等待手机确认注册…');
     }
     if (e.type === 'avatars_done') {
       addLog('[头像获取完成]');
@@ -731,6 +690,11 @@
         <button class="back" onclick={() => setView('log')}>← 返回</button>
       </div>
       <md-filled-button onclick={doInitPasskey}>＋ 添加通行密钥</md-filled-button>
+      {#if pkQrImg}
+        <div class="qr-box">
+          <img class="qr-img" src={pkQrImg} alt="通行密钥二维码" />
+        </div>
+      {/if}
       <ul class="sec-list">
         {#each passkeys as pk}
           <li class="sec-item">

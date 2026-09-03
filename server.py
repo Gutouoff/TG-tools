@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 import tg_tool
 import tg_engine
 import tg_profile
+import cable
 
 if getattr(sys, 'frozen', False):
     BASE = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
@@ -506,12 +507,56 @@ def _make_cable_qr_uri():
 
 @app.post('/api/passkeys/init')
 async def init_passkey():
+    import asyncio
+    import time as _time
     eng = init_engine()
     ok, data = await _call(eng.init_passkey_registration)
     if not ok:
         return {'ok': False, 'msg': str(data)}
-    # 返回 WebAuthn publicKey JSON,前端用 navigator.credentials.create 触发跨设备(系统出QR+蓝牙)
-    return {'ok': True, 'publicKey': data}
+    try:
+        opts = cable.parse_public_key_options(data)
+        request = {
+            'clientDataHash': opts['clientDataHash'],
+            'rpId': opts['rpId'],
+            'rpName': opts['rpName'],
+            'userId': opts['userId'],
+            'userName': opts['userName'],
+            'userDisplayName': opts['userDisplayName'],
+            'algorithms': opts['algorithms'],
+        }
+        qr_key = cable.QRKey()
+        qr_text = cable.encode_qr_contents(qr_key, True, int(_time.time()))
+        client_data_json = opts['clientDataJson']
+
+        async def _run():
+            try:
+                result = await cable.register_via_cable(
+                    request, qr_key=qr_key,
+                    on_state=lambda s: _emit({'type': 'state', 'status': f'passkey_{s}'}))
+                cred_id = cable.b64url(result['credentialId'])
+                attestation = cable.make_attestation_none(result['authData'])
+                ok2, r2 = await _call(eng.register_passkey,
+                                      cred_id, cred_id, client_data_json, attestation)
+                _emit({'type': 'state', 'status': 'passkey_done',
+                       'data': {'ok': ok2, 'msg': '注册成功' if ok2 else str(r2)}})
+            except Exception as e:
+                _emit({'type': 'state', 'status': 'passkey_error', 'data': str(e)})
+
+        asyncio.create_task(_run())
+        # 生成二维码图片
+        import base64
+        import io
+        import qrcode as _qrcode
+        qr = _qrcode.QRCode(border=2)
+        qr.add_data(qr_text)
+        qr.make(fit=True)
+        qimg = qr.make_image(fill_color='black', back_color='white')
+        buf = io.BytesIO()
+        qimg.save(buf, 'PNG')
+        img_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+        return {'ok': True, 'qr': qr_text, 'img': img_b64}
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
 
 
 @app.post('/api/passkeys/register')

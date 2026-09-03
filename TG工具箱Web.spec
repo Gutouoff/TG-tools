@@ -14,6 +14,10 @@ hiddenimports += collect_submodules('websockets')
 hiddenimports += collect_submodules('starlette')
 hiddenimports += collect_submodules('qrcode')
 hiddenimports += collect_submodules('PIL')
+hiddenimports += collect_submodules('cryptography')
+hiddenimports += collect_submodules('cbor2')
+hiddenimports += collect_submodules('bleak')
+hiddenimports += collect_submodules('winrt')
 
 datas = [('界面文本.txt', '.')]
 datas += [('webapp/dist', 'webapp/dist')]

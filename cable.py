@@ -324,3 +324,161 @@ def parse_post_handshake_message(plaintext: bytes):
     if isinstance(features, list) and b'ctap' in features:
         supports_ctap = True
     return {"protocolRevision": revision, "supportsCtap": supports_ctap}
+
+
+def b64url(data: bytes) -> str:
+    import base64
+    return base64.urlsafe_b64encode(data).decode('ascii').rstrip('=')
+
+
+def make_attestation_none(auth_data: bytes) -> bytes:
+    """构造 fmt=none 的 attestationObject(对照 NoneAttestationObject)。"""
+    return cbor2.dumps({"fmt": "none", "attStmt": {}, "authData": auth_data})
+
+
+def make_client_data(challenge_b64url: str, type_str: str = "webauthn.create") -> str:
+    """构造 clientDataJSON(对照 SerializeClientData)。"""
+    import json as _j
+    return _j.dumps({
+        "type": type_str,
+        "challenge": challenge_b64url,
+        "origin": "https://telegram.org",
+        "crossOrigin": False,
+    }, separators=(',', ':'))
+
+
+def parse_public_key_options(public_key_json: str) -> dict:
+    """解析 Telegram 返回的 publicKey JSON(对照 DeserializeRegisterData)。
+
+    返回 {rpId, rpName, userId, userName, userDisplayName, challenge(字符串), algorithms, clientDataJson, clientDataHash}
+    """
+    import base64
+    import json as _j
+    root = _j.loads(public_key_json)
+    pk = root.get("publicKey", root)
+    rp = pk.get("rp", {})
+    user = pk.get("user", {})
+
+    def _b64url_dec(s):
+        s = s.replace('-', '+').replace('_', '/')
+        pad = '=' * ((4 - len(s) % 4) % 4)
+        return base64.b64decode(s + pad)
+
+    user_id = _b64url_dec(user.get("id", ""))
+    challenge_str = pk.get("challenge", "")
+    algorithms = [p.get("alg") for p in pk.get("pubKeyCredParams", [])]
+    client_data_json = make_client_data(challenge_str)
+    client_data_hash = _sha256(client_data_json.encode('utf-8'))
+    return {
+        "rpId": rp.get("id", "telegram.org"),
+        "rpName": rp.get("name", "Telegram Messenger"),
+        "userId": user_id,
+        "userName": user.get("name", ""),
+        "userDisplayName": user.get("displayName", ""),
+        "challenge": challenge_str,
+        "algorithms": algorithms,
+        "clientDataJson": client_data_json,
+        "clientDataHash": client_data_hash,
+    }
+
+
+# ---------- 完整注册流程 ----------
+_MSG_CTAP = 0x01
+_CABLE_SERVICE_UUIDS = (
+    "0000fde2-0000-1000-8000-00805f9b34fb",  # Google caBLE
+    "0000fff9-0000-1000-8000-00805f9b34fb",  # FIDO caBLE
+)
+
+
+async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=None, timeout_s=90):
+    """完整 caBLE 注册流程(异步)。request 字段见 build_make_credential_request。
+
+    qr_key: 预生成的 QRKey(可选,不传则内部生成)。
+    on_qr(text): 生成二维码后回调一次(仅内部生成时)。
+    on_state(status): 进度回调('scanning'/'connecting'/'handshake'/'awaiting')。
+    返回 {"credentialId": bytes, "authData": bytes} 或抛异常。
+    """
+    import asyncio
+    import websockets
+    from bleak import BleakScanner
+
+    if qr_key is None:
+        qr_key = QRKey()
+        if on_qr:
+            on_qr(encode_qr_contents(qr_key, True, int(time.time())))
+    secret = qr_key.secret
+    eid_key = _derive(secret, b'', 1, K_EID_KEY_SIZE)
+
+    if on_state:
+        on_state('scanning')
+
+    # BLE 扫描,等待手机广播 caBLE advert
+    loop = asyncio.get_event_loop()
+    advert_future = loop.create_future()
+
+    def _detect(_device, adv):
+        if advert_future.done():
+            return
+        for uuid_str, data in (adv.service_data or {}).items():
+            if str(uuid_str).lower() not in _CABLE_SERVICE_UUIDS:
+                continue
+            eid = decrypt_advert(data, eid_key)
+            if eid is not None:
+                advert_future.set_result(eid)
+                return
+
+    scanner = BleakScanner(detection_callback=_detect)
+    await scanner.start()
+    try:
+        eid = await asyncio.wait_for(advert_future, timeout=timeout_s)
+    finally:
+        await scanner.stop()
+
+    nonce, routing_id, domain = eid_components(eid)
+    tunnel_domain = TUNNEL_DOMAINS[domain]
+    psk = _derive(secret, eid, 3, K_PSK_SIZE)
+    tunnel_id = _derive(secret, b'', 2, K_TUNNEL_ID_SIZE)
+    path = f"/cable/connect/{routing_id.hex()}/{tunnel_id.hex()}"
+
+    if on_state:
+        on_state('connecting')
+    ws = await websockets.connect(
+        f"wss://{tunnel_domain}{path}", subprotocols=["fido.cable"])
+
+    try:
+        handshake = HandshakeInitiator(psk, qr_key.identity)
+        await ws.send(handshake.build_initial_message())
+        response = await ws.recv()
+        crypter = handshake.process_response(response)
+        if crypter is None:
+            raise RuntimeError('Noise 握手失败')
+
+        if on_state:
+            on_state('handshake')
+        post = crypter.decrypt(await ws.recv())
+        parsed = parse_post_handshake_message(post) if post else None
+        if not parsed or not parsed['supportsCtap']:
+            raise RuntimeError('手机不支持 CTAP')
+
+        if on_state:
+            on_state('awaiting')
+        ctap_req = build_make_credential_request(
+            request['clientDataHash'], request['rpId'], request['rpName'],
+            request['userId'], request['userName'], request['userDisplayName'],
+            request['algorithms'])
+        await ws.send(crypter.encrypt(bytes([_MSG_CTAP]) + ctap_req))
+
+        reply = crypter.decrypt(await ws.recv())
+        if reply is None or not reply:
+            raise RuntimeError('空响应')
+        if reply[0] == _MSG_CTAP:
+            reply = reply[1:]
+        result = parse_make_credential_response(reply)
+        if result is None:
+            raise RuntimeError('注册被拒绝')
+        return result
+    finally:
+        try:
+            await ws.close()
+        except Exception:
+            pass
