@@ -1,0 +1,326 @@
+"""Telegram caBLE(hybrid transport) 客户端 —— 对照 tdesktop webauthn/ 源码移植。
+
+完整流程: 生成 QRKey + QR → 手机扫码 → BLE 扫描 advert → 解密 EID → tunnel 连接
+→ Noise NKpsk0 握手 → 发送 makeCredential 请求(CTAP CBOR) → 收 credential。
+
+密码学: P-256 ECDH + AES-256-GCM + AES-256-ECB + HKDF/HMAC-SHA256 + CBOR。
+"""
+import hashlib
+import hmac
+import secrets
+import struct
+import time
+
+import cbor2
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+# tunnel server 域名(官方 kAssignedTunnelDomains)
+TUNNEL_DOMAINS = ["cable.ua5v.com", "cable.auth.com"]
+
+# 常量(对照 cable_core.h)
+K_P256_X962_LEN = 65
+K_COMPRESSED_LEN = 33
+K_QR_SECRET_SIZE = 16
+K_ADVERT_SIZE = 20
+K_EID_SIZE = 16
+K_EID_KEY_SIZE = 64
+K_NONCE_SIZE = 10
+K_ROUTING_ID_SIZE = 3
+K_TUNNEL_ID_SIZE = 16
+K_PSK_SIZE = 32
+K_HANDSHAKE_RESPONSE_SIZE = K_P256_X962_LEN + 16
+K_PADDING_GRANULARITY = 16
+
+NOISE_PROTOCOL = b"Noise_KNpsk0_P256_AESGCM_SHA256"
+
+
+def _sha256(data: bytes) -> bytes:
+    return hashlib.sha256(data).digest()
+
+
+def _hmac_sha256(key: bytes, data: bytes) -> bytes:
+    return hmac.new(key, data, hashlib.sha256).digest()
+
+
+def _hkdf(ikm: bytes, salt: bytes, info: bytes, length: int) -> bytes:
+    h = HKDF(algorithm=hashes.SHA256(), length=length, salt=salt, info=info)
+    return h.derive(ikm)
+
+
+def _gen_p256():
+    return ec.generate_private_key(ec.SECP256R1())
+
+
+def _pub_x962(priv, compressed: bool) -> bytes:
+    fmt = (serialization.PublicFormat.CompressedPoint if compressed
+           else serialization.PublicFormat.UncompressedPoint)
+    return priv.public_key().public_bytes(serialization.Encoding.X962, fmt)
+
+
+def _ecdh(priv, peer_x962: bytes) -> bytes:
+    peer = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), peer_x962)
+    return priv.exchange(ec.ECDH(), peer)
+
+
+def _aes_gcm_seal(key32: bytes, nonce12: bytes, plaintext: bytes, aad: bytes) -> bytes:
+    enc = Cipher(algorithms.AES(key32), modes.GCM(nonce12)).encryptor()
+    enc.authenticate_additional_data(aad)
+    return enc.update(plaintext) + enc.finalize() + enc.tag
+
+
+def _aes_gcm_open(key32: bytes, nonce12: bytes, ciphertext: bytes, aad: bytes):
+    tag = ciphertext[-16:]
+    ct = ciphertext[:-16]
+    dec = Cipher(algorithms.AES(key32), modes.GCM(nonce12, tag)).decryptor()
+    dec.authenticate_additional_data(aad)
+    return dec.update(ct) + dec.finalize()
+
+
+def _aes_ecb_decrypt(key32: bytes, block16: bytes) -> bytes:
+    dec = Cipher(algorithms.AES(key32), modes.ECB()).decryptor()
+    return dec.update(block16) + dec.finalize()
+
+
+def _derive(secret: bytes, nonce: bytes, type_val: int, size: int) -> bytes:
+    info = struct.pack("<I", type_val)
+    return _hkdf(secret, nonce, info, size)
+
+
+# ---------- QR ----------
+class QRKey:
+    def __init__(self):
+        self.identity = _gen_p256()
+        self.secret = secrets.token_bytes(K_QR_SECRET_SIZE)
+
+
+def bytes_to_digits(data: bytes) -> str:
+    widths = [0, 3, 5, 8, 10, 13, 15, 17]
+    out = []
+    i, n = 0, len(data)
+    while i < n:
+        take = min(7, n - i)
+        value = 0
+        for j in range(take):
+            value |= data[i + j] << (8 * j)
+        out.append(str(value).zfill(widths[take]))
+        i += take
+    return ''.join(out)
+
+
+def encode_qr_contents(key: QRKey, make_credential: bool, now: int) -> str:
+    cbor_map = {
+        0: _pub_x962(key.identity, True),
+        1: key.secret,
+        2: len(TUNNEL_DOMAINS),
+        3: now,
+        4: False,
+        5: b'mc' if make_credential else b'ga',
+    }
+    return "FIDO:/" + bytes_to_digits(cbor2.dumps(cbor_map))
+
+
+# ---------- Noise NKpsk0 ----------
+class Noise:
+    def __init__(self):
+        self._ck = bytearray(NOISE_PROTOCOL)
+        self._h = bytearray(NOISE_PROTOCOL)
+        self._key = bytearray(32)
+        self._nonce = 0
+
+    def mix_hash(self, data: bytes):
+        self._h = bytearray(_sha256(bytes(self._h) + data))
+
+    def mix_key(self, ikm: bytes):
+        out = _hkdf(ikm, bytes(self._ck), b'', 64)
+        self._ck = bytearray(out[:32])
+        self._key = bytearray(out[32:])
+        self._nonce = 0
+
+    def mix_key_and_hash(self, ikm: bytes):
+        out = _hkdf(ikm, bytes(self._ck), b'', 96)
+        self._ck = bytearray(out[:32])
+        self.mix_hash(out[32:64])
+        self._key = bytearray(out[64:96])
+        self._nonce = 0
+
+    def _nonce12(self):
+        nonce = bytearray(12)
+        nonce[0:4] = struct.pack(">I", self._nonce)
+        self._nonce += 1
+        return bytes(nonce)
+
+    def encrypt_and_hash(self, plaintext: bytes) -> bytes:
+        ct = _aes_gcm_seal(bytes(self._key), self._nonce12(), plaintext, bytes(self._h))
+        self.mix_hash(ct)
+        return ct
+
+    def decrypt_and_hash(self, ciphertext: bytes):
+        pt = _aes_gcm_open(bytes(self._key), self._nonce12(), ciphertext, bytes(self._h))
+        if pt is not None:
+            self.mix_hash(ciphertext)
+        return pt
+
+    def traffic_keys(self):
+        out = _hkdf(b'', bytes(self._ck), b'', 64)
+        return out[:32], out[32:]
+
+
+class Crypter:
+    def __init__(self, read_key: bytes, write_key: bytes):
+        self._rk = read_key
+        self._wk = write_key
+        self._rs = 0
+        self._ws = 0
+
+    def _nonce(self, counter):
+        nonce = bytearray(12)
+        nonce[8:12] = struct.pack(">I", counter)
+        return bytes(nonce)
+
+    def encrypt(self, plaintext: bytes) -> bytes:
+        padded_size = (len(plaintext) + 1 + K_PADDING_GRANULARITY - 1) & ~(K_PADDING_GRANULARITY - 1)
+        padded = bytearray(padded_size)
+        padded[:len(plaintext)] = plaintext
+        padded[-1] = padded_size - len(plaintext) - 1
+        ct = _aes_gcm_seal(self._wk, self._nonce(self._ws), bytes(padded), b'')
+        self._ws += 1
+        return ct
+
+    def decrypt(self, ciphertext: bytes):
+        pt = _aes_gcm_open(self._rk, self._nonce(self._rs), ciphertext, b'')
+        if pt is None:
+            return None
+        self._rs += 1
+        if not pt:
+            return None
+        padding = pt[-1]
+        if padding + 1 > len(pt):
+            return None
+        return pt[:len(pt) - padding - 1]
+
+
+class HandshakeInitiator:
+    def __init__(self, psk32: bytes, identity):
+        self._psk = psk32
+        self._identity = identity
+        self._noise = Noise()
+        self._ephemeral = None
+
+    def build_initial_message(self) -> bytes:
+        self._noise = Noise()
+        self._noise.mix_hash(b'\x01')
+        self._noise.mix_hash(_pub_x962(self._identity, False))
+        self._noise.mix_key_and_hash(self._psk)
+        self._ephemeral = _gen_p256()
+        eph_pub = _pub_x962(self._ephemeral, False)
+        self._noise.mix_hash(eph_pub)
+        self._noise.mix_key(eph_pub)
+        ct = self._noise.encrypt_and_hash(b'')
+        return eph_pub + ct
+
+    def process_response(self, response: bytes):
+        if len(response) != K_HANDSHAKE_RESPONSE_SIZE or not self._ephemeral:
+            return None
+        peer_point = response[:K_P256_X962_LEN]
+        ciphertext = response[K_P256_X962_LEN:]
+        self._noise.mix_hash(peer_point)
+        self._noise.mix_key(peer_point)
+        self._noise.mix_key(_ecdh(self._ephemeral, peer_point))
+        self._noise.mix_key(_ecdh(self._identity, peer_point))
+        pt = self._noise.decrypt_and_hash(ciphertext)
+        if pt is None or pt:
+            return None
+        write_key, read_key = self._noise.traffic_keys()
+        return Crypter(read_key, write_key)
+
+
+# ---------- EID / advert ----------
+def decrypt_advert(service_data: bytes, eid_key64: bytes):
+    if len(service_data) < K_ADVERT_SIZE or len(eid_key64) != K_EID_KEY_SIZE:
+        return None
+    aes_key = eid_key64[:32]
+    hmac_key = eid_key64[32:64]
+    body = service_data[:16]
+    tag = service_data[16:20]
+    expected = _hmac_sha256(hmac_key, body)[:4]
+    if tag != expected:
+        return None
+    plaintext = _aes_ecb_decrypt(aes_key, body)
+    if plaintext[0] != 0:
+        return None
+    domain = plaintext[14] | (plaintext[15] << 8)
+    if domain >= 256 or domain >= len(TUNNEL_DOMAINS):
+        return None
+    return plaintext
+
+
+def eid_components(eid: bytes):
+    nonce = eid[1:1 + K_NONCE_SIZE]
+    routing_id = eid[1 + K_NONCE_SIZE:1 + K_NONCE_SIZE + K_ROUTING_ID_SIZE]
+    domain = eid[14] | (eid[15] << 8)
+    return nonce, routing_id, domain
+
+
+def _hex_lower(data: bytes) -> str:
+    return data.hex()
+
+
+# ---------- CTAP ----------
+def build_make_credential_request(client_data_hash32, rp_id, rp_name, user_id,
+                                  user_name, user_display_name, algorithms):
+    params = [{"alg": alg, "type": "public-key"} for alg in algorithms]
+    cbor_map = {
+        1: client_data_hash32,
+        2: {"id": rp_id, "name": rp_name},
+        3: {"id": user_id, "name": user_name, "displayName": user_display_name},
+        4: params,
+        7: {"rk": True, "uv": True},
+    }
+    return b'\x01' + cbor2.dumps(cbor_map)
+
+
+def credential_id_from_auth_data(auth_data: bytes):
+    prefix = 32 + 1 + 4
+    if len(auth_data) < prefix + 16 + 2:
+        return None
+    flags = auth_data[32]
+    if not (flags & 0x40):
+        return None
+    id_len = (auth_data[prefix + 16] << 8) | auth_data[prefix + 17]
+    if len(auth_data) < prefix + 18 + id_len:
+        return None
+    return auth_data[prefix + 18:prefix + 18 + id_len]
+
+
+def parse_make_credential_response(payload: bytes):
+    if not payload or payload[0] != 0:
+        return None
+    try:
+        parsed = cbor2.loads(payload[1:])
+    except Exception:
+        return None
+    if not isinstance(parsed, dict) or 2 not in parsed:
+        return None
+    auth_data = parsed[2]
+    cred_id = credential_id_from_auth_data(auth_data)
+    if cred_id is None:
+        return None
+    return {"credentialId": cred_id, "authData": auth_data}
+
+
+def parse_post_handshake_message(plaintext: bytes):
+    revision = 1
+    try:
+        parsed = cbor2.loads(plaintext)
+    except Exception:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    supports_ctap = False
+    features = parsed.get(3)
+    if isinstance(features, list) and b'ctap' in features:
+        supports_ctap = True
+    return {"protocolRevision": revision, "supportsCtap": supports_ctap}
