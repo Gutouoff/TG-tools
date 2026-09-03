@@ -272,9 +272,13 @@
           options.user.id = b64urlToBuf(options.user.id);
         }
         pkOptions = options;
+      } else {
+        pkOptions = null;
+        addLog(`注册参数预取失败: ${init.msg || JSON.stringify(init)}`);
       }
     } catch (e) {
       pkOptions = null;
+      addLog(`注册参数预取异常: ${String(e)}`);
     }
   }
   async function loadDevices() {
@@ -1182,6 +1186,8 @@
     flex: 1;
     font-family: 'Consolas', monospace;
     font-size: 12px;
+    user-select: text;
+    cursor: text;
   }
   .log li {
     padding: 2px 0;
