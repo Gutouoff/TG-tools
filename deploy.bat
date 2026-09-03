@@ -31,24 +31,21 @@ if not exist "%SRC%\%NAME%.exe" (
 )
 
 echo.
-echo [1/4] 关闭正在运行的工具箱...
+echo [1/3] 关闭正在运行的工具箱...
 taskkill /F /IM %NAME%.exe >nul 2>&1
 timeout /t 1 /nobreak >nul
 
-echo [2/4] 删除旧版本...
-if exist "%DST%" rd /s /q "%DST%"
-
-echo [3/4] 复制新版本...
+echo [2/3] 覆盖程序文件(保留 avatars/profiles 等缓存)...
 xcopy /e /i /y "%SRC%" "%DST%" >nul
 
-echo [4/4] 补充头像与资料缓存...
+echo [3/3] 确保头像与资料缓存存在(已存在则跳过)...
+if not exist "%DST%\avatars" mkdir "%DST%\avatars"
 if exist "D:\Desktop\TG小号\工具箱\avatars" (
-    if not exist "%DST%\avatars" mkdir "%DST%\avatars"
     copy /y "D:\Desktop\TG小号\工具箱\avatars\*.png" "%DST%\avatars\" >nul
     copy /y "D:\Desktop\TG小号\工具箱\avatars\*.jpg" "%DST%\avatars\" >nul
 )
 for %%F in (profiles.json whitelist.json nicknames.json) do (
-    if exist "D:\Desktop\TG小号\工具箱\%%F" copy /y "D:\Desktop\TG小号\工具箱\%%F" "%DST%\%%F" >nul
+    if not exist "%DST%\%%F" if exist "D:\Desktop\TG小号\工具箱\%%F" copy /y "D:\Desktop\TG小号\工具箱\%%F" "%DST%\%%F" >nul
 )
 
 echo.
