@@ -433,8 +433,14 @@ async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=No
             if eid is not None:
                 advert_future.set_result(eid)
                 return
-            if on_state:
-                on_state(f'decrypt_fail:{len(data)}')
+            # 细粒度诊断
+            if on_state and len(data) >= 20:
+                body = data[:16]
+                tag = data[16:20]
+                expected = _hmac_sha256(eid_key[32:64], body)[:4]
+                pt = _aes_ecb_decrypt(eid_key[:32], body)
+                domain = pt[14] | (pt[15] << 8)
+                on_state(f'diag:hmac={tag == expected},res0={pt[0] == 0},domain={domain},head={body[:4].hex()}')
 
     scanner = BleakScanner(detection_callback=_detect)
     try:

@@ -514,6 +514,9 @@
       if (e.status && e.status.startsWith('passkey_decrypt_fail:')) {
         addLog(`[蓝牙] EID解密失败 数据长度${e.status.slice(20)}`);
       }
+      if (e.status && e.status.startsWith('passkey_diag:')) {
+        addLog(`[诊断] ${e.status.slice(12)}`);
+      }
       if (e.status === 'passkey_connecting') addLog('[通行密钥] 蓝牙连接中…');
       if (e.status === 'passkey_handshake') addLog('[通行密钥] 安全握手…');
       if (e.status === 'passkey_awaiting') addLog('[通行密钥] 等待手机确认注册…');
