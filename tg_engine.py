@@ -809,7 +809,7 @@ class Engine:
             return None
 
     def init_passkey_registration(self, on_done=None):
-        """发起 passkey 注册,返回二维码内容(WebAuthn publicKey JSON)。"""
+        """发起 passkey 注册,返回 WebAuthn publicKey JSON。"""
         return self._submit(self._do_init_passkey_registration(on_done))
 
     async def _do_init_passkey_registration(self, on_done=None):
@@ -825,6 +825,36 @@ class Engine:
             if on_done:
                 self._gui_schedule(lambda d=data: on_done(True, d))
             return data
+        except Exception as e:
+            if on_done:
+                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+            return None
+
+    def register_passkey(self, cred_id, raw_id, client_data, attestation_data, on_done=None):
+        """用 WebAuthn 返回的 credential 完成 passkey 注册。"""
+        return self._submit(self._do_register_passkey(cred_id, raw_id, client_data, attestation_data, on_done))
+
+    async def _do_register_passkey(self, cred_id, raw_id, client_data, attestation_data, on_done=None):
+        _ensure_telethon()
+        if not self._client:
+            if on_done:
+                self._gui_schedule(lambda: on_done(False, '未连接账号'))
+            return None
+        try:
+            from telethon.tl.functions.account import RegisterPasskeyRequest
+            from telethon.tl.types import InputPasskeyCredentialPublicKey, InputPasskeyResponseRegister, DataJSON
+            cred = InputPasskeyCredentialPublicKey(
+                id=cred_id,
+                raw_id=raw_id,
+                response=InputPasskeyResponseRegister(
+                    client_data=DataJSON(data=client_data),
+                    attestation_data=attestation_data,
+                ),
+            )
+            res = await self._client(RegisterPasskeyRequest(credential=cred))
+            if on_done:
+                self._gui_schedule(lambda r=res: on_done(True, r))
+            return res
         except Exception as e:
             if on_done:
                 self._gui_schedule(lambda msg=str(e): on_done(False, msg))

@@ -16,6 +16,7 @@
     getPasskeys,
     deletePasskey,
     initPasskey,
+    registerPasskey,
     get2FA,
     set2FA,
     sendEmailCode,
@@ -278,26 +279,42 @@
     addLog('通行密钥已删除');
     await loadPasskeys();
   }
-  let pkQrImg = $state('');
-  let pkQrUri = $state('');
-  async function doInitPasskey() {
-    const r = await initPasskey();
-    if (r.ok && r.img) {
-      pkQrImg = `data:image/png;base64,${r.img}`;
-      pkQrUri = r.qr || '';
-      addLog('二维码已生成，请用手机扫码绑定通行密钥');
-    } else {
-      pkQrImg = '';
-      pkQrUri = '';
-      addLog(`生成失败: ${r.msg || r}`);
-    }
+  function b64(buf: ArrayBuffer): string {
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin);
   }
-  async function copyPkUri() {
+  function b64url(buf: ArrayBuffer): string {
+    return b64(buf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  async function doInitPasskey() {
     try {
-      await navigator.clipboard.writeText(pkQrUri);
-      addLog('二维码内容已复制到剪贴板');
+      const r = await initPasskey();
+      if (!r.ok || !r.publicKey) {
+        addLog(`生成失败: ${r.msg || '无注册参数'}`);
+        return;
+      }
+      addLog('请在系统弹窗中选择设备完成通行密钥注册(可选手持设备跨设备)…');
+      const options = JSON.parse(r.publicKey);
+      const credential = (await navigator.credentials.create({
+        publicKey: options,
+      })) as PublicKeyCredential;
+      const resp = credential.response as AuthenticatorAttestationResponse;
+      const credId = credential.id;
+      const rawId = b64url(credential.rawId);
+      const clientData = new TextDecoder().decode(resp.clientDataJSON);
+      const attestation = b64(resp.attestationObject);
+      const rr = await registerPasskey({
+        id: credId,
+        raw_id: rawId,
+        client_data: clientData,
+        attestation,
+      });
+      addLog(rr.ok ? '通行密钥注册成功' : `注册失败: ${rr.msg}`);
+      if (rr.ok) await loadPasskeys();
     } catch (e) {
-      addLog('复制失败');
+      addLog(`注册异常: ${String(e)}`);
     }
   }
   async function doDeleteDevice(hash: number) {
@@ -663,17 +680,6 @@
         <button class="back" onclick={() => setView('log')}>← 返回</button>
       </div>
       <md-filled-button onclick={doInitPasskey}>＋ 添加通行密钥</md-filled-button>
-      {#if pkQrImg}
-        <div class="qr-box">
-          <img class="qr-img" src={pkQrImg} alt="通行密钥二维码" />
-        </div>
-        {#if pkQrUri}
-          <div class="qr-uri">
-            <span class="qr-uri-text">{pkQrUri.length > 80 ? pkQrUri.slice(0, 80) + '…' : pkQrUri}</span>
-            <button class="back" onclick={copyPkUri}>复制内容</button>
-          </div>
-        {/if}
-      {/if}
       <ul class="sec-list">
         {#each passkeys as pk}
           <li class="sec-item">

@@ -135,6 +135,12 @@ async function postJson(url: string, body: object = {}) {
 export const getPasskeys = () => getJson('/api/passkeys');
 export const deletePasskey = (id: string) => postJson('/api/passkeys/delete', { id });
 export const initPasskey = () => postJson('/api/passkeys/init');
+export const registerPasskey = (cred: {
+  id: string;
+  raw_id: string;
+  client_data: string;
+  attestation: string;
+}) => postJson('/api/passkeys/register', cred);
 
 export const get2FA = () => getJson('/api/2fa');
 export const set2FA = (current: string, newPwd: string) => postJson('/api/2fa/set', { current, new: newPwd });

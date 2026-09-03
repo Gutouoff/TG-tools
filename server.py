@@ -510,19 +510,24 @@ async def init_passkey():
     ok, data = await _call(eng.init_passkey_registration)
     if not ok:
         return {'ok': False, 'msg': str(data)}
-    # 生成官方 caBLE QR(内容为配对参数,手机扫码后走蓝牙 caBLE 流程)
+    # 返回 WebAuthn publicKey JSON,前端用 navigator.credentials.create 触发跨设备(系统出QR+蓝牙)
+    return {'ok': True, 'publicKey': data}
+
+
+@app.post('/api/passkeys/register')
+async def register_passkey(body: dict):
     import base64
-    import io
-    import qrcode
-    uri = _make_cable_qr_uri()
-    qr = qrcode.QRCode(border=2)
-    qr.add_data(uri)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color='black', back_color='white')
-    buf = io.BytesIO()
-    img.save(buf, 'PNG')
-    img_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
-    return {'ok': True, 'qr': uri, 'img': img_b64}
+    eng = init_engine()
+    cred_id = body.get('id', '')
+    raw_id = body.get('raw_id', '')
+    client_data = body.get('client_data', '')
+    attestation_b64 = body.get('attestation', '')
+    try:
+        attestation_data = base64.b64decode(attestation_b64)
+    except Exception:
+        return {'ok': False, 'msg': 'attestation 数据无效'}
+    ok, data = await _call(eng.register_passkey, cred_id, raw_id, client_data, attestation_data)
+    return {'ok': ok, 'msg': '注册成功' if ok else str(data)}
 
 
 @app.get('/api/2fa')
@@ -793,10 +798,10 @@ SETTINGS_FILE = os.path.join(tg_tool.SCRIPT_DIR, 'settings.json')
 DEFAULT_SETTINGS = {
     'pack_naming': '{name}_账号包',
     'pack_password': '',
-    'theme_seed': '#9BCFDC',
-    'theme_bg': '#C7C7C7',
-    'theme_dark': '#d2d2d2',
-    'theme_topbar': '#37474f',
+    'theme_seed': '#009688',
+    'theme_bg': '#F7FAF9',
+    'theme_dark': '#FFFFFF',
+    'theme_topbar': '#00796B',
     'theme_mode': 'light',
     'proxy_mode': 'none',
     'proxy_scheme': 'socks5',
