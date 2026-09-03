@@ -202,17 +202,17 @@ async def _fetch_one(loop, name, d, cfg_path, cfg):
         }
         # 头像
         try:
-            photos = await client.get_profile_photos('me', limit=1)
+            photos = await asyncio.wait_for(client.get_profile_photos('me', limit=1), timeout=20)
             if photos:
                 os.makedirs(AVATAR_DIR, exist_ok=True)
-                await client.download_media(photos[0], avatar_path(name))
+                await asyncio.wait_for(client.download_media(photos[0], avatar_path(name)), timeout=30)
                 info['avatar'] = avatar_path(name)
         except Exception:
             pass
         return info
     finally:
         try:
-            await client.disconnect()
+            await asyncio.wait_for(client.disconnect(), timeout=10)
         except Exception:
             pass
 
@@ -230,7 +230,8 @@ def _worker(root, on_update):
             if on_update and on_update(name, None):   # 返回 True = 取消
                 break
             try:
-                info = loop.run_until_complete(_fetch_one(loop, name, d, cfg_path, cfg))
+                info = loop.run_until_complete(
+                    asyncio.wait_for(_fetch_one(loop, name, d, cfg_path, cfg), timeout=90))
             except Exception:
                 info = None
             if info:
