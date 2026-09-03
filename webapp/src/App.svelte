@@ -172,7 +172,7 @@
   let settingsOpen = $state(false);
   async function loadSettings() {
     settings = { pack_naming: '{name}_账号包', pack_password: '', use_system_proxy: false, theme_seed: '#9BCFDC' };
-    rightView = 'settings';
+    setView('settings');
     settingsOpen = true;
     try {
       settings = await getSettings();
@@ -199,6 +199,11 @@
 
   // 右栏视图
   let rightView = $state<'log' | 'passkey' | '2fa' | 'email' | 'devices' | 'profile' | 'whitelist' | 'settings'>('log');
+  function setView(v: typeof rightView) {
+    flushSync(() => {
+      rightView = v;
+    });
+  }
   let passkeys = $state<any[]>([]);
   let devices = $state<any[]>([]);
   let has2fa = $state(false);
@@ -208,22 +213,22 @@
   let cur2fa = $state('');
 
   async function loadPasskeys() {
-    rightView = 'passkey';
+    setView('passkey');
     const r = await getPasskeys();
     passkeys = r.ok ? r.passkeys : [];
   }
   async function loadDevices() {
-    rightView = 'devices';
+    setView('devices');
     const r = await getDevices();
     devices = r.ok ? r.devices : [];
   }
   async function load2FA() {
-    rightView = '2fa';
+    setView('2fa');
     const r = await get2FA();
     has2fa = r.has_2fa ?? false;
   }
   function showEmail() {
-    rightView = 'email';
+    setView('email');
   }
   async function doDeletePasskey(id: string) {
     await deletePasskey(id);
@@ -269,7 +274,7 @@
   let editYear = $state('');
 
   async function loadProfile() {
-    rightView = 'profile';
+    setView('profile');
     editFirstName = current?.display || '';
     editUsername = current?.username || '';
     const r = await getProfile();
@@ -309,7 +314,7 @@
   let wlGroupInput = $state('');
 
   async function loadWhitelist() {
-    rightView = 'whitelist';
+    setView('whitelist');
     const wl = await getWhitelist();
     wlUsers = wl.users;
     wlGroups = wl.groups;
@@ -584,7 +589,7 @@
     {:else if rightView === 'passkey'}
       <div class="sec-head">
         <h3>通行密钥</h3>
-        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+        <button class="back" onclick={() => setView('log')}>← 返回</button>
       </div>
       <md-filled-button onclick={doInitPasskey}>＋ 添加通行密钥</md-filled-button>
       {#if pkQrImg}
@@ -604,7 +609,7 @@
     {:else if rightView === '2fa'}
       <div class="sec-head">
         <h3>两步验证</h3>
-        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+        <button class="back" onclick={() => setView('log')}>← 返回</button>
       </div>
       <p>当前状态：{has2fa ? '已开启' : '未开启'}</p>
       {#if has2fa}
@@ -615,7 +620,7 @@
     {:else if rightView === 'email'}
       <div class="sec-head">
         <h3>邮箱登录</h3>
-        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+        <button class="back" onclick={() => setView('log')}>← 返回</button>
       </div>
       <input placeholder="邮箱地址" bind:value={emailInput} />
       <md-outlined-button onclick={doSendEmail}>发送验证码</md-outlined-button>
@@ -624,7 +629,7 @@
     {:else if rightView === 'devices'}
       <div class="sec-head">
         <h3>登录设备</h3>
-        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+        <button class="back" onclick={() => setView('log')}>← 返回</button>
       </div>
       <ul class="sec-list">
         {#each devices as d}
@@ -640,7 +645,7 @@
     {:else if rightView === 'profile'}
       <div class="sec-head">
         <h3>编辑资料</h3>
-        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+        <button class="back" onclick={() => setView('log')}>← 返回</button>
       </div>
       <div class="form">
         <label>名字</label>
@@ -672,7 +677,7 @@
     {:else if rightView === 'whitelist'}
       <div class="sec-head">
         <h3>白名单管理</h3>
-        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+        <button class="back" onclick={() => setView('log')}>← 返回</button>
       </div>
       <h4>用户白名单</h4>
       <div class="row2">
@@ -697,10 +702,10 @@
     {:else if rightView === 'settings'}
       <div class="sec-head">
         <h3>设置</h3>
-        <button class="back" onclick={() => (rightView = 'log')}>← 返回</button>
+        <button class="back" onclick={() => setView('log')}>← 返回</button>
       </div>
       <div class="form">
-        <label>打包文件命名格式（{name}=账号名 {date}=日期）</label>
+        <label>打包文件命名格式（name=账号名 date=日期）</label>
         <input bind:value={settings.pack_naming} />
         <label>默认压缩密码（暂未启用加密，先保存）</label>
         <input bind:value={settings.pack_password} />
