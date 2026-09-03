@@ -168,11 +168,14 @@
   }
 
   // 设置
+  const THEME_COLORS = ['#9BCFDC', '#66BB6A', '#9C27B0', '#FF9800'];
   let settings = $state<Record<string, string | boolean>>({});
   let settingsOpen = $state(false);
   async function loadSettings() {
-    settings = { pack_naming: '{name}_账号包', pack_password: '', use_system_proxy: false, theme_seed: '#9BCFDC' };
-    setView('settings');
+    settings = {
+      pack_naming: '{name}_账号包', pack_password: '', theme_seed: '#9BCFDC',
+      proxy_mode: 'none', proxy_scheme: 'socks5', proxy_host: '', proxy_port: '',
+    };
     settingsOpen = true;
     try {
       settings = await getSettings();
@@ -182,6 +185,7 @@
   }
   async function doSaveSettings() {
     await saveSettings(settings);
+    settingsOpen = false;
     addLog('设置已保存');
     applyTheme();
   }
@@ -699,27 +703,60 @@
           <li class="sec-item"><span>{g}</span><button class="danger" onclick={() => doRemoveGroup(g)}>移除</button></li>
         {/each}
       </ul>
-    {:else if rightView === 'settings'}
-      <div class="sec-head">
+    {/if}
+  </section>
+</div>
+
+{#if settingsOpen}
+  <div class="modal-mask" onclick={() => (settingsOpen = false)}>
+    <div class="modal" onclick={(e) => e.stopPropagation()}>
+      <div class="modal-head">
         <h3>设置</h3>
-        <button class="back" onclick={() => setView('log')}>← 返回</button>
+        <button class="back" onclick={() => (settingsOpen = false)}>✕</button>
       </div>
       <div class="form">
         <label>打包文件命名格式（name=账号名 date=日期）</label>
         <input bind:value={settings.pack_naming} />
-        <label>默认压缩密码（暂未启用加密，先保存）</label>
+        <label>默认压缩密码（暂未启用加密）</label>
         <input bind:value={settings.pack_password} />
-        <label class="check-row">
-          <input type="checkbox" bind:checked={settings.use_system_proxy} />
-          <span>使用系统代理（检测到系统代理时使用）</span>
-        </label>
-        <label>主题色（seed 主色）</label>
-        <input type="color" bind:value={settings.theme_seed} onchange={() => applyTheme()} />
+
+        <label>代理模式</label>
+        <select bind:value={settings.proxy_mode}>
+          <option value="none">不使用代理</option>
+          <option value="system">使用系统代理</option>
+          <option value="manual">手动设置</option>
+        </select>
+        {#if settings.proxy_mode === 'manual'}
+          <label>代理类型</label>
+          <select bind:value={settings.proxy_scheme}>
+            <option value="socks5">SOCKS5</option>
+            <option value="socks4">SOCKS4</option>
+            <option value="http">HTTP</option>
+          </select>
+          <label>IP 地址</label>
+          <input bind:value={settings.proxy_host} placeholder="127.0.0.1" />
+          <label>端口</label>
+          <input bind:value={settings.proxy_port} placeholder="7890" />
+        {/if}
+
+        <label>色调</label>
+        <div class="swatches">
+          {#each THEME_COLORS as c}
+            <button
+              class="swatch"
+              class:on={settings.theme_seed === c}
+              style="background:{c}"
+              onclick={() => { settings.theme_seed = c; applyTheme(); }}
+            ></button>
+          {/each}
+          <input type="color" bind:value={settings.theme_seed} onchange={() => applyTheme()} />
+        </div>
+
         <md-filled-button onclick={doSaveSettings}>保存设置</md-filled-button>
       </div>
-    {/if}
-  </section>
-</div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .topbar {
@@ -1109,6 +1146,71 @@
     gap: 4px;
     overflow-y: auto;
     flex: 1;
+  }
+  .form select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: 999px;
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    font-size: 14px;
+    outline: none;
+    margin-bottom: 8px;
+  }
+  .modal-mask {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal {
+    width: 440px;
+    max-height: 86vh;
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  }
+  .modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .modal-head h3 {
+    margin: 0;
+    font-size: 18px;
+  }
+  .swatches {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0 8px;
+  }
+  .swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    padding: 0;
+  }
+  .swatch.on {
+    border-color: var(--md-sys-color-on-surface);
+  }
+  .swatches input[type='color'] {
+    width: 36px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    cursor: pointer;
+    margin: 0;
   }
   .form label {
     font-size: 13px;

@@ -711,9 +711,12 @@ SETTINGS_FILE = os.path.join(tg_tool.SCRIPT_DIR, 'settings.json')
 DEFAULT_SETTINGS = {
     'pack_naming': '{name}_账号包',
     'pack_password': '',
-    'use_system_proxy': False,
     'theme_seed': '#9BCFDC',
     'theme_bg': '#C7C7C7',
+    'proxy_mode': 'none',
+    'proxy_scheme': 'socks5',
+    'proxy_host': '',
+    'proxy_port': '',
 }
 
 
@@ -724,6 +727,13 @@ def _load_settings():
             if isinstance(s, dict):
                 merged = dict(DEFAULT_SETTINGS)
                 merged.update({k: v for k, v in s.items() if k in DEFAULT_SETTINGS})
+                # 兼容旧的 proxy dict 字段
+                p = s.get('proxy')
+                if isinstance(p, dict):
+                    merged['proxy_mode'] = p.get('mode', 'none')
+                    merged['proxy_scheme'] = p.get('scheme', 'socks5')
+                    merged['proxy_host'] = str(p.get('host', '') or '')
+                    merged['proxy_port'] = str(p.get('port', '') or '')
                 return merged
     except Exception:
         pass
@@ -732,7 +742,23 @@ def _load_settings():
 
 def _save_settings(s):
     try:
-        json.dump(s, open(SETTINGS_FILE, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+        raw = {}
+        if os.path.isfile(SETTINGS_FILE):
+            try:
+                raw = json.load(open(SETTINGS_FILE, encoding='utf-8'))
+            except Exception:
+                raw = {}
+        for k in DEFAULT_SETTINGS:
+            raw[k] = s.get(k, DEFAULT_SETTINGS[k])
+        # 同步 proxy dict 字段(tg_tool.load_proxy_cfg 读取)
+        port = s.get('proxy_port')
+        raw['proxy'] = {
+            'mode': s.get('proxy_mode', 'none'),
+            'scheme': s.get('proxy_scheme', 'socks5'),
+            'host': s.get('proxy_host', ''),
+            'port': int(port) if str(port).isdigit() else 0,
+        }
+        json.dump(raw, open(SETTINGS_FILE, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     except Exception:
         pass
 
@@ -749,6 +775,11 @@ async def set_settings(body: dict):
         if k in body:
             s[k] = body[k]
     _save_settings(s)
+    # 代理配置变更后重新加载(供后续连接使用)
+    try:
+        tg_tool.load_proxy_cfg()
+    except Exception:
+        pass
     return s
 
 
