@@ -807,6 +807,7 @@ DEFAULT_SETTINGS = {
     'proxy_scheme': 'socks5',
     'proxy_host': '',
     'proxy_port': '',
+    'card_open': {},
 }
 
 

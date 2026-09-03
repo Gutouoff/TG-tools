@@ -66,9 +66,7 @@
   let cardOpen = $state<Record<string, boolean>>({});
   function onCardToggle(name: string, open: boolean) {
     cardOpen = { ...cardOpen, [name]: open };
-    try {
-      localStorage.setItem('cardOpen', JSON.stringify(cardOpen));
-    } catch (e) {}
+    saveSettings({ card_open: cardOpen }).catch(() => {});
   }
   function isCardOpen(name: string, def: boolean): boolean {
     return cardOpen[name] ?? def;
@@ -279,9 +277,9 @@
         const parsed = JSON.parse(init.publicKey);
         // Telegram 返回 {"publicKey": {...}},内层才是 WebAuthn options
         const options = parsed.publicKey || parsed;
-        // WebAuthn 要求 rp.id 匹配页面域名,本地程序是 localhost,改成本机 host
+        // WebAuthn 要求 rp.id 匹配页面域名,本地程序用 localhost(IP 不被 WebAuthn 接受)
         if (options.rp) {
-          options.rp.id = location.hostname;
+          options.rp.id = 'localhost';
         }
         // WebAuthn 要求 challenge/user.id 是 BufferSource,Telegram 给的是 base64url 字符串
         options.challenge = b64urlToBuf(options.challenge);
@@ -566,11 +564,12 @@
     loadGroups();
     loadAccounts();
     try {
-      cardOpen = JSON.parse(localStorage.getItem('cardOpen') || '{}');
-    } catch (e) {}
-    try {
       settings = await getSettings();
       applyTheme();
+      const co = (settings as any).card_open;
+      if (co && typeof co === 'object') {
+        cardOpen = co as Record<string, boolean>;
+      }
     } catch (e) {
       // 保持默认主题
     }
