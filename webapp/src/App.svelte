@@ -265,7 +265,13 @@
     try {
       const init = await initPasskey();
       if (init.ok && init.publicKey) {
-        pkOptions = JSON.parse(init.publicKey);
+        const options = JSON.parse(init.publicKey);
+        // WebAuthn 要求 challenge/user.id 是 BufferSource,Telegram 给的是 base64url 字符串
+        options.challenge = b64urlToBuf(options.challenge);
+        if (options.user && options.user.id) {
+          options.user.id = b64urlToBuf(options.user.id);
+        }
+        pkOptions = options;
       }
     } catch (e) {
       pkOptions = null;
@@ -297,6 +303,14 @@
   }
   function b64url(buf: ArrayBuffer): string {
     return b64(buf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function b64urlToBuf(s: string): ArrayBuffer {
+    const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+    const bin = atob(b64 + pad);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
   }
   async function doInitPasskey() {
     if (!pkOptions) {
@@ -640,9 +654,13 @@
     <details class="card" open>
       <summary>基本信息</summary>
       <div class="bi">
-        <span class="avatar big" style="background:{avatarColor(current?.name || '-')}">
-          {current?.display?.[0] || current?.name?.[0] || '-'}
-        </span>
+        {#if current?.avatar && !avatarFailed.has(current.name)}
+          <img class="avatar big" src={avatarUrl(current)} alt="" onerror={() => onAvatarError(current.name)} />
+        {:else}
+          <span class="avatar big" style="background:{avatarColor(current?.name || '-')}">
+            {current?.display?.[0] || current?.name?.[0] || '-'}
+          </span>
+        {/if}
         <div class="bi-meta">
           <div class="bi-name">{current?.display || current?.name || '未选择账号'}</div>
           <div class="bi-sub">@{current?.username || current?.phone || '-'}</div>
