@@ -837,11 +837,18 @@ async def index():
     html = open(index_path, encoding='utf-8').read()
     inject = f'<script>window.__TG_TOKEN__={json.dumps(TOKEN)}</script>'
     html = html.replace('</head>', inject + '</head>')
-    return HTMLResponse(html)
+    return HTMLResponse(html, headers={'Cache-Control': 'no-cache, no-store, must-revalidate'})
+
+
+class _NoCacheStatic(StaticFiles):
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        return resp
 
 
 if os.path.isdir(DIST):
-    app.mount('/assets', StaticFiles(directory=os.path.join(DIST, 'assets')), name='assets')
+    app.mount('/assets', _NoCacheStatic(directory=os.path.join(DIST, 'assets')), name='assets')
 
 
 def _pick_port() -> int:
