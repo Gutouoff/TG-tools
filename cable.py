@@ -582,8 +582,19 @@ async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=No
             on_state('handshake')
         post = crypter.decrypt(await ws.recv())
         parsed = parse_post_handshake_message(post) if post else None
-        if not parsed or not parsed['supportsCtap']:
-            raise RuntimeError('手机不支持 CTAP')
+        if post is None:
+            raise RuntimeError('握手后消息解密失败(空消息/解密异常,序列号可能错位)')
+        if parsed is None:
+            head = post[:64].hex()
+            raise RuntimeError(f'握手后消息解析失败: hex={head}')
+        if not parsed['supportsCtap']:
+            try:
+                import cbor2 as _cb
+                obj = _cb.loads(post)
+                dump = repr(obj)[:200]
+            except Exception:
+                dump = f'hex={post[:64].hex()}'
+            raise RuntimeError(f'手机未声明CTAP支持: {dump}')
 
         if on_state:
             on_state('awaiting')
