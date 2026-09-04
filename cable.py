@@ -32,7 +32,7 @@ K_ROUTING_ID_SIZE = 3
 K_TUNNEL_ID_SIZE = 16
 K_PSK_SIZE = 32
 K_HANDSHAKE_RESPONSE_SIZE = K_P256_X962_LEN + 16
-K_PADDING_GRANULARITY = 16
+K_PADDING_GRANULARITY = 32  # tdesktop/Chromium 均 32,不是 16
 
 NOISE_PROTOCOL = b"Noise_KNpsk0_P256_AESGCM_SHA256"
 
@@ -127,8 +127,10 @@ def encode_qr_contents(key: QRKey, make_credential: bool, now: int) -> str:
 # ---------- Noise NKpsk0 ----------
 class Noise:
     def __init__(self):
-        self._ck = bytearray(NOISE_PROTOCOL)
-        self._h = bytearray(NOISE_PROTOCOL)
+        # 标准 Noise 规则: 协议名不足 32 字节须零填充(tdesktop 的 _chainingKey
+        # 是 fill(0) 后 memcpy 名字的 32 字节数组,不补零整条握手哈希全错)
+        self._ck = bytearray(NOISE_PROTOCOL.ljust(32, b'\x00'))
+        self._h = bytearray(self._ck)
         self._key = bytearray(32)
         self._nonce = 0
 

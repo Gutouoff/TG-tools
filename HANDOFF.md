@@ -120,7 +120,9 @@ TUNNEL_DOMAINS = ["cable.ua5v.com", "cable.auth.com"]
 - **已找到并修复根因**：cable.py `encode_qr_contents` 的 CBOR 字段 5（"mc"/"ga"）用 `bytes` 编码成了**字节字符串**(0x42),官方 tdesktop `CborValue(std::string)` 是**文本字符串**(0x62)——`a105426d63` vs `a105626d63`。Play Services 严格解析直接拒绝 ⇒ 弹窗秒退。已改为 str 并通过往返单测（字段类型/长度全部对齐官方）。
 - 其余字段核对过：pubkey 33B 压缩、secret 16B、domains=2、时间戳 int、false,与 tdesktop EncodeQRContents 完全一致;域名表 cable.ua5v.com/cable.auth.com 一致;tdesktop DecryptAdvert 与 cable.py decrypt_advert 字节级一致。
 - 诊断基建保留(cable.py `_detect`)：全 UUID/厂商数据抓包(完整 hex+RSSI)、任意 UUID 验密、变体探测(`hit:` 前缀)。
-- **若修复后仍秒退的排查顺序**：① 电脑时钟是否准(QR 字段 3 时间戳校验) ② 换 Chrome 手机浏览器打开 FIDO:/ 链接试 ③ 官方 tdesktop 同机对照(官方也挂 ⇒ Google 改格式,非我方 bug)。
+- **进展 2（QR 修复已验证生效）**：部署 CBOR 文本串修复后,手机正常弹出连接界面并广播 fff9(20 字节,hmac 命中!),电脑侧 EID 解密成功进入「蓝牙连接中…」→ 隧道 websocket → 发送握手首消息。
+- **进展 3（握手失败=手机端「连接失败」,已修两处）**：① `Noise.__init__` 协议名未零填充到 32 字节(tdesktop `_chainingKey.fill(0)` + memcpy,31 字节名字尾补 0x00),我们 _ck/_h 少一个 0x00 导致整条握手哈希/HKDF/AAD 全错;② `K_PADDING_GRANULARITY` 写成了 16,tdesktop/Chromium 均为 **32**。两处已修+部署。psk/tunnelId 派生、握手消息结构(prologue={1}→identity→psk→e→e/ee/se)、CTAP 封装(0x01 前缀)均已逐字节核对与官方一致。
+- **下一步**：用户重测。若握手通过,日志应出现「安全握手…」「等待手机确认注册…」;若仍「连接失败」,抓 ws.recv() 原始响应 hex 分析。
 
 ### 官方源码位置（已解压到工作目录，.gitignore 已忽略，勿提交）
 - `D:\dsh\tgtools\tdesktop-7.1.5-full\Telegram\SourceFiles\webauthn\` —— caBLE 的 C++ 实现
