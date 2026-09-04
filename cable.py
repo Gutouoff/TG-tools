@@ -283,7 +283,9 @@ def build_make_credential_request(client_data_hash32, rp_id, rp_name, user_id,
         4: params,
         7: {"rk": True, "uv": True},
     }
-    return b'\x01' + cbor2.dumps(cbor_map)
+    # 对照官方 BuildMakeCredentialRequest: 纯 CBOR map,无命令字节
+    # (MessageType 前缀由发送方按 protocolRevision 决定)
+    return cbor2.dumps(cbor_map)
 
 
 def credential_id_from_auth_data(auth_data: bytes):
@@ -315,19 +317,63 @@ def parse_make_credential_response(payload: bytes):
     return {"credentialId": cred_id, "authData": auth_data}
 
 
+def _decode_padded_cbor_map(plaintext: bytes):
+    """对照 DecodePaddedCborMap: 尾部2字节小端padding长度,失败再试1字节padding。"""
+    n = len(plaintext)
+    if n >= 2:
+        padding = plaintext[-2] | (plaintext[-1] << 8)
+        if padding + 2 <= n:
+            try:
+                parsed = cbor2.loads(plaintext[:n - padding - 2])
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                return parsed
+    if n >= 1:
+        padding = plaintext[-1]
+        if padding + 1 <= n:
+            try:
+                parsed = cbor2.loads(plaintext[:n - padding - 1])
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                return parsed
+    return None
+
+
 def parse_post_handshake_message(plaintext: bytes):
+    """对照 ParsePostHandshakeMessage。
+
+    protocolRevision: 1=普通CBOR, 0=带padding的CBOR(revision>=1 才在 CTAP
+    请求明文前加 MessageType 前缀)。supportsCtap 官方默认 True,仅当 key 3
+    存在且为数组时按数组内容(文本串 "ctap")判定。
+    """
+    import io as _io
     revision = 1
+    parsed = None
     try:
-        parsed = cbor2.loads(plaintext)
+        # 严格解析: 必须消费完整个缓冲区(尾部字节=padding格式,走回退)
+        buf = _io.BytesIO(plaintext)
+        parsed = cbor2.CBORDecoder(buf).decode()
+        if buf.tell() != len(plaintext):
+            parsed = None
     except Exception:
-        return None
+        parsed = None
+    if not isinstance(parsed, dict):
+        parsed = _decode_padded_cbor_map(plaintext)
+        revision = 0
     if not isinstance(parsed, dict):
         return None
-    supports_ctap = False
-    features = parsed.get(3)
-    if isinstance(features, list) and b'ctap' in features:
-        supports_ctap = True
-    return {"protocolRevision": revision, "supportsCtap": supports_ctap}
+    supports_ctap = True
+    if 3 in parsed:
+        features = parsed[3]
+        if not isinstance(features, list):
+            return None
+        supports_ctap = any(isinstance(f, str) and f == 'ctap' for f in features)
+    if 1 in parsed and not isinstance(parsed[1], bytes):
+        return None   # getInfo 必须是 bytes
+    return {"protocolRevision": revision, "supportsCtap": supports_ctap,
+            "getInfo": parsed.get(1)}
 
 
 def b64url(data: bytes) -> str:
@@ -545,13 +591,17 @@ async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=No
             request['clientDataHash'], request['rpId'], request['rpName'],
             request['userId'], request['userName'], request['userDisplayName'],
             request['algorithms'])
-        await ws.send(crypter.encrypt(bytes([_MSG_CTAP]) + ctap_req))
+        # 对照官方 SendCtapRequest: protocolRevision>=1 才加 MessageType::Ctap 前缀
+        plain = ctap_req
+        if parsed['protocolRevision'] >= 1:
+            plain = bytes([_MSG_CTAP]) + ctap_req
+        await ws.send(crypter.encrypt(plain))
 
         reply = crypter.decrypt(await ws.recv())
         if reply is None or not reply:
             raise RuntimeError('空响应')
-        if reply[0] == _MSG_CTAP:
-            reply = reply[1:]
+        if reply[0] != 0:
+            raise RuntimeError(f'CTAP 错误 0x{reply[0]:02X}')
         result = parse_make_credential_response(reply)
         if result is None:
             raise RuntimeError('注册被拒绝')
