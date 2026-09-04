@@ -124,6 +124,8 @@ class Engine:
         self._client = None
         self._me = None
         self._account_dir = None
+        # 连接池: 账号名 -> {'client','me','info'};支持多账号同时在线,秒切
+        self._pool = {}
         self._cancel = threading.Event()
         self._task_running = False
         self._lock = threading.RLock()
@@ -144,16 +146,23 @@ class Engine:
         self._loop.run_forever()
 
     def shutdown(self):
-        """断开并结束线程。"""
+        """断开所有在线账号并结束线程。"""
         if self._loop is None:
             return
         async def _fin():
+            for entry in list(self._pool.values()):
+                try:
+                    await entry['client'].disconnect()
+                except Exception:
+                    pass
+            self._pool.clear()
             if self._client:
                 try:
                     await self._client.disconnect()
                 except Exception:
                     pass
                 self._client = None
+            self._me = None
         try:
             fut = asyncio.run_coroutine_threadsafe(_fin(), self._loop)
             fut.result(timeout=10)
@@ -199,12 +208,15 @@ class Engine:
 
     async def _do_connect(self, account_dir):
         with self._lock:
-            if self._client:
-                try:
-                    await self._client.disconnect()
-                except Exception:
-                    pass
-                self._client = None
+            name = os.path.basename(account_dir)
+            # 已在线: 秒切到该账号,不重连
+            if name in self._pool:
+                entry = self._pool[name]
+                self._client = entry['client']
+                self._me = entry['me']
+                self._account_dir = account_dir
+                self._state('connected', entry['info'])
+                return entry['info']
             self._account_dir = account_dir
             self._log(T('t050a', os.path.basename(account_dir)))
             try:
@@ -245,6 +257,7 @@ class Engine:
                 'first': me.first_name or '',
                 'last': me.last_name or '',
             }
+            self._pool[name] = {'client': client, 'me': me, 'info': info, 'dir': account_dir}
             self._log(T('t050', info['phone'], info['first'], info['last']).rstrip())
             self._state('connected', info)
             return info
@@ -632,20 +645,82 @@ class Engine:
                 self._gui_schedule(lambda: on_done(False, '未找到该用户/群组'))
         return ent
 
-    def disconnect(self):
-        """断开当前账号连接(不重连)。"""
-        return self._submit(self._do_disconnect())
+    def disconnect(self, name=None):
+        """断开连接。name=None 断当前账号;name 指定池中账号则只断那个。"""
+        return self._submit(self._do_disconnect(name))
 
-    async def _do_disconnect(self):
+    async def _do_disconnect(self, name=None):
         with self._lock:
+            if name:
+                entry = self._pool.pop(name, None)
+                if entry:
+                    try:
+                        await entry['client'].disconnect()
+                    except Exception:
+                        pass
+                    if self._client is entry['client']:
+                        self._client = None
+                        self._me = None
+                        self._account_dir = None
+                        # 池里还有其他在线账号: 自动切过去,保持有当前账号
+                        for v in self._pool.values():
+                            self._client = v['client']
+                            self._me = v['me']
+                            self._account_dir = v.get('dir')
+                            self._log(T('t050b', v['info']['name']))
+                            self._state('switched', v['info'])
+                            break
+                        if not self._pool:
+                            self._state('disconnected', name)
+                else:
+                    self._log(f'[!] {name} 不在线')
+                return None
             if self._client:
                 try:
                     await self._client.disconnect()
                 except Exception:
                     pass
+                # 从池中移除当前账号
+                for k, v in list(self._pool.items()):
+                    if v['client'] is self._client:
+                        del self._pool[k]
                 self._client = None
             self._me = None
+            # 池里还有其他在线账号: 自动切过去,保持有当前账号
+            for v in self._pool.values():
+                self._client = v['client']
+                self._me = v['me']
+                self._account_dir = v.get('dir')
+                self._log(T('t050b', v['info']['name']))
+                self._state('switched', v['info'])
+                break
+            if not self._pool:
+                self._state('disconnected', None)
         return None
+
+    def switch(self, name):
+        """切换当前账号到池中已在线的 name(秒切)。返回 info 或 None。"""
+        return self._submit(self._do_switch(name))
+
+    async def _do_switch(self, name):
+        with self._lock:
+            entry = self._pool.get(name)
+            if not entry:
+                self._log(f'[!] {name} 不在线')
+                return None
+            self._client = entry['client']
+            self._me = entry['me']
+            self._account_dir = entry.get('dir')
+            self._log(T('t050b', name))
+            self._state('switched', entry['info'])
+            return entry['info']
+
+    def online_accounts(self):
+        """返回当前在线账号的 info 列表。"""
+        return self._submit(self._do_online_accounts())
+
+    async def _do_online_accounts(self):
+        return [v['info'] for v in self._pool.values()]
 
     # ---------- 安全: passkey / 邮箱 / 2FA ----------
 

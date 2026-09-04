@@ -53,9 +53,27 @@ export async function connectAccount(path: string) {
   return r.json();
 }
 
-export async function disconnect() {
-  const r = await apiFetch('/api/disconnect', { method: 'POST', headers: jsonHeaders() });
+export async function disconnect(name?: string) {
+  const r = await apiFetch('/api/disconnect', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(name ? { name } : {}),
+  });
   return r.json();
+}
+
+export async function switchAccount(name: string) {
+  const r = await apiFetch('/api/switch', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ name }),
+  });
+  return r.json();
+}
+
+export async function getOnline() {
+  const r = await apiFetch('/api/online');
+  return r.json() as Promise<{ ok: boolean; online: Array<{ name: string }> }>;
 }
 
 export async function postTask(url: string, body?: object) {

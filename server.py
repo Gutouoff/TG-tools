@@ -244,7 +244,15 @@ async def connect(body: dict):
         info['username'] = (me or {}).get('username', '') if ok else ''
     except Exception:
         info['username'] = ''
-    return {'ok': True, 'info': _jsonable(info)}
+    # 同步返回池中所有在线账号(前端按 name 匹配打在线徽标)
+    online = []
+    try:
+        _ok, onl = await _call(eng.online_accounts, timeout=10)
+        if _ok and onl:
+            online = onl
+    except Exception:
+        pass
+    return {'ok': True, 'info': _jsonable(info), 'online': _jsonable(online)}
 
 
 @app.get('/api/me')
@@ -322,10 +330,40 @@ async def avatar_image(name: str):
 
 
 @app.post('/api/disconnect')
-async def disconnect():
+async def disconnect(body: dict = None):
     eng = init_engine()
-    eng.disconnect()
+    name = (body or {}).get('name') if isinstance(body, dict) else None
+    fut = eng.disconnect(name)
+    try:
+        await asyncio.wait_for(asyncio.wrap_future(fut), 30)
+    except Exception:
+        pass
     return {'ok': True}
+
+
+@app.post('/api/switch')
+async def switch(body: dict):
+    """秒切到池中已在线的账号(不重连)。"""
+    eng = init_engine()
+    name = body.get('name', '')
+    if not name:
+        return {'ok': False, 'msg': '缺少账号名'}
+    fut = eng.switch(name)
+    try:
+        info = await asyncio.wait_for(asyncio.wrap_future(fut), 15)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    if not info:
+        return {'ok': False, 'msg': '该账号不在线,请先连接'}
+    return {'ok': True, 'info': _jsonable(info)}
+
+
+@app.get('/api/online')
+async def online():
+    """当前在线账号列表(连接池)。"""
+    eng = init_engine()
+    ok, data = await _call(eng.online_accounts, timeout=10)
+    return {'ok': ok, 'online': _jsonable(data) if ok and data else []}
 
 
 # ---------- 任务 ----------

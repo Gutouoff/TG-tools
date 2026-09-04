@@ -4,6 +4,8 @@
     getAccounts,
     connectAccount,
     disconnect,
+    switchAccount,
+    getOnline,
     postTask,
     connectWS,
     setSpeed,
@@ -115,6 +117,11 @@
   }
 
   async function onConnect(a: Account) {
+    // 已在线的账号直接秒切,不重连
+    if (onlineNames.has(a.name) && current?.name !== a.name) {
+      await onSwitch(a);
+      return;
+    }
     current = a;
     addLog(`正在连接 ${a.name} …`);
     const r = await connectAccount(a.path);
@@ -124,7 +131,12 @@
         a.username = uname;
         applyFilter();
       }
-      markOnline(a.name, true);
+      // 同步整个连接池的在线状态(多账号同时在线)
+      if (Array.isArray(r.online) && r.online.length) {
+        onlineNames = new Set(r.online.map((x: any) => x.name));
+      } else {
+        markOnline(a.name, true);
+      }
       addLog(`已连接 ${a.name}${uname ? ` (@${uname})` : ''}`);
       // 连接成功后刷新一次头像
       try {
@@ -142,11 +154,35 @@
     }
   }
 
+  // 秒切到已在线账号(连接池,不重连)
+  async function onSwitch(a: Account) {
+    const r = await switchAccount(a.name);
+    if (r.ok && r.info) {
+      current = a;
+      connected = true;
+      flushSync(() => {
+        onlineNames = new Set([...onlineNames, a.name]);
+      });
+      addLog(`已切换到 ${a.name}(保持在线)`);
+    } else {
+      addLog(`切换失败: ${r.msg || '未知错误'}`);
+      markOnline(a.name, false);
+    }
+  }
+
   async function doDisconnect() {
-    await disconnect();
+    await disconnect(current?.name);
     connected = false;
     if (current) markOnline(current.name, false);
-    addLog('已断开连接');
+    addLog(`已断开连接${current ? `: ${current.name}` : ''}`);
+  }
+
+  // 断开池中指定账号(其他账号保持在线)
+  async function disconnectOne(name: string) {
+    await disconnect(name);
+    markOnline(name, false);
+    if (current?.name === name) connected = false;
+    addLog(`已断开连接: ${name}`);
   }
   async function doReconnect() {
     if (!current) {
@@ -498,7 +534,33 @@
     }
     if (e.type === 'state') {
       if (e.status === 'connected') connected = true;
+      if (e.status === 'switched') {
+        connected = true;
+        // 引擎自动切到池中其他在线账号时,同步 current 指向
+        const nm = (e.data as any)?.name;
+        if (nm) {
+          const acc = accounts.find((x) => x.name === nm);
+          if (acc) {
+            flushSync(() => {
+              current = acc;
+              onlineNames = new Set([...onlineNames, nm]);
+            });
+          }
+        }
+      }
       if (e.status === 'connect_fail') connected = false;
+      if (e.status === 'disconnected') {
+        // data 为账号名: 只断该账号;为 null: 当前账号断开
+        const nm = typeof e.data === 'string' ? e.data : current?.name;
+        if (nm) {
+          flushSync(() => {
+            onlineNames = new Set([...onlineNames].filter((x) => x !== nm));
+          });
+          if (current?.name === nm) connected = false;
+        } else {
+          connected = false;
+        }
+      }
       if (e.status === 'done') addLog('[完成]');
       if (e.status === 'error') addLog(`[错误] ${String(e.data ?? '')}`);
       if (e.status === 'passkey_done') {
@@ -535,6 +597,18 @@
   onMount(async () => {
     loadGroups();
     loadAccounts();
+    // 页面刷新后恢复在线徽标(连接池仍在)
+    try {
+      const on = await getOnline();
+      if (on.ok && Array.isArray(on.online) && on.online.length) {
+        flushSync(() => {
+          onlineNames = new Set(on.online.map((x) => x.name));
+        });
+        connected = true;
+      }
+    } catch (e) {
+      // 忽略
+    }
     try {
       settings = await getSettings();
       applyTheme();
@@ -546,7 +620,7 @@
         // 恢复后把 details 元素的 open 同步到保存值(flushSync 不一定触发 open 属性更新)
         for (const el of document.querySelectorAll('details.card')) {
           const name = el.getAttribute('data-card');
-          if (name && name in cardOpen) el.open = !!cardOpen[name];
+          if (name && name in cardOpen) (el as HTMLDetailsElement).open = !!cardOpen[name];
         }
       }
       cardOpenRestored = true;
@@ -630,6 +704,9 @@
         </label>
       {/each}
       <button onclick={() => { doMoveAccount(ctxMenu.name, 'ungrouped'); closeCtx(); }}>移出所有分组</button>
+      {#if onlineNames.has(ctxMenu.name)}
+        <button class="ctx-disconnect" onclick={() => { disconnectOne(ctxMenu.name); closeCtx(); }}>断开连接（保持其他在线）</button>
+      {/if}
     </div>
   {/if}
 
@@ -712,6 +789,7 @@
       {#if pkQrImg}
         <div class="qr-box">
           <img class="qr-img" src={pkQrImg} alt="通行密钥二维码" />
+          <p class="qr-tip">请用 <b>Telegram App 内置扫码器</b>扫描<br />（设置 → 设备 → 链接桌面设备，不要用 Google 智能镜头/系统相机扫）</p>
         </div>
       {/if}
       <ul class="sec-list">
@@ -1484,6 +1562,13 @@
     width: 200px;
     height: 200px;
     border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .qr-tip {
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.6;
+    text-align: center;
+    color: var(--md-sys-color-on-surface-variant);
   }
   .qr-uri {
     display: flex;
