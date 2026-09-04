@@ -629,6 +629,25 @@ def _make_cable_qr_uri():
     return 'FIDO:/' + _bytes_to_digits(cbor_bytes)
 
 
+def qr_matrix_to_png(matrix):
+    """qrcode 布尔矩阵 -> 8 位灰度 PNG bytes(纯 zlib/struct, 不依赖 Pillow)。"""
+    import struct
+    import zlib
+
+    def chunk(tag, payload):
+        body = tag + payload
+        return (struct.pack('>I', len(payload)) + body
+                + struct.pack('>I', zlib.crc32(body) & 0xFFFFFFFF))
+
+    h = len(matrix)
+    w = len(matrix[0]) if h else 0
+    raw = b''.join(b'\x00' + bytes(0 if c else 255 for c in row) for row in matrix)
+    ihdr = struct.pack('>IIBBBBB', w, h, 8, 0, 0, 0, 0)
+    return (b'\x89PNG\r\n\x1a\n'
+            + chunk(b'IHDR', ihdr)
+            + chunk(b'IDAT', zlib.compress(raw, 9))
+            + chunk(b'IEND', b''))
+
 @app.post('/api/passkeys/init')
 async def init_passkey():
     import asyncio
@@ -667,17 +686,13 @@ async def init_passkey():
                 _emit({'type': 'state', 'status': 'passkey_error', 'data': str(e)})
 
         asyncio.create_task(_run())
-        # 生成二维码图片
+        # 生成二维码图片(纯 zlib PNG 编码,避免为二维码引入整套 Pillow 约 13MB)
         import base64
-        import io
         import qrcode as _qrcode
         qr = _qrcode.QRCode(border=2)
         qr.add_data(qr_text)
         qr.make(fit=True)
-        qimg = qr.make_image(fill_color='black', back_color='white')
-        buf = io.BytesIO()
-        qimg.save(buf, 'PNG')
-        img_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+        img_b64 = base64.b64encode(qr_matrix_to_png(qr.get_matrix())).decode('ascii')
         return {'ok': True, 'qr': qr_text, 'img': img_b64}
     except Exception as e:
         return {'ok': False, 'msg': str(e)}
@@ -1174,15 +1189,20 @@ async def pack_account(body: dict):
 
 
 # ---------- 静态前端 ----------
+_index_cache = None          # index.html 缓存(避免每次请求读盘)
+
+
 @app.get('/')
 async def index():
     from fastapi.responses import HTMLResponse
-    index_path = os.path.join(DIST, 'index.html')
-    if not os.path.isfile(index_path):
-        return HTMLResponse('未找到前端资源', status_code=404)
-    html = open(index_path, encoding='utf-8').read()
+    global _index_cache
+    if _index_cache is None:
+        index_path = os.path.join(DIST, 'index.html')
+        if not os.path.isfile(index_path):
+            return HTMLResponse('未找到前端资源', status_code=404)
+        _index_cache = open(index_path, encoding='utf-8').read()
     inject = f'<script>window.__TG_TOKEN__={json.dumps(TOKEN)}</script>'
-    html = html.replace('</head>', inject + '</head>')
+    html = _index_cache.replace('</head>', inject + '</head>')
     return HTMLResponse(html, headers={'Cache-Control': 'no-cache, no-store, must-revalidate'})
 
 

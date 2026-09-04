@@ -895,18 +895,24 @@ class Engine:
             raise RuntimeError(f'账号 {account} 不在线')
         client = entry['client']
         msgs = []
+        sender_cache = {}    # sender_id -> (sender, name);同一发送者多条消息只解析一次
         async for m in client.iter_messages(dialog_id, limit=limit, offset_id=offset_id or None):
-            sender = None
-            name = ''
-            try:
-                sender = await m.get_sender()
-                name = (((getattr(sender, 'first_name', '') or '') + ' '
-                         + (getattr(sender, 'last_name', '') or '')).strip()
-                        or getattr(sender, 'title', None)
-                        or getattr(sender, 'username', None) or '')
-            except Exception:
-                # 单条发送者解析失败(匿名管理员/已注销/服务消息)不能炸整批历史
+            sid = m.sender_id
+            if sid in sender_cache:
+                sender, name = sender_cache[sid]
+            else:
+                sender = None
                 name = ''
+                try:
+                    sender = await m.get_sender()
+                    name = (((getattr(sender, 'first_name', '') or '') + ' '
+                             + (getattr(sender, 'last_name', '') or '')).strip()
+                            or getattr(sender, 'title', None)
+                            or getattr(sender, 'username', None) or '')
+                except Exception:
+                    # 单条发送者解析失败(匿名管理员/已注销/服务消息)不能炸整批历史
+                    name = ''
+                sender_cache[sid] = (sender, name)
             msgs.append({
                 'id': m.id,
                 'out': bool(m.out),          # True=小号自己发出

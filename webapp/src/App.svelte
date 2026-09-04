@@ -128,7 +128,9 @@
   }
 
   function addLog(line: string) {
-    logs = [...logs, line].slice(-2000);
+    // $state 深代理可直接 push,避免每条日志整组拷贝(O(n))
+    logs.push(line);
+    if (logs.length > 2000) logs.splice(0, logs.length - 2000);
   }
 
   async function loadAccounts() {
@@ -255,6 +257,7 @@
   // 设置
   let settings = $state<Record<string, string | boolean>>({});
   let settingsOpen = $state(false);
+  let settingsSection = $state<'general' | 'appearance' | 'proxy' | 'join'>('general');
   let themeMode = $derived((settings.theme_mode as string) || 'light');
   async function loadSettings() {
     settings = {
@@ -339,6 +342,7 @@
 
   // 打开设置弹窗并定位到「加群频道」输入区
   async function openJoinChannels() {
+    settingsSection = 'join';
     await loadSettings();
     setTimeout(() => {
       const el = document.querySelector('.join-links');
@@ -768,7 +772,7 @@
           }
           // 聊天记录页: 当前会话实时追加(推送的都是收到的消息)
           if (rightView === 'chat' && curDialog && m.chat_id === curDialog.id) {
-            historyMsgs = [...historyMsgs, { id: Date.now(), out: false, sender: m.sender || '', sender_id: m.sender_id ?? null, sender_username: m.sender_username ?? null, text: m.text || '(媒体消息)', date: m.date }];
+            historyMsgs.push({ id: Date.now(), out: false, sender: m.sender || '', sender_id: m.sender_id ?? null, sender_username: m.sender_username ?? null, text: m.text || '(媒体消息)', date: m.date });
             scrollHistoryBottom();
           }
           if (rightView !== 'chat') chatUnread += 1;
@@ -1220,72 +1224,80 @@
 
 {#if settingsOpen}
   <div class="modal-mask" onclick={() => (settingsOpen = false)}>
-    <div class="modal" onclick={(e) => e.stopPropagation()}>
-      <div class="modal-head">
-        <h3>设置</h3>
-        <button class="back" onclick={() => (settingsOpen = false)}>✕</button>
+    <div class="modal settings-modal" onclick={(e) => e.stopPropagation()}>
+      <div class="set-nav">
+        <div class="set-title">设置</div>
+        <button class="set-nav-item" class:on={settingsSection === 'general'} onclick={() => (settingsSection = 'general')}><span class="set-nav-icon">⚙️</span>通用</button>
+        <button class="set-nav-item" class:on={settingsSection === 'appearance'} onclick={() => (settingsSection = 'appearance')}><span class="set-nav-icon">🎨</span>外观</button>
+        <button class="set-nav-item" class:on={settingsSection === 'proxy'} onclick={() => (settingsSection = 'proxy')}><span class="set-nav-icon">🌐</span>代理</button>
+        <button class="set-nav-item" class:on={settingsSection === 'join'} onclick={() => (settingsSection = 'join')}><span class="set-nav-icon">📨</span>加群频道</button>
       </div>
-      <div class="form">
-        <label>打包文件命名格式（name=账号名 date=日期）</label>
-        <input bind:value={settings.pack_naming} />
-        <label>默认压缩密码（使用 AES-256 加密）</label>
-        <input type="password" autocomplete="new-password" bind:value={settings.pack_password} />
-
-        <label>代理模式</label>
-        <select bind:value={settings.proxy_mode}>
-          <option value="none">不使用代理</option>
-          <option value="system">使用系统代理</option>
-          <option value="manual">手动设置</option>
-        </select>
-        {#if settings.proxy_mode === 'manual'}
-          <label>代理类型</label>
-          <select bind:value={settings.proxy_scheme}>
-            <option value="socks5">SOCKS5</option>
-            <option value="socks4">SOCKS4</option>
-            <option value="http">HTTP</option>
+      <div class="set-content">
+        {#if settingsSection === 'general'}
+          <div class="set-sec-title">通用</div>
+          <label>打包文件命名格式（name=账号名 date=日期）</label>
+          <input bind:value={settings.pack_naming} />
+          <label>默认压缩密码（使用 AES-256 加密）</label>
+          <input type="password" autocomplete="new-password" bind:value={settings.pack_password} />
+        {:else if settingsSection === 'appearance'}
+          <div class="set-sec-title">外观</div>
+          <label>主题模式</label>
+          <select bind:value={settings.theme_mode} onchange={() => applyTheme()}>
+            <option value="light">浅色</option>
+            <option value="dark">深色</option>
           </select>
-          <label>IP 地址</label>
-          <input bind:value={settings.proxy_host} placeholder="127.0.0.1" />
-          <label>端口</label>
-          <input bind:value={settings.proxy_port} placeholder="7890" />
+          <label>按钮 / 主色</label>
+          <input class="color-input" type="color" bind:value={settings.theme_seed} onchange={() => applyTheme()} />
+          <label>背景浅色</label>
+          <input class="color-input" type="color" bind:value={settings.theme_bg} onchange={() => applyTheme()} />
+          <label>背景深色（卡片）</label>
+          <input class="color-input" type="color" bind:value={settings.theme_dark} onchange={() => applyTheme()} />
+          <label>顶栏颜色</label>
+          <input class="color-input" type="color" bind:value={settings.theme_topbar} onchange={() => applyTheme()} />
+          <label class="sect">功能区排序</label>
+          <div class="order-list">
+            {#each cardOrder as c, i (c)}
+              <div class="order-row">
+                <span>{c}</span>
+                <span class="order-btns">
+                  <button class="order-btn" disabled={i === 0} title="上移" onclick={() => moveCard(i, -1)}>↑</button>
+                  <button class="order-btn" disabled={i === cardOrder.length - 1} title="下移" onclick={() => moveCard(i, 1)}>↓</button>
+                </span>
+              </div>
+            {/each}
+          </div>
+        {:else if settingsSection === 'proxy'}
+          <div class="set-sec-title">代理</div>
+          <label>代理模式</label>
+          <select bind:value={settings.proxy_mode}>
+            <option value="none">不使用代理</option>
+            <option value="system">使用系统代理</option>
+            <option value="manual">手动设置</option>
+          </select>
+          {#if settings.proxy_mode === 'manual'}
+            <label>代理类型</label>
+            <select bind:value={settings.proxy_scheme}>
+              <option value="socks5">SOCKS5</option>
+              <option value="socks4">SOCKS4</option>
+              <option value="http">HTTP</option>
+            </select>
+            <label>IP 地址</label>
+            <input bind:value={settings.proxy_host} placeholder="127.0.0.1" />
+            <label>端口</label>
+            <input bind:value={settings.proxy_port} placeholder="7890" />
+          {/if}
+        {:else}
+          <div class="set-sec-title">加群频道</div>
+          <label>要加入的群组/频道链接（每行一个：https://t.me/xxx 或 @xxx 或 https://t.me/+邀请）</label>
+          <textarea class="join-links" rows="6" bind:value={joinLinks}
+            placeholder={'https://t.me/durov\nhttps://t.me/+AbCdEf...'}></textarea>
+          <md-filled-button onclick={doJoinChats}>全部加入（当前账号）</md-filled-button>
         {/if}
-
-        <label>主题模式</label>
-        <select bind:value={settings.theme_mode} onchange={() => applyTheme()}>
-          <option value="light">浅色</option>
-          <option value="dark">深色</option>
-        </select>
-
-        <label>功能区排序</label>
-        <div class="order-list">
-          {#each cardOrder as c, i (c)}
-            <div class="order-row">
-              <span>{c}</span>
-              <span class="order-btns">
-                <button class="order-btn" disabled={i === 0} title="上移" onclick={() => moveCard(i, -1)}>↑</button>
-                <button class="order-btn" disabled={i === cardOrder.length - 1} title="下移" onclick={() => moveCard(i, 1)}>↓</button>
-              </span>
-            </div>
-          {/each}
+        <div class="set-footer">
+          <md-filled-button onclick={doSaveSettings}>保存设置</md-filled-button>
         </div>
-
-        <label>按钮 / 主色</label>
-        <input type="color" bind:value={settings.theme_seed} onchange={() => applyTheme()} />
-        <label>背景浅色</label>
-        <input type="color" bind:value={settings.theme_bg} onchange={() => applyTheme()} />
-        <label>背景深色（卡片）</label>
-        <input type="color" bind:value={settings.theme_dark} onchange={() => applyTheme()} />
-        <label>顶栏颜色</label>
-        <input type="color" bind:value={settings.theme_topbar} onchange={() => applyTheme()} />
-
-        <label class="sect">加群频道</label>
-        <label>要加入的群组/频道链接（每行一个：https://t.me/xxx 或 @xxx 或 https://t.me/+邀请）</label>
-        <textarea class="join-links" rows="4" bind:value={joinLinks}
-          placeholder={'https://t.me/durov\nhttps://t.me/+AbCdEf...'}></textarea>
-        <md-filled-button onclick={doJoinChats}>全部加入（当前账号）</md-filled-button>
-
-        <md-filled-button onclick={doSaveSettings}>保存设置</md-filled-button>
       </div>
+      <button class="back set-close" title="关闭" onclick={() => (settingsOpen = false)}>✕</button>
     </div>
   </div>
 {/if}
@@ -1801,6 +1813,89 @@
     display: flex;
     flex-direction: column;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  }
+  .settings-modal {
+    position: relative;
+    width: 680px;
+    height: 540px;
+    max-height: 86vh;
+    padding: 0;
+    flex-direction: row;
+  }
+  .set-nav {
+    width: 170px;
+    flex-shrink: 0;
+    padding: 14px 10px;
+    border-right: 1px solid var(--divider);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-y: auto;
+  }
+  .set-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 8px 12px;
+  }
+  .set-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 14px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    border-radius: 999px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--md-sys-color-on-surface);
+    text-align: left;
+    width: 100%;
+    transition: background 0.15s;
+  }
+  .set-nav-item:hover:not(.on) {
+    background: var(--state-layer);
+  }
+  .set-nav-item.on {
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    font-weight: 500;
+  }
+  .set-nav-icon {
+    font-size: 15px;
+    width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .set-content {
+    flex: 1;
+    min-width: 0;
+    padding: 18px 22px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .set-sec-title {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0 0 12px;
+  }
+  .color-input {
+    height: 36px !important;
+    min-height: 36px;
+    padding: 3px !important;
+    border-radius: var(--md-sys-shape-corner-small) !important;
+    cursor: pointer;
+  }
+  .set-footer {
+    margin-top: auto;
+    padding-top: 12px;
+  }
+  .set-close {
+    position: absolute;
+    top: 12px;
+    right: 14px;
   }
   .modal-head {
     display: flex;

@@ -13,7 +13,8 @@ hiddenimports += collect_submodules('pywebview')
 hiddenimports += collect_submodules('websockets')
 hiddenimports += collect_submodules('starlette')
 hiddenimports += collect_submodules('qrcode')
-hiddenimports += collect_submodules('PIL')
+# PIL 不做全量收集: 源码无直接使用,仅 qrcode 间接依赖,
+# PyInstaller 官方 Pillow hook 会按需收集(全量收集约多占 10MB)
 hiddenimports += collect_submodules('cryptography')
 hiddenimports += collect_submodules('cbor2')
 hiddenimports += collect_submodules('bleak')
@@ -33,7 +34,9 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=['tkinter', 'ttkbootstrap', 'PyQt5', 'PyQt5.QtCore', 'PyQt5.QtGui',
-              'PyQt5.QtWidgets', 'PyQt5.QtNetwork', 'sip'],
+              'PyQt5.QtWidgets', 'PyQt5.QtNetwork', 'sip',
+              'watchfiles',   # uvicorn 仅 reload 模式使用,运行时不需要
+              'PIL'],         # 二维码用纯 zlib PNG 编码,不需要 Pillow(省约 13MB)
     noarchive=False,
 )
 
