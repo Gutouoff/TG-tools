@@ -41,6 +41,9 @@
     getSettings,
     saveSettings,
     getMe,
+    getRecv,
+    setRecv,
+    joinChats,
     TOKEN,
     type Account,
     type LogEvent,
@@ -76,6 +79,24 @@
   }
   function isCardOpen(name: string, def: boolean): boolean {
     return cardOpen[name] ?? def;
+  }
+  // 卡片排序(settings.card_order 逗号分隔持久化)
+  const DEFAULT_CARD_ORDER = ['基本信息', '聊天', '安全', '删除', '其他设置'];
+  let cardOrder = $state<string[]>([...DEFAULT_CARD_ORDER]);
+  function parseCardOrder(v: unknown): string[] {
+    const names = typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : [];
+    const valid = names.filter((n) => DEFAULT_CARD_ORDER.includes(n));
+    // 去重并补齐缺失项(防 settings.json 被手改坏)
+    return [...new Set([...valid, ...DEFAULT_CARD_ORDER])];
+  }
+  function moveCard(i: number, dir: number) {
+    const j = i + dir;
+    if (j < 0 || j >= cardOrder.length) return;
+    const next = [...cardOrder];
+    [next[i], next[j]] = [next[j], next[i]];
+    cardOrder = next;
+    settings = { ...settings, card_order: cardOrder.join(',') };
+    saveSettings({ card_order: settings.card_order }).catch(() => {});
   }
   function onAvatarError(name: string) {
     const next = new Set(avatarFailed);
@@ -230,25 +251,27 @@
   }
 
   // 设置
-  const THEME_COLORS = ['#9BCFDC', '#66BB6A', '#9C27B0', '#FF9800'];
   let settings = $state<Record<string, string | boolean>>({});
   let settingsOpen = $state(false);
   let themeMode = $derived((settings.theme_mode as string) || 'light');
   async function loadSettings() {
     settings = {
       pack_naming: '{name}_账号包', pack_password: '',
-      theme_seed: '#009688', theme_bg: '#F7FAF9', theme_dark: '#FFFFFF', theme_topbar: '#00796B', theme_mode: 'light',
+      theme_seed: '#009688', theme_bg: '#F7FAF9', theme_dark: '#FFFFFF', theme_topbar: '#00796B', theme_mode: 'light', card_order: '基本信息,聊天,安全,删除,其他设置',
       proxy_mode: 'none', proxy_scheme: 'socks5', proxy_host: '', proxy_port: '',
+      join_links: '',
     };
     settingsOpen = true;
     try {
       settings = await getSettings();
+      joinLinks = (settings.join_links as string) || '';
       applyTheme();
     } catch (e) {
       // 保持默认值
     }
   }
   async function doSaveSettings() {
+    settings = { ...settings, join_links: joinLinks };
     await saveSettings(settings);
     settingsOpen = false;
     addLog('设置已保存');
@@ -269,7 +292,6 @@
       root.removeProperty('--md-sys-color-surface');
       root.removeProperty('--md-sys-color-surface-container');
       root.removeProperty('--topbar-color');
-      root.removeProperty('--md-sys-color-primary-container');
       return;
     }
     const seed = (settings.theme_seed as string) || '#009688';
@@ -278,7 +300,6 @@
     const topbar = (settings.theme_topbar as string) || '#00796B';
     const root = document.documentElement.style;
     root.setProperty('--md-sys-color-primary', seed);
-    root.setProperty('--md-sys-color-primary-container', seed);
     root.setProperty('--md-sys-color-surface', bg);
     root.setProperty('--md-sys-color-surface-container', dark);
     root.setProperty('--topbar-color', topbar);
@@ -291,12 +312,70 @@
   }
 
   // 右栏视图
-  let rightView = $state<'log' | 'passkey' | '2fa' | 'email' | 'devices' | 'profile' | 'whitelist' | 'settings'>('log');
+  let rightView = $state<'log' | 'passkey' | '2fa' | 'email' | 'devices' | 'profile' | 'whitelist' | 'settings' | 'chat'>('log');
   function setView(v: typeof rightView) {
     flushSync(() => {
       rightView = v;
+      if (v === 'chat') chatUnread = 0;
     });
   }
+
+  // ---------- 聊天: 消息接收 / 加群频道 ----------
+  let chatMsgs = $state<any[]>([]);
+  let chatUnread = $state(0);
+  let recvOn = $state(false);
+  let recvRules = $state<Record<string, boolean>>({
+    exclude_channels: true, exclude_groups: false, exclude_bots: false,
+  });
+  let joinLinks = $state('');
+
+  async function loadRecv() {
+    try {
+      const r = await getRecv();
+      recvOn = r.on;
+      recvRules = { ...recvRules, ...r.rules };
+    } catch {}
+  }
+  async function applyRecv(on: boolean, rules?: Record<string, boolean>) {
+    recvOn = on;
+    if (rules) recvRules = { ...recvRules, ...rules };
+    try {
+      const r = await setRecv(recvOn, recvRules);
+      recvOn = r.on;
+      recvRules = { ...recvRules, ...r.rules };
+    } catch (e: any) {
+      addLog(`[消息接收] 设置失败: ${e?.message ?? e}`);
+    }
+    addLog(recvOn ? '[消息接收] 已开启' : '[消息接收] 已关闭');
+  }
+  function onRecvRuleChange(key: string) {
+    applyRecv(recvOn, { ...recvRules, [key]: !recvRules[key] });
+  }
+  async function doJoinChats() {
+    const links = joinLinks.split('\n').map((s) => s.trim()).filter(Boolean);
+    if (!links.length) {
+      addLog('[加群] 链接列表为空');
+      return;
+    }
+    addLog(`[加群] 开始加入 ${links.length} 个链接…(结果见下方日志)`);
+    try {
+      const r = await joinChats(links);
+      if (r.ok) {
+        const okN = (r.results ?? []).filter((x: any) => x.ok).length;
+        addLog(`[加群] 完成: 成功 ${okN}/${(r.results ?? []).length}`);
+      } else {
+        addLog(`[加群] 失败: ${r.msg}`);
+      }
+    } catch (e: any) {
+      addLog(`[加群] 失败: ${e?.message ?? e}`);
+    }
+  }
+  function chatLine(m: any): string {
+    const chat = m.chat ? ` ${m.chat}` : '';
+    const who = m.sender ? ` ${m.sender}:` : '';
+    return `[${m.account}]${chat}${who} ${m.text}`;
+  }
+
   let passkeys = $state<any[]>([]);
   let devices = $state<any[]>([]);
   let has2fa = $state(false);
@@ -595,6 +674,13 @@
       if (e.status === 'passkey_connecting') addLog('[通行密钥] 蓝牙连接中…');
       if (e.status === 'passkey_handshake') addLog('[通行密钥] 安全握手…');
       if (e.status === 'passkey_awaiting') addLog('[通行密钥] 等待手机确认注册…');
+      if (e.status === 'recv_message') {
+        const m = e.data as any;
+        if (m) {
+          chatMsgs = [m, ...chatMsgs].slice(0, 200);
+          if (rightView !== 'chat') chatUnread += 1;
+        }
+      }
     }
     if (e.type === 'avatars_done') {
       addLog('[头像获取完成]');
@@ -606,6 +692,7 @@
   onMount(async () => {
     loadGroups();
     loadAccounts();
+    loadRecv();
     // 页面刷新后恢复在线徽标(连接池仍在)
     try {
       const on = await getOnline();
@@ -621,6 +708,7 @@
     try {
       settings = await getSettings();
       applyTheme();
+      cardOrder = parseCardOrder((settings as any).card_order);
       const co = (settings as any).card_open;
       if (co && typeof co === 'object') {
         flushSync(() => {
@@ -722,24 +810,8 @@
   <div class="splitter" onmousedown={(e) => startDrag(e, 'left')}></div>
 
   <section class="mid" style="width:{midW}px">
-    <details class="card" data-card="删除" open={isCardOpen('删除', true)} ontoggle={(e) => onCardToggle('删除', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>删除</summary>
-      <div class="grid">
-        <md-filled-button onclick={() => postTask('/api/tasks/delete-contacts')}>删联系人</md-filled-button>
-        <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'users' })}>删对话</md-outlined-button>
-        <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'bots' })}>删机器人</md-outlined-button>
-        <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'groups' })}>删频道</md-outlined-button>
-      </div>
-      <div class="speed-row">
-        <span class="speed-label">速度</span>
-        <div class="speed-seg">
-          {#each SPEED_SEG as [label, v]}
-            <button class="seg" class:on={speedVal === v} onclick={() => onSpeed(v)}>{label}</button>
-          {/each}
-        </div>
-      </div>
-    </details>
-
+    {#each cardOrder as c (c)}
+      {#if c === '基本信息'}
     <details class="card" data-card="基本信息" open={isCardOpen('基本信息', true)} ontoggle={(e) => onCardToggle('基本信息', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>基本信息</summary>
       <div class="bi">
@@ -757,7 +829,25 @@
         <button class="edit-btn" onclick={loadProfile}>编辑</button>
       </div>
     </details>
-
+      {:else if c === '聊天'}
+    <details class="card" data-card="聊天" open={isCardOpen('聊天', true)} ontoggle={(e) => onCardToggle('聊天', (e.currentTarget as HTMLDetailsElement).open)}>
+      <summary>聊天</summary>
+      <div class="grid">
+        <md-filled-button onclick={() => setView('chat')}>
+          消息接收{chatUnread ? ` (${chatUnread})` : ''}
+        </md-filled-button>
+        <md-outlined-button onclick={loadSettings}>加群频道</md-outlined-button>
+      </div>
+      <label class="recv-row">
+        <input
+          type="checkbox"
+          checked={recvOn}
+          onchange={() => applyRecv(!recvOn)}
+        />
+        <span>接收新消息（未读，{recvOn ? '监听中' : '已停止'}）</span>
+      </label>
+    </details>
+      {:else if c === '安全'}
     <details class="card" data-card="安全" open={isCardOpen('安全', false)} ontoggle={(e) => onCardToggle('安全', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>安全</summary>
       <div class="grid">
@@ -767,7 +857,25 @@
         <md-outlined-button onclick={loadDevices}>登录设备</md-outlined-button>
       </div>
     </details>
-
+      {:else if c === '删除'}
+    <details class="card" data-card="删除" open={isCardOpen('删除', true)} ontoggle={(e) => onCardToggle('删除', (e.currentTarget as HTMLDetailsElement).open)}>
+      <summary>删除</summary>
+      <div class="grid">
+        <md-filled-button onclick={() => postTask('/api/tasks/delete-contacts')}>删联系人</md-filled-button>
+        <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'users' })}>删对话</md-outlined-button>
+        <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'bots' })}>删机器人</md-outlined-button>
+        <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'groups' })}>删频道</md-outlined-button>
+      </div>
+      <div class="speed-row">
+        <span class="speed-label">速度</span>
+        <div class="speed-seg">
+          {#each SPEED_SEG as [label, v]}
+            <button class="seg" class:on={speedVal === v} onclick={() => onSpeed(v)}>{label}</button>
+          {/each}
+        </div>
+      </div>
+    </details>
+      {:else if c === '其他设置'}
     <details class="card" data-card="其他设置" open={isCardOpen('其他设置', false)} ontoggle={(e) => onCardToggle('其他设置', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>其他设置</summary>
       <div class="grid">
@@ -776,6 +884,8 @@
         <md-outlined-button onclick={doFetchAvatars}>一键获取头像</md-outlined-button>
       </div>
     </details>
+      {/if}
+    {/each}
   </section>
 
   <div class="splitter" onmousedown={(e) => startDrag(e, 'mid')}></div>
@@ -786,8 +896,45 @@
         <span>{progress.label || '无任务'}</span>
         <span>{progress.total ? `${progress.done}/${progress.total}` : ''}</span>
       </div>
+      {#if progress.total}
+        <div class="prog-bar">
+          <div class="prog-fill" style="width:{Math.min(100, Math.round((progress.done / progress.total) * 100))}%"></div>
+        </div>
+      {/if}
+      {#if !logs.length}
+        <p class="empty">暂无日志</p>
+      {/if}
       <ul class="log">
         {#each logs as l}<li>{l}</li>{/each}
+      </ul>
+    {:else if rightView === 'chat'}
+      <div class="sec-head">
+        <h3>消息接收{chatUnread ? `（未读 ${chatUnread}）` : ''}</h3>
+        <button class="back" onclick={() => setView('log')}>← 返回</button>
+      </div>
+      <label class="recv-row">
+        <input type="checkbox" checked={recvOn} onchange={() => applyRecv(!recvOn)} />
+        <span>接收新消息（未读）</span>
+      </label>
+      <div class="recv-rules">
+        <label><input type="checkbox" checked={recvRules.exclude_channels} onchange={() => onRecvRuleChange('exclude_channels')} /> 排除频道</label>
+        <label><input type="checkbox" checked={recvRules.exclude_groups} onchange={() => onRecvRuleChange('exclude_groups')} /> 排除群组</label>
+        <label><input type="checkbox" checked={recvRules.exclude_bots} onchange={() => onRecvRuleChange('exclude_bots')} /> 排除机器人</label>
+      </div>
+      {#if !chatMsgs.length}
+        <p class="empty">{recvOn ? '暂无新消息，等待中…' : '消息接收未开启'}</p>
+      {/if}
+      <ul class="chat-list">
+        {#each chatMsgs as m}
+          <li class="chat-msg">
+            <div class="chat-meta">
+              <span class="chat-acc">{m.account}</span>
+              <span class="chat-chat">{m.chat}（{({ private: '私聊', group: '群组', channel: '频道' } as Record<string, string>)[m.chat_type] || m.chat_type}）</span>
+              <span class="chat-time">{m.date}</span>
+            </div>
+            <div class="chat-text">{chatLine(m)}</div>
+          </li>
+        {/each}
       </ul>
     {:else if rightView === 'passkey'}
       <div class="sec-head">
@@ -956,6 +1103,19 @@
           <option value="dark">深色</option>
         </select>
 
+        <label>功能区排序</label>
+        <div class="order-list">
+          {#each cardOrder as c, i (c)}
+            <div class="order-row">
+              <span>{c}</span>
+              <span class="order-btns">
+                <button class="order-btn" disabled={i === 0} title="上移" onclick={() => moveCard(i, -1)}>↑</button>
+                <button class="order-btn" disabled={i === cardOrder.length - 1} title="下移" onclick={() => moveCard(i, 1)}>↓</button>
+              </span>
+            </div>
+          {/each}
+        </div>
+
         <label>按钮 / 主色</label>
         <input type="color" bind:value={settings.theme_seed} onchange={() => applyTheme()} />
         <label>背景浅色</label>
@@ -964,6 +1124,12 @@
         <input type="color" bind:value={settings.theme_dark} onchange={() => applyTheme()} />
         <label>顶栏颜色</label>
         <input type="color" bind:value={settings.theme_topbar} onchange={() => applyTheme()} />
+
+        <label class="sect">加群频道</label>
+        <label>要加入的群组/频道链接（每行一个：https://t.me/xxx 或 @xxx 或 https://t.me/+邀请）</label>
+        <textarea class="join-links" rows="4" bind:value={joinLinks}
+          placeholder={'https://t.me/durov\nhttps://t.me/+AbCdEf...'}></textarea>
+        <md-filled-button onclick={doJoinChats}>全部加入（当前账号）</md-filled-button>
 
         <md-filled-button onclick={doSaveSettings}>保存设置</md-filled-button>
       </div>
@@ -979,18 +1145,22 @@
     padding: 0 24px;
     background: var(--topbar-color, #00796B);
     color: #FFFFFF;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    position: relative;
+    z-index: 10;
   }
   .title {
     font-size: 20px;
     font-weight: 600;
+    letter-spacing: 0.5px;
   }
   .conn {
     margin-left: auto;
     font-size: 13px;
-    color: var(--md-sys-color-on-primary);
+    color: rgba(255, 255, 255, 0.75);
   }
   .conn.on {
-    color: var(--status-success);
+    color: #A5D6A7;
   }
   .layout {
     display: flex;
@@ -1003,6 +1173,7 @@
     cursor: col-resize;
     flex-shrink: 0;
     border-radius: 3px;
+    transition: background 0.15s;
   }
   .splitter:hover,
   .splitter:active {
@@ -1112,6 +1283,12 @@
   .ctx button:hover {
     background: var(--md-sys-color-primary-container);
   }
+  .ctx-disconnect {
+    color: var(--md-sys-color-error) !important;
+  }
+  .ctx-disconnect:hover {
+    background: rgba(183, 28, 28, 0.12) !important;
+  }
   .list {
     list-style: none;
     margin: 0;
@@ -1126,6 +1303,7 @@
     padding: 8px 10px;
     border-radius: var(--md-sys-shape-corner-medium);
     cursor: pointer;
+    transition: background 0.15s;
   }
   .item:hover {
     background: var(--md-sys-color-surface-container-high);
@@ -1193,6 +1371,7 @@
   }
   .card {
     background: var(--md-sys-color-surface);
+    border: 1px solid var(--divider);
     border-radius: var(--md-sys-shape-corner-large);
     margin-bottom: 8px;
     overflow: hidden;
@@ -1205,6 +1384,10 @@
     list-style: none;
     display: flex;
     align-items: center;
+    transition: background 0.15s;
+  }
+  .card summary:hover {
+    background: var(--hover-overlay);
   }
   .card summary::before {
     content: '▸';
@@ -1271,7 +1454,20 @@
     justify-content: space-between;
     font-size: 13px;
     padding-bottom: 8px;
-    border-bottom: 1px solid var(--md-sys-color-outline);
+    border-bottom: 1px solid var(--divider);
+  }
+  .prog-bar {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--divider);
+    overflow: hidden;
+    margin: 8px 0 0;
+  }
+  .prog-fill {
+    height: 100%;
+    background: var(--md-sys-color-primary);
+    border-radius: 2px;
+    transition: width 0.3s;
   }
   .log {
     list-style: none;
@@ -1281,6 +1477,7 @@
     flex: 1;
     font-family: 'Consolas', monospace;
     font-size: 12px;
+    line-height: 1.6;
     user-select: text;
     cursor: text;
   }
@@ -1324,7 +1521,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 10px 8px;
-    border-bottom: 1px solid var(--md-sys-color-outline);
+    border-bottom: 1px solid var(--divider);
     font-size: 14px;
   }
   .danger {
@@ -1344,7 +1541,9 @@
   .empty {
     color: var(--md-sys-color-on-surface-variant);
     font-size: 13px;
-    margin: 8px 0;
+    text-align: center;
+    padding: 24px 0;
+    margin: 0;
   }
   input {
     width: 100%;
@@ -1368,6 +1567,10 @@
   .right md-filled-button,
   .right md-outlined-button {
     margin-bottom: 8px;
+  }
+  .form md-filled-button {
+    width: 100%;
+    margin-top: 8px;
   }
   .topbtn {
     background: none;
@@ -1437,6 +1640,7 @@
   }
   .modal {
     width: 440px;
+    max-width: calc(100vw - 32px);
     max-height: 86vh;
     background: var(--md-sys-color-surface-container);
     border-radius: var(--md-sys-shape-corner-large);
@@ -1455,30 +1659,45 @@
     margin: 0;
     font-size: 18px;
   }
-  .swatches {
+  .order-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .order-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin: 4px 0 8px;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border: 1px solid var(--divider);
+    border-radius: var(--md-sys-shape-corner-small);
+    font-size: 13px;
   }
-  .swatch {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    border: 2px solid transparent;
+  .order-btns {
+    display: flex;
+    gap: 4px;
+  }
+  .order-btn {
+    width: 26px;
+    height: 24px;
+    border: 1px solid var(--md-sys-color-outline);
+    background: none;
+    color: var(--md-sys-color-on-surface);
+    border-radius: var(--md-sys-shape-corner-small);
     cursor: pointer;
-    padding: 0;
+    font-size: 13px;
+    line-height: 1;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
   }
-  .swatch.on {
-    border-color: var(--md-sys-color-on-surface);
+  .order-btn:hover:not(:disabled) {
+    background: var(--hover-overlay);
+    border-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-primary);
   }
-  .swatches input[type='color'] {
-    width: 36px;
-    height: 32px;
-    padding: 0;
-    border: none;
-    cursor: pointer;
-    margin: 0;
+  .order-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
   }
   .form label {
     font-size: 13px;
@@ -1619,5 +1838,98 @@
   .sec-list::-webkit-scrollbar-track,
   .form::-webkit-scrollbar-track {
     background: transparent;
+  }
+  /* ---------- 聊天: 消息接收 ---------- */
+  .recv-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--md-sys-color-on-surface);
+    margin: 4px 0 8px;
+  }
+  .recv-row input {
+    width: auto;
+    margin: 0;
+  }
+  .recv-rules {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    margin-bottom: 8px;
+  }
+  .recv-rules label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .recv-rules input {
+    width: auto;
+    margin: 0;
+  }
+  .chat-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .chat-msg {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .chat-msg:hover {
+    background: var(--md-sys-color-surface-container-high);
+  }
+  .chat-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    overflow: hidden;
+  }
+  .chat-acc {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    border-radius: 999px;
+    padding: 1px 8px;
+    flex-shrink: 0;
+  }
+  .chat-chat {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .chat-time {
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .chat-text {
+    font-size: 13px;
+    margin-top: 4px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  label.sect {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--md-sys-color-on-surface);
+    margin-top: 12px;
+  }
+  .join-links {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    font-size: 13px;
+    font-family: 'Consolas', monospace;
+    outline: none;
+    resize: vertical;
   }
 </style>

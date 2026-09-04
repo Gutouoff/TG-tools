@@ -114,10 +114,11 @@ class Engine:
     回调全部在 GUI 线程执行(经 root.after 调度,见 ui 层)。
     """
 
-    def __init__(self, on_log=None, on_progress=None, on_state=None, gui_schedule=None):
+    def __init__(self, on_log=None, on_progress=None, on_state=None, on_message=None, gui_schedule=None):
         self.on_log = on_log or (lambda msg: None)
         self.on_progress = on_progress or (lambda done, total, label: None)
         self.on_state = on_state or (lambda st, data: None)
+        self.on_message = on_message or (lambda data: None)   # 新消息接收(聊天功能)
         self._gui_schedule = gui_schedule or (lambda fn: fn())   # 默认同步调
         self._loop = None
         self._thread = None
@@ -126,6 +127,9 @@ class Engine:
         self._account_dir = None
         # 连接池: 账号名 -> {'client','me','info'};支持多账号同时在线,秒切
         self._pool = {}
+        self._recv_on = False       # 消息接收开关
+        self._recv_rules = {'exclude_channels': True, 'exclude_groups': False,
+                            'exclude_bots': False}
         self._cancel = threading.Event()
         self._task_running = False
         self._lock = threading.RLock()
@@ -742,6 +746,167 @@ class Engine:
 
     async def _do_online_accounts(self):
         return [v['info'] for v in self._pool.values()]
+
+    # ---------- 聊天: 消息接收 / 加群频道 ----------
+
+    def set_recv(self, on, rules=None):
+        """开/关消息接收;rules 覆盖过滤规则。对池内所有在线 client 生效。"""
+        self._recv_on = bool(on)
+        if rules is not None:
+            self._recv_rules.update({k: bool(v) for k, v in rules.items()
+                                     if k in ('exclude_channels', 'exclude_groups', 'exclude_bots')})
+        return self._submit(self._do_set_recv())
+
+    async def _do_set_recv(self):
+        _ensure_telethon()
+        from telethon import events
+        bound = 0
+        for entry in self._pool.values():
+            client = entry['client']
+            is_bound = getattr(client, '_tg_recv_bound', False)
+            if self._recv_on and not is_bound:
+                client.add_event_handler(self._on_new_message, events.NewMessage())
+                client._tg_recv_bound = True
+                bound += 1
+            elif not self._recv_on and is_bound:
+                client.remove_event_handler(self._on_new_message, events.NewMessage())
+                client._tg_recv_bound = False
+        self._log(T('t153', '开启' if self._recv_on else '关闭',
+                    len(self._pool), self._recv_rules_summary()))
+        return bound
+
+    def _recv_rules_summary(self):
+        r = self._recv_rules
+        parts = []
+        if r.get('exclude_channels'):
+            parts.append('排除频道')
+        if r.get('exclude_groups'):
+            parts.append('排除群组')
+        if r.get('exclude_bots'):
+            parts.append('排除机器人')
+        return '、'.join(parts) if parts else '无排除'
+
+    def _account_of(self, client):
+        """反查消息所属的在线账号名。"""
+        for entry in self._pool.values():
+            if entry['client'] is client:
+                return entry['info'].get('name', '?')
+        return '?'
+
+    async def _on_new_message(self, event):
+        """NewMessage 处理: 过滤后经 on_message 上抛(仅收到的=未读新消息)。"""
+        if not self._recv_on:
+            return
+        try:
+            msg = event.message
+            if msg.out:                      # 自己发出的,不算收到
+                return
+            chat = await event.get_chat()
+            rules = self._recv_rules
+            is_broadcast = bool(getattr(chat, 'broadcast', False))
+            if rules.get('exclude_channels') and is_broadcast:
+                return
+            if rules.get('exclude_groups') and event.is_group:
+                return
+            data = {
+                'account': self._account_of(event.client),
+                'chat_id': getattr(chat, 'id', None),
+                'chat': (getattr(chat, 'title', None) or getattr(chat, 'username', None)
+                         or getattr(chat, 'first_name', None) or '未知对话'),
+                'chat_type': ('channel' if is_broadcast
+                              else 'group' if event.is_group else 'private'),
+                'sender': '',
+                'text': ((msg.message or '').strip()
+                         or ('(媒体消息)' if msg.media else '')),
+                'date': msg.date.strftime('%H:%M:%S') if msg.date else '',
+            }
+            if rules.get('exclude_bots') and data['chat_type'] != 'channel':
+                sender = await event.get_sender()
+                if getattr(sender, 'bot', False):
+                    return
+                data['sender'] = ((getattr(sender, 'first_name', '') or '') + ' '
+                                  + (getattr(sender, 'last_name', '') or '')).strip()
+            elif data['chat_type'] == 'channel':
+                data['sender'] = data['chat']
+            else:
+                sender = await event.get_sender()
+                data['sender'] = ((getattr(sender, 'first_name', '') or '') + ' '
+                                  + (getattr(sender, 'last_name', '') or '')).strip()
+            self._gui_schedule(lambda d=data: self.on_message(d))
+        except Exception:
+            pass
+
+    def join_chats(self, links):
+        """加入群组/频道(当前账号)。links: t.me/xxx、@xxx、t.me/+邀请。"""
+        return self._submit(self._do_join_chats(links))
+
+    @staticmethod
+    def _parse_chat_ref(link):
+        """链接 -> (类型, 值)。类型: 'invite' 邀请链接 / 'username' 公开名。"""
+        s = (link or '').strip()
+        low = s.lower()
+        if 't.me/+' in low or 'joinchat/' in low:
+            return 'invite', s.rsplit('/', 1)[-1].lstrip('+')
+        for prefix in ('https://t.me/', 'http://t.me/', 't.me/', '@'):
+            if low.startswith(prefix):
+                s = s[len(prefix):]
+                break
+        return 'username', s.strip('/').split('?')[0]
+
+    async def _do_join_chats(self, links):
+        _ensure_telethon()
+        if not self._client:
+            self._state('done', '未连接账号')
+            return None
+        from telethon.tl.functions.channels import JoinChannelRequest
+        from telethon.tl.functions.messages import ImportChatInviteRequest
+        links = [l for l in (links or []) if l and l.strip()]
+        if not links:
+            self._state('done', '链接列表为空')
+            return []
+        self._task_running = True
+        self._cancel.clear()
+        self._state('task_start', '加群/频道')
+        results, ok = [], 0
+        try:
+            self._log(T('t154', len(links)))
+            for i, link in enumerate(links, 1):
+                if self._check_cancel():
+                    self._log('[!] 任务已停止')
+                    break
+                kind, ref = self._parse_chat_ref(link)
+                try:
+                    if kind == 'invite':
+                        await self._client(ImportChatInviteRequest(ref))
+                    else:
+                        await self._client(JoinChannelRequest(ref))
+                    ok += 1
+                    results.append({'link': link, 'ok': True})
+                    self._log(T('t155', i, len(links), link))
+                except FloodWaitError as e:
+                    w = min(e.seconds, 600)
+                    self._log(T('t073', w))
+                    await self._sleep(w + 1)
+                    results.append({'link': link, 'ok': False, 'err': f'限流等待{w}s'})
+                except Exception as e:
+                    already = 'AlreadyParticipant' in type(e).__name__ or 'already' in str(e).lower()
+                    if already:
+                        ok += 1
+                        results.append({'link': link, 'ok': True, 'already': True})
+                        self._log(T('t156', i, len(links), link))
+                    else:
+                        results.append({'link': link, 'ok': False, 'err': str(e)[:100]})
+                        self._log(T('t157', i, len(links), link, str(e)[:80]))
+                await self._sleep(random.uniform(*tg_tool.DIALOG_DELAY))
+            self._log(T('t158', ok, len(results)))
+            self._state('done', f'加群完成 {ok}/{len(results)}')
+            return results
+        except Exception as e:
+            self._log(f'[!] 任务出错: {type(e).__name__}: {e}')
+            self._state('done', f'出错: {e}')
+            return results
+        finally:
+            self._task_running = False
 
     # ---------- 安全: passkey / 邮箱 / 2FA ----------
 

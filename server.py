@@ -92,6 +92,8 @@ def init_engine():
                 {'type': 'progress', 'done': done, 'total': total, 'label': label}),
             on_state=lambda st, data: _emit(
                 {'type': 'state', 'status': st, 'data': _jsonable(data)}),
+            on_message=lambda data: _emit(
+                {'type': 'state', 'status': 'recv_message', 'data': _jsonable(data)}),
         )
         _engine.start()
     return _engine
@@ -244,6 +246,14 @@ async def connect(body: dict):
         info['username'] = (me or {}).get('username', '') if ok else ''
     except Exception:
         info['username'] = ''
+    # 消息接收开关若为开,自动对刚上线的账号生效
+    try:
+        s = _load_settings()
+        if s.get('recv_on'):
+            eng.set_recv(True, {k: s.get(k) for k in
+                                ('recv_exclude_channels', 'recv_exclude_groups', 'recv_exclude_bots')})
+    except Exception:
+        pass
     # 同步返回池中所有在线账号(前端按 name 匹配打在线徽标)
     online = []
     try:
@@ -253,6 +263,50 @@ async def connect(body: dict):
     except Exception:
         pass
     return {'ok': True, 'info': _jsonable(info), 'online': _jsonable(online)}
+
+
+# ---------- 聊天: 消息接收 / 加群频道 ----------
+@app.get('/api/recv')
+async def get_recv():
+    s = _load_settings()
+    return {'ok': True,
+            'on': bool(s.get('recv_on')),
+            'rules': {k: bool(s.get(k)) for k in
+                      ('recv_exclude_channels', 'recv_exclude_groups', 'recv_exclude_bots')}}
+
+
+@app.post('/api/recv')
+async def set_recv(body: dict):
+    eng = init_engine()
+    on = bool(body.get('on'))
+    rules = body.get('rules') or {}
+    s = _load_settings()
+    s['recv_on'] = on
+    for k in ('recv_exclude_channels', 'recv_exclude_groups', 'recv_exclude_bots'):
+        if k in rules:
+            s[k] = bool(rules[k])
+    _save_settings(s)
+    eng.set_recv(on, rules)
+    return {'ok': True, 'on': on,
+            'rules': {k: bool(s.get(k)) for k in
+                      ('recv_exclude_channels', 'recv_exclude_groups', 'recv_exclude_bots')}}
+
+
+@app.post('/api/join-channels')
+async def join_channels(body: dict):
+    eng = init_engine()
+    links = body.get('links') or []
+    if isinstance(links, str):
+        links = links.splitlines()
+    links = [str(l).strip() for l in links if str(l).strip()]
+    if not links:
+        return {'ok': False, 'msg': '链接列表为空'}
+    fut = eng.join_chats(links)
+    try:
+        results = await asyncio.wait_for(asyncio.wrap_future(fut), 300)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': True, 'results': _jsonable(results or [])}
 
 
 @app.get('/api/me')
@@ -891,6 +945,12 @@ DEFAULT_SETTINGS = {
     'proxy_host': '',
     'proxy_port': '',
     'card_open': {},
+    'card_order': '基本信息,聊天,安全,删除,其他设置',  # 中栏功能区顺序(逗号分隔)
+    'recv_on': False,               # 消息接收开关(连接后自动恢复)
+    'recv_exclude_channels': True,  # 默认排除所有频道
+    'recv_exclude_groups': False,
+    'recv_exclude_bots': False,
+    'join_links': '',               # 要加入的群/频道链接(每行一个)
 }
 
 

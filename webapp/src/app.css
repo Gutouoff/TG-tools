@@ -29,6 +29,7 @@
   --scrollbar-color: #9ABAB3;
   --hover-overlay: rgba(0, 150, 136, 0.08);
   --focus-ring: 0 0 0 2px rgba(0, 150, 136, 0.25);
+  --divider: #DCE9E5;
 }
 
 /* 深色模式 */
@@ -59,6 +60,17 @@
   --scrollbar-color: #3E4D49;
   --hover-overlay: rgba(131, 220, 207, 0.12);
   --focus-ring: 0 0 0 2px rgba(131, 220, 207, 0.35);
+  --divider: #2E3B37;
+}
+
+/* 键盘操作可见焦点 */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 1px;
 }
 
 * {

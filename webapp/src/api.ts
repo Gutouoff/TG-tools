@@ -185,6 +185,13 @@ export const deleteGroup = (name: string) =>
   apiFetch(`/api/groups/${encodeURIComponent(name)}`, { method: 'DELETE' }).then((r) => r.json());
 export const moveAccount = (name: string, group: string) => postJson('/api/groups/move', { name, group });
 
+// ---------- 聊天: 消息接收 / 加群频道 ----------
+export interface RecvState { on: boolean; rules: Record<string, boolean>; }
+export const getRecv = (): Promise<RecvState> => getJson('/api/recv');
+export const setRecv = (on: boolean, rules?: Record<string, boolean>) =>
+  postJson('/api/recv', { on, rules });
+export const joinChats = (links: string[]) => postJson('/api/join-channels', { links });
+
 // ---------- tdata 转换 / 导入 ----------
 export const convertTdata = (path: string) => postJson('/api/convert-tdata', { path });
 export const importArchive = (data: string, name: string) => postJson('/api/import', { data, name });
