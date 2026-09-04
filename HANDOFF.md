@@ -115,13 +115,12 @@ TUNNEL_DOMAINS = ["cable.ua5v.com", "cable.auth.com"]
 ```
 
 ### 当前卡点（2026-09-04 更新）
-- **纠正**：官方流程里手机 **Telegram 客户端从不参与扫码**（之前文档里「用 TG App 扫」是错的）。正确扫码方 = 手机**系统相机/Google 智能镜头** → Google Play Services（密码管理器）作为通行密钥提供方接手 caBLE。
-- 用户实测（系统相机/Google 扫码）：手机弹「连接其他设备」弹窗后瞬间消失,并持续广播 `0000fcf1`（20 字节,head=04322274,hmac 校验不过）→ **QR 被 Google 正确解析**,手机在等电脑接入隧道;是电脑侧解不开 fcf1 广播。
-- tdesktop/Chromium 源码都只认 FDE2/FFF9,无 fcf1。tdesktop 常量(secret16/advert20/eid16/hmac 前4字节)与 cable.py 完全一致,实现无偏差。
-- 两种可能: ① fcf1 是 Google Play Services 新的 caBLE 广播格式(key 布局/派生变了) ② fcf1 只是伴生信标(Nearby),真正 FDE2 广播未出现(流程中断)。
-- **已升级诊断**(cable.py `_detect`)：所有 service-data/厂商数据 UUID 全量抓包(完整 hex+RSSI,去重);任意 UUID 上都先按标准格式验密(命中即连);标准失败自动跑**变体探测**(body 任意偏移/tag 在尾部/hmac 命中即报 `hit:` 前缀含明文 hex)。前端日志前缀: passkey_adv:/passkey_mfg:/passkey_hit:/passkey_diag:。
-- **下次复测看什么**：a) 是否出现 fde2/fff9 广播 b) fcf1 完整 hex(去重后只报一次) c) 有无 `[命中]` 行。
-- **决定性对照实验**(用户做)：官方 tdesktop 7.1.5 用同一手机绑 passkey。官方也失败 ⇒ Google 换了格式,非我方 bug;官方成功 ⇒ 对照官方 QR 字段找差异。
+- **纠正**：官方流程里手机 **Telegram 客户端从不参与扫码**。正确扫码方 = 手机**系统相机/Google 智能镜头** → Google Play Services（密码管理器）接手 caBLE。
+- **抓包结论**（升级诊断后实测）：`fcf1` 广播 RSSI 仅 -96dBm 且内容每次会话都变 ⇒ 是**环境里其他 Android 设备的常驻 Google 信标**,不是本仪式广播;`c0a80107…` 开头的厂商数据 = 局域网 IoT 设备(192.168.1.7)。**手机真正的 fde2 广播从未出现** ⇒ Google 在手机上解析 QR 后立刻放弃(「连接其他设备」弹窗秒没)。
+- **已找到并修复根因**：cable.py `encode_qr_contents` 的 CBOR 字段 5（"mc"/"ga"）用 `bytes` 编码成了**字节字符串**(0x42),官方 tdesktop `CborValue(std::string)` 是**文本字符串**(0x62)——`a105426d63` vs `a105626d63`。Play Services 严格解析直接拒绝 ⇒ 弹窗秒退。已改为 str 并通过往返单测（字段类型/长度全部对齐官方）。
+- 其余字段核对过：pubkey 33B 压缩、secret 16B、domains=2、时间戳 int、false,与 tdesktop EncodeQRContents 完全一致;域名表 cable.ua5v.com/cable.auth.com 一致;tdesktop DecryptAdvert 与 cable.py decrypt_advert 字节级一致。
+- 诊断基建保留(cable.py `_detect`)：全 UUID/厂商数据抓包(完整 hex+RSSI)、任意 UUID 验密、变体探测(`hit:` 前缀)。
+- **若修复后仍秒退的排查顺序**：① 电脑时钟是否准(QR 字段 3 时间戳校验) ② 换 Chrome 手机浏览器打开 FIDO:/ 链接试 ③ 官方 tdesktop 同机对照(官方也挂 ⇒ Google 改格式,非我方 bug)。
 
 ### 官方源码位置（已解压到工作目录，.gitignore 已忽略，勿提交）
 - `D:\dsh\tgtools\tdesktop-7.1.5-full\Telegram\SourceFiles\webauthn\` —— caBLE 的 C++ 实现

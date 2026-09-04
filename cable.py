@@ -117,7 +117,9 @@ def encode_qr_contents(key: QRKey, make_credential: bool, now: int) -> str:
         2: len(TUNNEL_DOMAINS),
         3: now,
         4: False,
-        5: b'mc' if make_credential else b'ga',
+        # 必须是 CBOR 文本字符串(0x62),与 tdesktop CborValue(std::string) 一致;
+        # 用 bytes 会被编成字节字符串(0x42),Google 严格解析直接拒绝
+        5: 'mc' if make_credential else 'ga',
     }
     return "FIDO:/" + bytes_to_digits(cbor2.dumps(cbor_map))
 
