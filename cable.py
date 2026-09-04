@@ -283,9 +283,10 @@ def build_make_credential_request(client_data_hash32, rp_id, rp_name, user_id,
         4: params,
         7: {"rk": True, "uv": True},
     }
-    # 对照官方 BuildMakeCredentialRequest: 纯 CBOR map,无命令字节
-    # (MessageType 前缀由发送方按 protocolRevision 决定)
-    return cbor2.dumps(cbor_map)
+    # 对照官方 BuildMakeCredentialRequest: 首字节 0x01 = CTAP 命令
+    # (authenticatorMakeCredential);tunnel 的 MessageType 前缀由发送方
+    # 按 protocolRevision 另加(SendCtapRequest),两层 0x01 各司其职。
+    return b'\x01' + cbor2.dumps(cbor_map)
 
 
 def credential_id_from_auth_data(auth_data: bytes):
@@ -619,15 +620,29 @@ async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=No
             plain = bytes([_MSG_CTAP]) + ctap_req
         await ws.send(crypter.encrypt(plain))
 
-        reply = crypter.decrypt(await ws.recv())
-        if reply is None or not reply:
-            raise RuntimeError('空响应')
-        if reply[0] != 0:
-            raise RuntimeError(f'CTAP 错误 0x{reply[0]:02X}')
-        result = parse_make_credential_response(reply)
-        if result is None:
-            raise RuntimeError('注册被拒绝')
-        return result
+        # 对照官方 HandleReply: rev>=1 时响应也带 MessageType 前缀,
+        # Update(0x02) 忽略并继续等,非 Ctap 报错,Ctap 剥前缀后是 [status][CBOR]
+        while True:
+            reply = crypter.decrypt(await ws.recv())
+            if reply is None or not reply:
+                raise RuntimeError('空响应')
+            if parsed['protocolRevision'] >= 1:
+                mtype = reply[0]
+                reply = reply[1:]
+                if mtype == 0x02:   # MessageType::Update -> 忽略,继续等
+                    if on_state:
+                        on_state('update')
+                    continue
+                if mtype != _MSG_CTAP:
+                    raise RuntimeError(f'tunnel 消息类型 0x{mtype:02X}(非Ctap)')
+            if not reply:
+                raise RuntimeError('空CTAP响应')
+            if reply[0] != 0:
+                raise RuntimeError(f'CTAP 错误 0x{reply[0]:02X}')
+            result = parse_make_credential_response(reply)
+            if result is None:
+                raise RuntimeError('注册被拒绝')
+            return result
     finally:
         try:
             await ws.close()
