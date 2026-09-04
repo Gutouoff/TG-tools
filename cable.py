@@ -416,31 +416,82 @@ async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=No
     # BLE 扫描,等待手机广播 caBLE advert
     loop = asyncio.get_event_loop()
     advert_future = loop.create_future()
-    seen_uuids = set()
+    seen_payloads = set()
+
+    def _try_accept(u, data):
+        """用本会话密钥验广播负载;验过(hmac 正确)即视为本仪式的 EID。"""
+        eid = decrypt_advert(data, eid_key)
+        if eid is not None:
+            if not advert_future.done():
+                advert_future.set_result(eid)
+            return True
+        return False
+
+    def _probe_variants(u, data):
+        """标准解密失败时尝试变体布局,命中即回报(供离线分析格式)。"""
+        if not on_state:
+            return
+        aes_key, hmac_key = eid_key[:32], eid_key[32:64]
+        n = len(data)
+        if n < 20:
+            return
+        candidates = []
+        # 变体1: body 在任意偏移,tag 紧随其后
+        for off in range(0, n - 19):
+            body = data[off:off + 16]
+            tag = data[off + 16:off + 20]
+            candidates.append((off, body, tag))
+        # 变体2: body 开头,tag 在末尾 4 字节
+        candidates.append(('tail', data[:16], data[-4:]))
+        for pos, body, tag in candidates:
+            expected = _hmac_sha256(hmac_key, body)[:4]
+            if tag == expected:
+                pt = _aes_ecb_decrypt(aes_key, body)
+                on_state(f'hit:{u}:pos={pos}:pt0={pt[0]}:pt={pt.hex()}')
+                if pt[0] == 0:
+                    domain = pt[14] | (pt[15] << 8)
+                    if domain < len(TUNNEL_DOMAINS):
+                        if not advert_future.done():
+                            advert_future.set_result(pt)
+                        return
 
     def _detect(_device, adv):
         if advert_future.done():
             return
         for uuid_str, data in (adv.service_data or {}).items():
             u = str(uuid_str).lower()
-            if u not in seen_uuids:
-                seen_uuids.add(u)
+            b = bytes(data)
+            key = (u, b)
+            first_seen = key not in seen_payloads
+            if first_seen:
+                seen_payloads.add(key)
                 if on_state:
-                    on_state(f'adv:{u}:{len(data)}')
-            if u not in _CABLE_SERVICE_UUIDS:
-                continue
-            eid = decrypt_advert(data, eid_key)
-            if eid is not None:
-                advert_future.set_result(eid)
+                    rssi = getattr(adv, 'rssi', None)
+                    on_state(f'adv:{u}:{len(b)}:{b.hex()}:{rssi}')
+            # 无论什么 UUID,先按标准格式验一次(hmac 命中=本仪式广播)
+            if len(b) >= K_ADVERT_SIZE and _try_accept(u, b):
                 return
-            # 细粒度诊断
-            if on_state and len(data) >= 20:
-                body = data[:16]
-                tag = data[16:20]
+            if u in _CABLE_SERVICE_UUIDS and first_seen and len(b) >= K_ADVERT_SIZE:
+                body = b[:16]
+                tag = b[16:20]
                 expected = _hmac_sha256(eid_key[32:64], body)[:4]
                 pt = _aes_ecb_decrypt(eid_key[:32], body)
                 domain = pt[14] | (pt[15] << 8)
-                on_state(f'diag:hmac={tag == expected},res0={pt[0] == 0},domain={domain},head={body[:4].hex()}')
+                on_state(
+                    f'diag:hmac={tag == expected},res0={pt[0] == 0},'
+                    f'domain={domain},head={body[:4].hex()}')
+            _probe_variants(u, b)
+        # 厂商自定义数据(Google 可能换通道)
+        for mid, mdata in (adv.manufacturer_data or {}).items():
+            b = bytes(mdata)
+            key = (f'mfg{mid}', b)
+            if key not in seen_payloads:
+                seen_payloads.add(key)
+                if on_state:
+                    on_state(f'mfg:{mid}:{len(b)}:{b.hex()}')
+            if len(b) >= K_ADVERT_SIZE and _try_accept(f'mfg{mid}', b):
+                return
+            _probe_variants(f'mfg{mid}', b)
 
     scanner = BleakScanner(detection_callback=_detect)
     try:

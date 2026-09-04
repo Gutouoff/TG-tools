@@ -575,7 +575,13 @@
       }
       if (e.status === 'passkey_scanning') addLog('[通行密钥] 等待手机扫码…(电脑蓝牙需已开启)');
       if (e.status && e.status.startsWith('passkey_adv:')) {
-        addLog(`[蓝牙] 发现广播 ${e.status.slice(11)}`);
+        addLog(`[蓝牙] 广播 ${e.status.slice(11)}`);
+      }
+      if (e.status && e.status.startsWith('passkey_mfg:')) {
+        addLog(`[蓝牙] 厂商数据 ${e.status.slice(11)}`);
+      }
+      if (e.status && e.status.startsWith('passkey_hit:')) {
+        addLog(`[命中] ${e.status.slice(12)}`);
       }
       if (e.status && e.status.startsWith('passkey_decrypt_fail:')) {
         addLog(`[蓝牙] EID解密失败 数据长度${e.status.slice(20)}`);
@@ -789,7 +795,7 @@
       {#if pkQrImg}
         <div class="qr-box">
           <img class="qr-img" src={pkQrImg} alt="通行密钥二维码" />
-          <p class="qr-tip">请用 <b>Telegram App 内置扫码器</b>扫描<br />（设置 → 设备 → 链接桌面设备，不要用 Google 智能镜头/系统相机扫）</p>
+          <p class="qr-tip">请用<b>手机系统相机 / Google 智能镜头</b>扫描<br />（由手机密码管理器完成通行密钥注册；Telegram 客户端不参与扫码）</p>
         </div>
       {/if}
       <ul class="sec-list">

@@ -112,14 +112,14 @@ TUNNEL_DOMAINS = ["cable.ua5v.com", "cable.auth.com"]
 #   attestation = CBOR{fmt:"none", attStmt:{}, authData}
 ```
 
-### 当前卡点（重要！）
-用户用 **Google 智能镜头**扫码，手机广播 UUID 是 `0000fcf1`，诊断显示 `hmac=False, head=043d9a86`。
-
-**根因**：`0xFCF1` 是 **Google LLC 私有 UUID**（Google Play Services 专用，闭源），不是标准 FIDO caBLE。Google 智能镜头走的 Google 私有 passkey 流程，格式和 Telegram 官方 caBLE（fde2/fff9）不兼容，所以 EID 解密失败。
-
-**解决方案（已告知用户）**：用户应该用 **Telegram App 内置扫码器**扫码（而不是 Google 智能镜头），这样手机走 fde2/fff9 标准 caBLE，和 cable.py 匹配。
-
-**如果用户坚持用系统/Google 扫码**：需要逆向 Google Play Services 的 fcf1 私有格式（闭源、无文档、难度大），或者放弃。优先引导用户用 Telegram App 扫码。
+### 当前卡点（2026-09-04 更新）
+- **纠正**：官方流程里手机 **Telegram 客户端从不参与扫码**（之前文档里「用 TG App 扫」是错的）。正确扫码方 = 手机**系统相机/Google 智能镜头** → Google Play Services（密码管理器）作为通行密钥提供方接手 caBLE。
+- 用户实测（系统相机/Google 扫码）：手机弹「连接其他设备」弹窗后瞬间消失,并持续广播 `0000fcf1`（20 字节,head=04322274,hmac 校验不过）→ **QR 被 Google 正确解析**,手机在等电脑接入隧道;是电脑侧解不开 fcf1 广播。
+- tdesktop/Chromium 源码都只认 FDE2/FFF9,无 fcf1。tdesktop 常量(secret16/advert20/eid16/hmac 前4字节)与 cable.py 完全一致,实现无偏差。
+- 两种可能: ① fcf1 是 Google Play Services 新的 caBLE 广播格式(key 布局/派生变了) ② fcf1 只是伴生信标(Nearby),真正 FDE2 广播未出现(流程中断)。
+- **已升级诊断**(cable.py `_detect`)：所有 service-data/厂商数据 UUID 全量抓包(完整 hex+RSSI,去重);任意 UUID 上都先按标准格式验密(命中即连);标准失败自动跑**变体探测**(body 任意偏移/tag 在尾部/hmac 命中即报 `hit:` 前缀含明文 hex)。前端日志前缀: passkey_adv:/passkey_mfg:/passkey_hit:/passkey_diag:。
+- **下次复测看什么**：a) 是否出现 fde2/fff9 广播 b) fcf1 完整 hex(去重后只报一次) c) 有无 `[命中]` 行。
+- **决定性对照实验**(用户做)：官方 tdesktop 7.1.5 用同一手机绑 passkey。官方也失败 ⇒ Google 换了格式,非我方 bug;官方成功 ⇒ 对照官方 QR 字段找差异。
 
 ### 官方源码位置（已解压到工作目录，.gitignore 已忽略，勿提交）
 - `D:\dsh\tgtools\tdesktop-7.1.5-full\Telegram\SourceFiles\webauthn\` —— caBLE 的 C++ 实现
@@ -161,4 +161,4 @@ TUNNEL_DOMAINS = ["cable.ua5v.com", "cable.auth.com"]
 
 ---
 
-**给新会话的一句话总结**：项目在 main/dev = `27fc7dd`；passkey caBLE 已完整实现但卡在「用户用 Google 智能镜头扫码（fcf1 私有格式）不兼容」，需要引导用户改用 Telegram App 扫码；卡片折叠记忆有重启不生效的 bug 待修。
+**给新会话的一句话总结**：项目在 main/dev = `eff382b` 附近;多账号同时在线(连接池+秒切)与卡片折叠记忆已实现;passkey caBLE 卡在 Google Play Services 用私有 `fcf1` 广播(手机 QR 解析成功但电脑侧解不开),已升级全量抓包+变体探测诊断,等用户复测;决定性对照=官方 tdesktop 同机绑 passkey。
