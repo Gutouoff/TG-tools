@@ -44,6 +44,8 @@ git checkout main; git merge --ff-only dev; git push origin main; git checkout d
 ```
 
 **沙箱注意**（重要）：
+
+> ⚠️ **流程铁律**：改了 `webapp/src/**` 后必须先 `npm run build` 再提交/打包/部署——`webapp/dist` 不入库，部署产物用的是构建时刻的前端，漏 build 会把旧界面带出去。
 - `npm run build` 里的 esbuild `spawn` 会触发 EPERM，需要 `sandbox_permissions: danger-full-access` 重试。
 - `git push` 读 Windows 凭据管理器也会报 Authentication failed，同样要 `danger-full-access`。
 - 若 approval policy 是 `never` 且 file policy 是 `danger-full-access`，则不用设 `sandbox_permissions`，直接跑。

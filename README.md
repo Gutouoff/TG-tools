@@ -1,6 +1,6 @@
 # TG-tools · Telegram 小号批量维护工具箱
 
-Python + Telethon 的 Telegram 小号批量维护工具：删联系人、删对话（私聊/群/频道）、退出群组、拉黑 bot、更新 Telegram Desktop 本体、tdata→session 转换、白名单保护、代理支持。CLI 与 GUI（Tkinter）双入口。
+Python + Telethon 的 Telegram 小号批量维护工具：删联系人、删对话（私聊/群/频道）、退出群组、拉黑 bot、更新 Telegram Desktop 本体、tdata→session 转换、passkey（蓝牙 caBLE）、多账号同时在线、白名单保护、代理支持。**主形态 = Web 版**（FastAPI + Svelte 5 + pywebview），CLI 与 Tkinter GUI 为遗留入口。
 
 > ⚠️ 本仓库**只含代码，不含任何账号数据**。账号 session、tdata、API 凭据全部留在本地账号目录，永不入库（见 `.gitignore`）。
 
@@ -9,25 +9,27 @@ Python + Telethon 的 Telegram 小号批量维护工具：删联系人、删对�
 ## 架构
 
 ```
-TG小号/                       ← 账号根目录(本地,不入库)
-├── TG工具箱.bat              ← CLI 入口(检测当前目录自动单/多账号)
-├── TG工具箱GUI.bat           ← GUI 入口
-└── 工具箱/                   ← 运行目录(SCRIPT_DIR)
-    ├── tg_tool.py            ← 核心业务:连接/删联系人/删对话/白名单/速度档/tdata转换/CLI交互
-    ├── tg_engine.py          ← GUI 引擎:后台线程 asyncio 循环,可取消任务,进度/状态回调
-    ├── tg_ui.py              ← Tkinter 主界面:账号列表(头像/用户名/DC/ID)+操作面板+日志
-    ├── tg_profile.py         ← 资料缓存:后台串行拉 username/头像/DC,profiles.json 增量落盘
-    ├── tl_patch.py           ← Telethon 1.44 猴子补丁:注册新 message 构造体 3ae56482
-    ├── tdata2session.py      ← tdata→session 转换(opentele-ng)
-    ├── 界面文本.txt           ← 全部界面中文外置(改文件即改UI,删除恢复默认)
-    ├── whitelist.json        ← 白名单持久化(用户/群)
-    └── settings.json         ← 代理设置(system/none/manual)
+TG工具箱Web/                  ← 部署目录(PyInstaller onedir, 主形态)
+├── TG工具箱Web.exe           ← pywebview 壳(web_main.py)
+│   ├── server.py             ← FastAPI 后端: token 鉴权 + REST/WebSocket API
+│   ├── tg_engine.py          ← 引擎: 多账号连接池/秒切/任务/温和取消
+│   ├── tg_tool.py            ← 核心业务: 白名单/速度档/tdata转换/代理
+│   ├── cable.py              ← passkey caBLE(蓝牙扫码)
+│   ├── tg_profile.py         ← 资料/头像缓存(profiles.json + avatars/)
+│   └── webapp/dist/          ← Svelte 5 构建产物(npm run build 生成)
+└── avatars/ profiles.json    ← 运行缓存(部署时保留)
+
+工具箱/                       ← 旧 CLI/GUI 运行目录(遗留维护)
+    ├── tg_tool.py / tg_engine.py / tg_ui.py(Tkinter) ...
+    └── 界面文本.txt           ← 全部界面中文外置(改文件即改UI,删除恢复默认)
 ```
 
 ## 运行环境
 
 - Windows + Python 3.14（`C:\Python314\python.exe`），`-X utf8` 启动
-- 依赖：`telethon==1.44.0`（用户 site-packages）、`opentele-ng`、`pysocks`（socks 代理时）、`pillow`（GUI 头像）
+- 依赖：`pip install -r requirements.txt`（telethon 1.44 / fastapi / uvicorn / pywebview / websockets / qrcode / pillow / cryptography / cbor2 / bleak / opentele-ng / python-socks；版本已 pin）
+- 前端：Node/npm，`webapp/` 目录 `npm install && npm run build`（改 `webapp/src/**` 后必须重新 build 再打包部署）
+- 打包账号功能需要系统安装 7-Zip（AES-256 加密）
 - bat 必须存 **UTF-8 无 BOM**（中文路径 + `chcp 65001`，GBK 字节会乱码）
 
 ## 使用

@@ -1,0 +1,13 @@
+# TG工具箱 依赖清单(以本机实测版本 pin;winrt 系列由 bleak 自动带入)
+telethon==1.44.0
+opentele-ng==1.4.0
+fastapi==0.141.1
+uvicorn==0.52.4
+pywebview==6.2.1
+websockets==17.1
+qrcode==8.2
+pillow==12.3.0
+cryptography==50.0.1
+cbor2==6.1.4
+bleak==3.0.2
+python-socks==3.0.0

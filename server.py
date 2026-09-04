@@ -175,7 +175,7 @@ async def ws_endpoint(ws: WebSocket):
 # ---------- 基础 ----------
 @app.get('/api/ping')
 async def ping():
-    return {'status': 'ok', 'app': 'TG工具箱', 'root': ROOT}
+    return {'status': 'ok', 'app': 'TG工具箱'}
 
 
 # ---------- 账号列表 ----------
