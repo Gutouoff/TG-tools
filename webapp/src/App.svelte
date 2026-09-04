@@ -43,6 +43,8 @@
     getMe,
     getRecv,
     setRecv,
+    getDialogs,
+    getHistory,
     joinChats,
     TOKEN,
     type Account,
@@ -321,7 +323,12 @@
   }
 
   // ---------- 聊天: 消息接收 / 加群频道 ----------
-  let chatMsgs = $state<any[]>([]);
+  let dialogs = $state<any[]>([]);
+  let dialogsLoading = $state(false);
+  let curDialog = $state<any | null>(null);
+  let historyMsgs = $state<any[]>([]);
+  let historyLoading = $state(false);
+  let historyHasMore = $state(false);
   let chatUnread = $state(0);
   let recvOn = $state(false);
   let recvRules = $state<Record<string, boolean>>({
@@ -329,6 +336,69 @@
   });
   let joinLinks = $state('');
 
+  // 打开设置弹窗并定位到「加群频道」输入区
+  async function openJoinChannels() {
+    await loadSettings();
+    setTimeout(() => {
+      const el = document.querySelector('.join-links');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el?.classList.add('flash');
+      setTimeout(() => el?.classList.remove('flash'), 1600);
+    }, 60);
+  }
+
+  // ---------- 会话列表 / 聊天记录 ----------
+  async function loadDialogs() {
+    if (!current || !onlineNames.has(current.name)) {
+      addLog('请先连接账号再查看会话');
+      return;
+    }
+    dialogsLoading = true;
+    try {
+      const r = await getDialogs(current.name);
+      if (r.ok) {
+        dialogs = r.dialogs || [];
+      } else {
+        addLog(`会话获取失败: ${r.msg || '未知错误'}`);
+      }
+    } catch (e: any) {
+      addLog(`会话获取异常: ${e?.message ?? e}`);
+    } finally {
+      dialogsLoading = false;
+    }
+  }
+  async function openDialog(d: any) {
+    curDialog = d;
+    historyMsgs = [];
+    historyHasMore = false;
+    await loadHistory(true);
+    scrollHistoryBottom();
+  }
+  async function loadHistory(initial: boolean) {
+    if (!curDialog || !current || historyLoading) return;
+    historyLoading = true;
+    try {
+      const offset = initial ? 0 : (historyMsgs[0]?.id ?? 0);
+      const r = await getHistory(current.name, curDialog.id, 20, offset);
+      if (r.ok) {
+        const older = (r.msgs || []).slice().reverse();  // 新->旧 反转为旧->新
+        historyMsgs = initial ? older : [...older, ...historyMsgs];
+        historyHasMore = (r.msgs || []).length >= 20;
+      } else {
+        addLog(`记录获取失败: ${r.msg || '未知错误'}`);
+      }
+    } catch (e: any) {
+      addLog(`记录获取异常: ${e?.message ?? e}`);
+    } finally {
+      historyLoading = false;
+    }
+  }
+  function scrollHistoryBottom() {
+    setTimeout(() => {
+      const el = document.querySelector('.chat-history');
+      if (el) el.scrollTop = el.scrollHeight;
+    }, 30);
+  }
   async function loadRecv() {
     try {
       const r = await getRecv();
@@ -370,12 +440,6 @@
       addLog(`[加群] 失败: ${e?.message ?? e}`);
     }
   }
-  function chatLine(m: any): string {
-    const chat = m.chat ? ` ${m.chat}` : '';
-    const who = m.sender ? ` ${m.sender}:` : '';
-    return `[${m.account}]${chat}${who} ${m.text}`;
-  }
-
   let passkeys = $state<any[]>([]);
   let devices = $state<any[]>([]);
   let has2fa = $state(false);
@@ -687,7 +751,21 @@
       if (e.status === 'recv_message') {
         const m = e.data as any;
         if (m) {
-          chatMsgs = [m, ...chatMsgs].slice(0, 200);
+          // 会话列表页: 对应会话未读+1 并置顶;新会话直接刷新
+          if (rightView === 'chat' && !curDialog) {
+            const idx = dialogs.findIndex((x) => x.id === m.chat_id);
+            if (idx >= 0) {
+              const dlg = { ...dialogs[idx], last_text: m.text || '(媒体消息)', last_date: m.date, unread: (dialogs[idx].unread || 0) + 1 };
+              dialogs = [dlg, ...dialogs.filter((x) => x.id !== m.chat_id)];
+            } else {
+              loadDialogs();
+            }
+          }
+          // 聊天记录页: 当前会话实时追加(推送的都是收到的消息)
+          if (rightView === 'chat' && curDialog && m.chat_id === curDialog.id) {
+            historyMsgs = [...historyMsgs, { id: Date.now(), out: false, sender: m.sender || '', sender_id: m.sender_id ?? null, sender_username: m.sender_username ?? null, text: m.text || '(媒体消息)', date: m.date }];
+            scrollHistoryBottom();
+          }
           if (rightView !== 'chat') chatUnread += 1;
         }
       }
@@ -842,20 +920,32 @@
       {:else if c === '聊天'}
     <details class="card" data-card="聊天" open={isCardOpen('聊天', true)} ontoggle={(e) => onCardToggle('聊天', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>聊天</summary>
-      <div class="grid">
-        <md-filled-button onclick={() => setView('chat')}>
-          消息接收{chatUnread ? ` (${chatUnread})` : ''}
-        </md-filled-button>
-        <md-outlined-button onclick={loadSettings}>加群频道</md-outlined-button>
+      <div class="chat-ctl">
+        <div class="chat-switch-row">
+          <span class="chat-switch-label">
+            <span class="status-dot" class:on={recvOn}></span>
+            接收新消息
+            <em class="chat-state">{recvOn ? '监听中' : '已停止'}</em>
+          </span>
+          <button
+            class="toggle"
+            class:on={recvOn}
+            role="switch"
+            aria-checked={recvOn}
+            title={recvOn ? '停止接收' : '开始接收'}
+            onclick={() => applyRecv(!recvOn)}
+          >
+            <span class="toggle-thumb"></span>
+          </button>
+        </div>
+        <div class="chat-entries">
+          <button class="chat-entry" onclick={() => setView('chat')}>
+            消息列表
+            {#if chatUnread}<span class="badge">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}
+          </button>
+          <button class="chat-entry" onclick={openJoinChannels}>加群频道…</button>
+        </div>
       </div>
-      <label class="recv-row">
-        <input
-          type="checkbox"
-          checked={recvOn}
-          onchange={() => applyRecv(!recvOn)}
-        />
-        <span>接收新消息（未读，{recvOn ? '监听中' : '已停止'}）</span>
-      </label>
     </details>
       {:else if c === '安全'}
     <details class="card" data-card="安全" open={isCardOpen('安全', false)} ontoggle={(e) => onCardToggle('安全', (e.currentTarget as HTMLDetailsElement).open)}>
@@ -918,34 +1008,79 @@
         {#each logs as l}<li>{l}</li>{/each}
       </ul>
     {:else if rightView === 'chat'}
-      <div class="sec-head">
-        <h3>消息接收{chatUnread ? `（未读 ${chatUnread}）` : ''}</h3>
-        <button class="back" onclick={() => setView('log')}>← 返回</button>
-      </div>
-      <label class="recv-row">
-        <input type="checkbox" checked={recvOn} onchange={() => applyRecv(!recvOn)} />
-        <span>接收新消息（未读）</span>
-      </label>
-      <div class="recv-rules">
-        <label><input type="checkbox" checked={recvRules.exclude_channels} onchange={() => onRecvRuleChange('exclude_channels')} /> 排除频道</label>
-        <label><input type="checkbox" checked={recvRules.exclude_groups} onchange={() => onRecvRuleChange('exclude_groups')} /> 排除群组</label>
-        <label><input type="checkbox" checked={recvRules.exclude_bots} onchange={() => onRecvRuleChange('exclude_bots')} /> 排除机器人</label>
-      </div>
-      {#if !chatMsgs.length}
-        <p class="empty">{recvOn ? '暂无新消息，等待中…' : '消息接收未开启'}</p>
+      {#if !curDialog}
+        <div class="sec-head">
+          <h3>会话{#if chatUnread} <span class="badge">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}</h3>
+          <button class="back" onclick={loadDialogs}>{dialogsLoading ? '加载中…' : '⟳ 刷新'}</button>
+        </div>
+        <div class="chat-switch-row">
+          <span class="chat-switch-label">
+            <span class="status-dot" class:on={recvOn}></span>
+            接收新消息
+          </span>
+          <button
+            class="toggle"
+            class:on={recvOn}
+            role="switch"
+            aria-checked={recvOn}
+            title={recvOn ? '停止接收' : '开始接收'}
+            onclick={() => applyRecv(!recvOn)}
+          >
+            <span class="toggle-thumb"></span>
+          </button>
+        </div>
+        <div class="recv-rules">
+          <button class="rule-chip" class:on={recvRules.exclude_channels} onclick={() => onRecvRuleChange('exclude_channels')}>{recvRules.exclude_channels ? '✓ ' : ''}排除频道</button>
+          <button class="rule-chip" class:on={recvRules.exclude_groups} onclick={() => onRecvRuleChange('exclude_groups')}>{recvRules.exclude_groups ? '✓ ' : ''}排除群组</button>
+          <button class="rule-chip" class:on={recvRules.exclude_bots} onclick={() => onRecvRuleChange('exclude_bots')}>{recvRules.exclude_bots ? '✓ ' : ''}排除机器人</button>
+        </div>
+        {#if !current}
+          <p class="empty">请先选择账号</p>
+        {:else if !onlineNames.has(current.name)}
+          <p class="empty">请先连接账号再查看会话</p>
+        {:else if !dialogs.length}
+          <p class="empty">{dialogsLoading ? '正在加载会话…' : '暂无会话，点右上角「刷新」获取'}</p>
+        {/if}
+        <ul class="dlg-list">
+          {#each dialogs as d (d.id)}
+            <li class="dlg" onclick={() => openDialog(d)}>
+              <div class="dlg-row1">
+                <span class="dlg-name">{d.name}</span>
+                <span class="dlg-time">{d.last_date}</span>
+              </div>
+              <div class="dlg-row2">
+                <span class="dlg-last">{d.last_text || ' '}</span>
+                {#if d.unread}<span class="badge">{d.unread > 99 ? '99+' : d.unread}</span>{/if}
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <div class="sec-head">
+          <h3>{curDialog.name}</h3>
+          <button class="back" onclick={() => (curDialog = null)}>← 会话列表</button>
+        </div>
+        {#if historyHasMore}
+          <button class="load-older" disabled={historyLoading} onclick={() => loadHistory(false)}>
+            {historyLoading ? '加载中…' : '加载更早消息'}
+          </button>
+        {/if}
+        <ul class="chat-history">
+          {#each historyMsgs as m (m.id)}
+            <li class="bbl-row" class:out={m.out}>
+              <div class="bbl">
+                {#if !m.out && curDialog.type === 'group' && m.sender}<span class="bbl-sender">{m.sender}</span>{/if}
+                <div class="bbl-text">{m.text || '[媒体消息]'}</div>
+                <span class="bbl-time">{m.date}{m.out ? ' ✓✓' : ''}</span>
+              </div>
+            </li>
+          {/each}
+          {#if !historyMsgs.length}
+            <p class="empty">{historyLoading ? '正在加载…' : '暂无消息'}</p>
+          {/if}
+        </ul>
       {/if}
-      <ul class="chat-list">
-        {#each chatMsgs as m}
-          <li class="chat-msg">
-            <div class="chat-meta">
-              <span class="chat-acc">{m.account}</span>
-              <span class="chat-chat">{m.chat}（{({ private: '私聊', group: '群组', channel: '频道' } as Record<string, string>)[m.chat_type] || m.chat_type}）</span>
-              <span class="chat-time">{m.date}</span>
-            </div>
-            <div class="chat-text">{chatLine(m)}</div>
-          </li>
-        {/each}
-      </ul>
+
     {:else if rightView === 'passkey'}
       <div class="sec-head">
         <h3>通行密钥</h3>
@@ -1705,6 +1840,10 @@
     opacity: 0.35;
     cursor: default;
   }
+  .join-links.flash {
+    border-color: var(--md-sys-color-primary);
+    box-shadow: var(--focus-ring);
+  }
   .form label {
     font-size: 13px;
     color: var(--md-sys-color-on-surface-variant);
@@ -1723,7 +1862,8 @@
     resize: vertical;
     box-sizing: border-box;
     margin-bottom: 8px;
-    overflow: hidden;
+    overflow-y: auto;
+    max-height: 300px;
   }
   .row2 {
     display: grid;
@@ -1849,79 +1989,280 @@
     background: transparent;
   }
   /* ---------- 聊天: 消息接收 ---------- */
-  .recv-row {
+  .chat-ctl {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 16px 12px;
+  }
+  .chat-switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--divider);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .chat-switch-label {
     display: flex;
     align-items: center;
     gap: 8px;
     font-size: 13px;
     color: var(--md-sys-color-on-surface);
-    margin: 4px 0 8px;
   }
-  .recv-row input {
-    width: auto;
-    margin: 0;
+  .chat-state {
+    font-style: normal;
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--md-sys-color-outline);
+    flex-shrink: 0;
+    transition: background 0.2s;
+  }
+  .status-dot.on {
+    background: var(--status-success);
+  }
+  .toggle {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: 999px;
+    background: var(--md-sys-color-surface-variant);
+    cursor: pointer;
+    padding: 0;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--md-sys-color-outline);
+    transition: transform 0.2s, background 0.2s;
+  }
+  .toggle.on {
+    background: var(--md-sys-color-primary);
+    border-color: var(--md-sys-color-primary);
+  }
+  .toggle.on .toggle-thumb {
+    transform: translateX(18px);
+    background: var(--md-sys-color-on-primary);
+  }
+  .chat-entries {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .chat-entry {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: none;
+    color: var(--md-sys-color-primary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .chat-entry:hover {
+    background: var(--hover-overlay);
+    border-color: var(--md-sys-color-primary);
+  }
+  .badge {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--md-sys-color-error);
+    color: #ffffff;
+    font-size: 11px;
+    line-height: 18px;
+    font-weight: 600;
   }
   .recv-rules {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 12px;
-    font-size: 12px;
-    color: var(--md-sys-color-on-surface-variant);
-    margin-bottom: 8px;
+    gap: 6px;
   }
-  .recv-rules label {
-    display: flex;
+  .rule-chip {
+    display: inline-flex;
     align-items: center;
     gap: 4px;
+    padding: 4px 12px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: none;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
   }
-  .recv-rules input {
-    width: auto;
-    margin: 0;
+  .rule-chip:hover {
+    border-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-primary);
   }
-  .chat-list {
+  .rule-chip.on {
+    background: var(--md-sys-color-primary);
+    border-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+  }
+  .dlg-list {
     list-style: none;
-    margin: 0;
+    margin: 12px 0 0;
     padding: 0;
     overflow-y: auto;
     flex: 1;
-  }
-  .chat-msg {
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--md-sys-color-outline);
-    border-radius: var(--md-sys-shape-corner-medium);
-  }
-  .chat-msg:hover {
-    background: var(--md-sys-color-surface-container-high);
-  }
-  .chat-meta {
     display: flex;
-    gap: 8px;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .dlg {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .dlg:hover {
+    background: var(--hover-overlay);
+  }
+  .dlg-row1 {
+    display: flex;
     align-items: center;
-    font-size: 12px;
-    color: var(--md-sys-color-on-surface-variant);
-    overflow: hidden;
+    justify-content: space-between;
+    gap: 8px;
   }
-  .chat-acc {
-    background: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
-    border-radius: 999px;
-    padding: 1px 8px;
-    flex-shrink: 0;
-  }
-  .chat-chat {
+  .dlg-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--md-sys-color-on-surface);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
   }
-  .chat-time {
-    margin-left: auto;
+  .dlg-time {
     flex-shrink: 0;
+    font-size: 11px;
+    color: var(--md-sys-color-on-surface-variant);
   }
-  .chat-text {
+  .dlg-row2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dlg-last {
+    flex: 1;
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .chat-history {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 4px 2px;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .bbl-row {
+    display: flex;
+  }
+  .bbl-row.out {
+    justify-content: flex-end;
+  }
+  .bbl {
+    max-width: 78%;
+    padding: 6px 10px;
+    border-radius: 12px;
+    background: var(--md-sys-color-surface-container-high);
     font-size: 13px;
-    margin-top: 4px;
-    white-space: pre-wrap;
-    word-break: break-all;
+    overflow-wrap: break-word;
+  }
+  .bbl-row:not(.out) .bbl {
+    border-bottom-left-radius: 4px;
+  }
+  .bbl-row.out .bbl {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    border-bottom-right-radius: 4px;
+  }
+  .bbl-sender {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--md-sys-color-primary);
+    margin-bottom: 2px;
+  }
+  .bbl-time {
+    display: block;
+    font-size: 10px;
+    text-align: right;
+    opacity: 0.65;
+    margin-top: 2px;
+  }
+  .load-older {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 6px 0;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-small);
+    background: none;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .load-older:hover:not(:disabled) {
+    background: var(--hover-overlay);
+    border-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-primary);
+  }
+  .load-older:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .chat-empty {
+    text-align: center;
+    padding: 48px 16px;
+  }
+  .chat-empty-icon {
+    font-size: 40px;
+    display: block;
+    margin-bottom: 10px;
+    opacity: 0.75;
+  }
+  .chat-empty-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .chat-empty-sub {
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    margin: 0;
   }
   label.sect {
     font-size: 14px;
