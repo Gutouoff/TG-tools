@@ -193,6 +193,7 @@ DEFAULT_TEXTS = {
     't149': '[多账号模式] 检测到 {0} 个账号文件夹',
     't150': '未选择账号,退出。',
     't151': '退出。',
+    't152': '  官方/认证频道与账号 {0} 个，已保留',
 }
 UI_TEXTS = {}
 
@@ -291,6 +292,16 @@ USER_WHITELIST = {5434838648, 6775358409, 238879089}   # 联系人/对话永不�
 GROUP_WHITELIST = {2284618069}                         # 永不退出的群/频道
 DEFAULT_USER_WHITELIST = set(USER_WHITELIST)           # 恢复默认用
 DEFAULT_GROUP_WHITELIST = set(GROUP_WHITELIST)
+
+# 官方/认证实体硬保护(与白名单同级,永不删/退/拉黑)
+OFFICIAL_SERVICE_IDS = {777000, 42777}   # Telegram 官方服务通知 / 官方支持
+
+
+def is_official(e):
+    """官方/认证实体判定: verified 认证标志(带蓝勾的官方频道/账号)或 Telegram 官方服务账号。"""
+    if getattr(e, 'verified', False):
+        return True
+    return getattr(e, 'id', 0) in OFFICIAL_SERVICE_IDS
 WHITELIST_FILE = os.path.join(SCRIPT_DIR, 'whitelist.json')   # 自定义白名单存这里
 
 
@@ -821,9 +832,12 @@ async def task_delete_contacts(client, me):
     log(T('t065'))
     res = await client(functions.contacts.GetContactsRequest(hash=0))
     all_users = [u for u in res.users if u.id != me.id]
-    users = [u for u in all_users if u.id not in USER_WHITELIST]
+    users = [u for u in all_users if u.id not in USER_WHITELIST and not is_official(u)]
     wl = [u for u in all_users if u.id in USER_WHITELIST]
+    official = [u for u in all_users if is_official(u)]
     log(T('t066', len(all_users), len(wl), len(users)))
+    if official:
+        log(T('t152', len(official)))
     for u in wl:
         log(T('t067', u.first_name or '', u.last_name or '', u.id).rstrip())
     if not users:
@@ -853,7 +867,7 @@ async def task_delete_contacts(client, me):
     total = 0
     for rnd in range(3):
         res = await client(functions.contacts.GetContactsRequest(hash=0))
-        ids = [u.id for u in res.users if u.id != me.id and u.id not in USER_WHITELIST]
+        ids = [u.id for u in res.users if u.id != me.id and u.id not in USER_WHITELIST and not is_official(u)]
         if not ids:
             break
         log(T('t072', rnd + 1, len(ids)))
@@ -884,7 +898,7 @@ async def task_delete_contacts(client, me):
         if rnd < 2:
             r = await client(functions.contacts.GetContactsRequest(hash=0))
             remain = [u.id for u in r.users
-                      if u.id != me.id and u.id not in USER_WHITELIST]
+                      if u.id != me.id and u.id not in USER_WHITELIST and not is_official(u)]
             if remain:
                 w = random.uniform(*CONTACT_ROUND_DELAY)
                 log(T('t077', w))
@@ -893,7 +907,7 @@ async def task_delete_contacts(client, me):
                 break
 
     res2 = await client(functions.contacts.GetContactsRequest(hash=0))
-    left = [u for u in res2.users if u.id != me.id and u.id not in USER_WHITELIST]
+    left = [u for u in res2.users if u.id != me.id and u.id not in USER_WHITELIST and not is_official(u)]
     kept = [u for u in res2.users if u.id in USER_WHITELIST]
     log(T('t078', total, len(left), len(kept)))
 
@@ -914,6 +928,7 @@ async def _analyze_dialogs(client, me):
     log(T('t082', len(dialogs)))
 
     users, bots, deleted, groups, keep_users, keep_groups = [], [], [], [], [], []
+    official_kept = 0
     for d in dialogs:
         e = d.entity
         eid = getattr(e, 'id', None)
@@ -922,7 +937,10 @@ async def _analyze_dialogs(client, me):
         elif eid in USER_WHITELIST:
             keep_users.append(d)          # 用户白名单,永不删
         elif d.is_user:
-            if getattr(e, 'bot', False):
+            if is_official(e):
+                keep_users.append(d)      # 官方/认证账号,永不删
+                official_kept += 1
+            elif getattr(e, 'bot', False):
                 bots.append(d)
             elif getattr(e, 'deleted', False) or getattr(e, 'first_name', None) == 'Deleted Account':
                 deleted.append(d)
@@ -931,9 +949,14 @@ async def _analyze_dialogs(client, me):
         elif d.is_group or d.is_channel:
             if eid in GROUP_WHITELIST:
                 keep_groups.append(d)     # 群白名单,永不退
+            elif is_official(e):
+                keep_groups.append(d)     # 官方/认证频道,永不退
+                official_kept += 1
             else:
                 groups.append(d)
 
+    if official_kept:
+        log(T('t152', official_kept))
     log(T('t083', len(dialogs), len(users), len(deleted), len(bots), len(groups), len(keep_users) + len(keep_groups)))
     return users, bots, deleted, groups, keep_users, keep_groups, dialogs
 
