@@ -71,12 +71,18 @@ git checkout main; git merge --ff-only dev; git push origin main; git checkout d
 - 后端 `DEFAULT_SETTINGS`（server.py ~798 行）和 settings.json 都已更新为 Teal
 - settings.json 里 `theme_mode` 控制浅/深色
 
-## 六、卡片折叠记忆（有 bug，待修）
+## 六、卡片折叠记忆（已修复 2026-09-04）
 
-- 需求：左栏/中栏的 4 个 `<details>` 卡片（删除/基本信息/安全/其他设置）折叠状态要持久化。
-- 当前实现：`cardOpen` state + 后端 settings.json 的 `card_open` 字段。
-- **已知问题**：用户反馈「卡片记忆还没好」——保存能写入 settings.json，但**重启后恢复不生效**（疑似 Svelte 5 async 里 `cardOpen` 赋值不触发重渲染，虽已加 `flushSync`，但仍未验证通过）。
-- 排查方向：`onMount` 里读 settings 后 `flushSync(() => cardOpen = co)`，以及 `<details open={isCardOpen('删除', true)} ontoggle=...>` 的响应性。
+- 根因：浏览器对初始 `open` 属性异步派发 `toggle` 事件,此时 cardOpen 还是默认值,onCardToggle 把默认状态写回 settings.json 覆盖保存值。
+- 修复：`cardOpenRestored` 标志（恢复完成前忽略 toggle）+ 恢复后按 `data-card` 属性直接同步 DOM open。
+
+## 六b、多账号同时在线（2026-09-04 新增）
+
+- 引擎 `Engine._pool`：账号名 → {client, me, info, dir}。`connect` 不再踢旧连接而是入池；已在线再 connect = 秒切不重连。
+- 新引擎方法：`switch(name)`（秒切）、`disconnect(name)`（只断指定,None=断当前,断后池里还有账号则自动切过去）、`online_accounts()`、`shutdown` 清空全池。
+- 新接口：`POST /api/switch` {name}、`GET /api/online`、`POST /api/disconnect` 可带 {name}；`/api/connect` 响应多带 `online` 列表。
+- 前端：头像橘点=连接池在线;双击在线账号=秒切;账号右键菜单有「断开连接（保持其他在线）」;页面刷新后 `GET /api/online` 恢复徽标;WS 新增 `switched`/带账号名的 `disconnected` 事件处理。
+- 注意：所有任务仍只作用于「当前账号」（self._client）,批量 fan-out 到多账号是后续方向。
 
 ## 七、passkey caBLE（重点，未完全走通）
 
@@ -142,10 +148,10 @@ TUNNEL_DOMAINS = ["cable.ua5v.com", "cable.auth.com"]
 
 ## 十、下一步（新会话建议顺序）
 
-1. **让用户用 Telegram App 扫码验证 passkey**（当前卡点的唯一出路）。若日志出现 `[通行密钥] 蓝牙连接中…` 说明 EID 解密通了，继续看后续握手/注册。
-2. **修卡片折叠记忆**（重启恢复不生效）。
-3. 若 passkey 走通，清理 `cable.py` 里的诊断日志（passkey_adv/diag/decrypt_fail）。
-4. 其他待办：真正的多账号同时在线（引擎单 client，目前只标记当前连接）。
+1. **让用户用 Telegram App 扫码验证 passkey**（当前卡点的唯一出路）。二维码下方已加引导文案。若日志出现 `[通行密钥] 蓝牙连接中…` 说明 EID 解密通了，继续看后续握手/注册。
+2. 若 passkey 走通，清理 `cable.py` 里的诊断日志（passkey_adv/diag/decrypt_fail）。
+3. 批量任务 fan-out：多账号已同时在线,可让删除等任务支持「对所有在线账号执行」。
+4. 卡片折叠记忆已修复（待用户确认）。
 
 ## 十一、passkey 后端接口（供前端对接参考）
 
