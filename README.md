@@ -1,6 +1,6 @@
 # TG-tools · Telegram 小号批量维护工具箱
 
-Python + Telethon 的 Telegram 小号批量维护工具：删联系人、删对话（私聊/群/频道）、退出群组、拉黑 bot、更新 Telegram Desktop 本体、tdata→session 转换、passkey（蓝牙 caBLE）、多账号同时在线、白名单保护、代理支持。**主形态 = Web 版**（FastAPI + Svelte 5 + pywebview），CLI 与 Tkinter GUI 为遗留入口。
+Python + Telethon 的 Telegram 小号批量维护工具：删联系人、删对话（私聊/群/频道）、退出群组、拉黑 bot、更新 Telegram Desktop 本体、tdata→session 转换、passkey（蓝牙 caBLE）、多账号同时在线、白名单保护、代理支持。**主形态 = Web 版**（FastAPI + Svelte 5 + pywebview）；CLI 保留，Tkinter GUI 已归档至 [legacy/](legacy/)。
 
 > ⚠️ 本仓库**只含代码，不含任何账号数据**。账号 session、tdata、API 凭据全部留在本地账号目录，永不入库（见 `.gitignore`）。
 
@@ -19,8 +19,8 @@ TG工具箱Web/                  ← 部署目录(PyInstaller onedir, 主形态)
 │   └── webapp/dist/          ← Svelte 5 构建产物(npm run build 生成)
 └── avatars/ profiles.json    ← 运行缓存(部署时保留)
 
-工具箱/                       ← 旧 CLI/GUI 运行目录(遗留维护)
-    ├── tg_tool.py / tg_engine.py / tg_ui.py(Tkinter) ...
+工具箱/                       ← 旧 CLI 运行目录（Tkinter GUI 已归档至 legacy/）
+    ├── tg_tool.py / tg_engine.py ...
     └── 界面文本.txt           ← 全部界面中文外置(改文件即改UI,删除恢复默认)
 ```
 

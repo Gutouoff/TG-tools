@@ -4,7 +4,7 @@
 
 Telegram 小号批量维护工具箱（删联系人/删对话/退群/拉黑bot/更新本体/tdata转换/passkey）。
 **主形态 = Web 版**：FastAPI 后端（server.py）+ Svelte 5 前端（webapp/）+ pywebview 壳（web_main.py），PyInstaller 打包（TG工具箱Web.spec）部署到 `D:\Desktop\TG小号\TG工具箱Web\`。
-CLI（tg_tool.py）与 Tkinter GUI（tg_ui.py，**遗留维护，不再是主形态**）仍可用。运行时账号数据在 `D:\Desktop\TG小号\`（**不入库、不改动账号目录结构**）。
+CLI（tg_tool.py）仍可用；Tkinter GUI（tg_ui.py）已归档至 `legacy/`（v1.0.0 起冻结不再维护）。运行时账号数据在 `D:\Desktop\TG小号\`（**不入库、不改动账号目录结构**）。
 
 ## 铁律
 
@@ -25,7 +25,7 @@ CLI（tg_tool.py）与 Tkinter GUI（tg_ui.py，**遗留维护，不再是主形
 | `cable.py` | passkey caBLE（蓝牙扫码登录）完整实现 | 依赖 bleak/cbor2/cryptography；诊断日志待 passkey 走通后清理（见 HANDOFF.md 卡点） |
 | `tg_tool.py` | 核心业务+CLI 交互+界面文本表 DEFAULT_TEXTS+白名单+代理 | 它是库（GUI/Web 都 import 它）也是 CLI 入口；模块级可变量 DIALOG_DELAY/CONTACT_*_DELAY 被 Engine.set_speed 运行时改 |
 | `tg_engine.py` | 引擎：线程+asyncio 循环、**多账号连接池(_pool)/秒切**、任务、温和取消、进度回调 | 所有 on_log/on_progress/on_state 回调默认在引擎线程执行,UI 侧必须 root.after 投递;任务只作用于"当前账号" |
-| `tg_ui.py` | Tkinter 界面（遗留维护） | 引擎新特性（连接池等）不保证同步到它;界面文案走 T()/界面文本.txt |
+| `legacy/tg_ui.py` | Tkinter 界面（**已归档冻结**，v1.0.0 起移入 legacy/） | 不再维护;引擎新特性不同步;确需运行见 legacy/README.md |
 | `tg_profile.py` | 资料缓存 worker | DEAD 集合=已知死号直接跳过;PHONE_CODE_MAP 区号→国家 |
 | `tl_patch.py` | Telethon 1.44 新 message 构造体 3ae56482 注册 | Telethon 官方更新 layer 后此补丁自动被覆盖,无需维护 |
 | `tdata2session.py` | opentele-ng tdata 转换 | 独立脚本,也被 tg_tool import |
