@@ -445,6 +445,16 @@
   let editLastName = $state('');
   let editUsername = $state('');
   let editAbout = $state('');
+  let aboutEl = $state<HTMLTextAreaElement>();
+  // 简介自动增高: 打开资料/内容变化时都调整(替代只在 oninput 时触发)
+  $effect(() => {
+    const el = aboutEl;
+    const _content = editAbout;   // 建立依赖: 内容变化时重新调高
+    if (el && rightView === 'profile') {
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    }
+  });
   let editDay = $state('');
   let editMonth = $state('');
   let editYear = $state('');
@@ -1019,12 +1029,8 @@
         <label>简介</label>
         <textarea
           bind:value={editAbout}
+          bind:this={aboutEl}
           rows="1"
-          oninput={(e) => {
-            const t = e.currentTarget;
-            t.style.height = 'auto';
-            t.style.height = t.scrollHeight + 'px';
-          }}
         ></textarea>
         <label>生日（月 / 日 / 年）</label>
         <div class="row3">
@@ -1715,6 +1721,9 @@
     outline: none;
     font-family: inherit;
     resize: vertical;
+    box-sizing: border-box;
+    margin-bottom: 8px;
+    overflow: hidden;
   }
   .row2 {
     display: grid;
@@ -1931,5 +1940,7 @@
     font-family: 'Consolas', monospace;
     outline: none;
     resize: vertical;
+    box-sizing: border-box;
+    margin-bottom: 8px;
   }
 </style>
