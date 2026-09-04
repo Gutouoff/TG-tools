@@ -130,6 +130,9 @@ class Engine:
         self._recv_on = False       # 消息接收开关
         self._recv_rules = {'exclude_channels': True, 'exclude_groups': False,
                             'exclude_bots': False}
+        # 已注册消息监听的 client 集合(引擎侧管理;
+        # Telethon client 是 __slots__ 类,不能往实例上挂标记属性)
+        self._recv_bound = set()
         self._cancel = threading.Event()
         self._task_running = False
         self._lock = threading.RLock()
@@ -761,16 +764,21 @@ class Engine:
         _ensure_telethon()
         from telethon import events
         bound = 0
+        # 清理已下线 client 的标记
+        self._recv_bound &= {entry['client'] for entry in self._pool.values()}
         for entry in self._pool.values():
             client = entry['client']
-            is_bound = getattr(client, '_tg_recv_bound', False)
-            if self._recv_on and not is_bound:
-                client.add_event_handler(self._on_new_message, events.NewMessage())
-                client._tg_recv_bound = True
-                bound += 1
-            elif not self._recv_on and is_bound:
-                client.remove_event_handler(self._on_new_message, events.NewMessage())
-                client._tg_recv_bound = False
+            is_bound = client in self._recv_bound
+            try:
+                if self._recv_on and not is_bound:
+                    client.add_event_handler(self._on_new_message, events.NewMessage())
+                    self._recv_bound.add(client)
+                    bound += 1
+                elif not self._recv_on and is_bound:
+                    client.remove_event_handler(self._on_new_message, events.NewMessage())
+                    self._recv_bound.discard(client)
+            except Exception as e:
+                self._log(f'[!] 消息接收注册失败: {type(e).__name__}: {e}')
         self._log(T('t153', '开启' if self._recv_on else '关闭',
                     len(self._pool), self._recv_rules_summary()))
         return bound
@@ -833,8 +841,9 @@ class Engine:
                 data['sender'] = ((getattr(sender, 'first_name', '') or '') + ' '
                                   + (getattr(sender, 'last_name', '') or '')).strip()
             self._gui_schedule(lambda d=data: self.on_message(d))
-        except Exception:
-            pass
+        except Exception as e:
+            # 不再静默: 收不到消息时这里是最重要的诊断点
+            self._log(f'[!] 消息处理异常: {type(e).__name__}: {e}')
 
     def join_chats(self, links):
         """加入群组/频道(当前账号)。links: t.me/xxx、@xxx、t.me/+邀请。"""
