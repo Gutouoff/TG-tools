@@ -435,10 +435,13 @@ def parse_public_key_options(public_key_json: str) -> dict:
 # ---------- 完整注册流程 ----------
 _MSG_CTAP = 0x01
 _CABLE_SERVICE_UUIDS = (
-    "0000fde2-0000-1000-8000-00805f9b34fb",  # Google caBLE(旧)
-    "0000fff9-0000-1000-8000-00805f9b34fb",  # FIDO caBLE(旧)
-    "0000fcf1-0000-1000-8000-00805f9b34fb",  # Chromium caBLE(新,2024+)
+    "0000fde2-0000-1000-8000-00805f9b34fb",  # Google caBLE v1(FDE2)
+    "0000fff9-0000-1000-8000-00805f9b34fb",  # FIDO caBLE(FFF9)
+    # 官方 scanner 只监听上面两个(cable_scanner_win.cpp:36-37)。
+    # 0000fcf1-... 是 Google Play Services 私有协议(智能镜头/系统相机扫码),
+    # 格式闭源不可解密 —— 单独检测并引导用户换扫码方式。
 )
+_GOOGLE_PRIVATE_UUID = "0000fcf1-0000-1000-8000-00805f9b34fb"
 
 
 async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=None, timeout_s=90):
@@ -467,6 +470,7 @@ async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=No
     loop = asyncio.get_event_loop()
     advert_future = loop.create_future()
     seen_payloads = set()
+    google_hint_sent = False
 
     def _try_accept(u, data):
         """用本会话密钥验广播负载;验过(hmac 正确)即视为本仪式的 EID。"""
@@ -506,8 +510,15 @@ async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=No
                         return
 
     def _detect(_device, adv):
+        nonlocal google_hint_sent
         if advert_future.done():
             return
+        if on_state and not google_hint_sent:
+            uids = {str(u).lower() for u in (adv.service_data or {})}
+            if _GOOGLE_PRIVATE_UUID in uids:
+                google_hint_sent = True
+                on_state('hint_检测到 Google 私有协议广播(fcf1,来自智能镜头/系统相机扫码)。'
+                         '请改用手机 Chrome 浏览器的扫码器扫描,或用 iOS 系统相机(iOS 走标准协议)')
         for uuid_str, data in (adv.service_data or {}).items():
             u = str(uuid_str).lower()
             b = bytes(data)
