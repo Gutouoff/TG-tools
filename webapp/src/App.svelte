@@ -91,6 +91,21 @@
     // 去重并补齐缺失项(防 settings.json 被手改坏)
     return [...new Set([...valid, ...DEFAULT_CARD_ORDER])];
   }
+  // 预设色彩主题(Chrome 风格圆盘)
+  const PRESET_COLORS = ['#009688', '#229ED9', '#2A6D7D', '#3F51B5', '#9C27B0', '#EC407A', '#E53935', '#F2994A', '#66BB6A', '#00BCD4', '#795548', '#607D8B'];
+  function isPreset(): boolean {
+    return PRESET_COLORS.some((c) => c.toLowerCase() === ((settings.theme_seed as string) || '').toLowerCase());
+  }
+  function applyPreset(c: string) {
+    settings = { ...settings, theme_seed: c };
+    applyTheme();
+    saveSettings(settings).catch(() => {});
+  }
+  function setThemeMode(mode: string) {
+    settings = { ...settings, theme_mode: mode };
+    applyTheme();
+    saveSettings(settings).catch(() => {});
+  }
   function moveCard(i: number, dir: number) {
     const j = i + dir;
     if (j < 0 || j >= cardOrder.length) return;
@@ -163,6 +178,11 @@
         markOnline(a.name, true);
       }
       addLog(`已连接 ${a.name}${uname ? ` (@${uname})` : ''}`);
+      // 连接成功: 后端已自动拉取会话列表并开启消息接收,前端直接就绪
+      if (Array.isArray(r.dialogs) && r.dialogs.length) {
+        dialogs = r.dialogs;
+      }
+      loadRecv();
       // 连接成功后刷新一次头像
       try {
         const av = await refreshAvatar(a.name);
@@ -695,9 +715,13 @@
       progress = { done: e.done ?? 0, total: e.total ?? 0, label: e.label ?? '' };
     }
     if (e.type === 'state') {
-      if (e.status === 'connected') connected = true;
+      if (e.status === 'connected') {
+        connected = true;
+        if (rightView === 'chat' && !curDialog) loadDialogs();
+      }
       if (e.status === 'switched') {
         connected = true;
+        if (rightView === 'chat' && !curDialog) loadDialogs();
         // 引擎自动切到池中其他在线账号时,同步 current 指向
         const nm = (e.data as any)?.name;
         if (nm) {
@@ -1235,30 +1259,66 @@
       <div class="set-content">
         {#if settingsSection === 'general'}
           <div class="set-sec-title">通用</div>
-          <label>打包文件命名格式（name=账号名 date=日期）</label>
-          <input bind:value={settings.pack_naming} />
-          <label>默认压缩密码（使用 AES-256 加密）</label>
-          <input type="password" autocomplete="new-password" bind:value={settings.pack_password} />
+          <div class="set-group">
+            <div class="set-row">
+              <span class="set-label">打包文件命名格式</span>
+              <input class="set-input" bind:value={settings.pack_naming} placeholder="{name}_账号包" />
+            </div>
+            <div class="set-row">
+              <span class="set-label">默认压缩密码（AES-256）</span>
+              <input class="set-input" type="password" autocomplete="new-password" bind:value={settings.pack_password} placeholder="留空则不加密" />
+            </div>
+          </div>
         {:else if settingsSection === 'appearance'}
           <div class="set-sec-title">外观</div>
-          <label>主题模式</label>
-          <select bind:value={settings.theme_mode} onchange={() => applyTheme()}>
-            <option value="light">浅色</option>
-            <option value="dark">深色</option>
-          </select>
-          <label>按钮 / 主色</label>
-          <input class="color-input" type="color" bind:value={settings.theme_seed} onchange={() => applyTheme()} />
-          <label>背景浅色</label>
-          <input class="color-input" type="color" bind:value={settings.theme_bg} onchange={() => applyTheme()} />
-          <label>背景深色（卡片）</label>
-          <input class="color-input" type="color" bind:value={settings.theme_dark} onchange={() => applyTheme()} />
-          <label>顶栏颜色</label>
-          <input class="color-input" type="color" bind:value={settings.theme_topbar} onchange={() => applyTheme()} />
-          <label class="sect">功能区排序</label>
-          <div class="order-list">
+          <div class="set-group">
+            <div class="mode-seg">
+              <button class="mode-item" class:on={themeMode === 'light'} title="浅色" onclick={() => setThemeMode('light')}>
+                {#if themeMode === 'light'}✓{/if} ☀️ 浅色
+              </button>
+              <button class="mode-item" class:on={themeMode === 'dark'} title="深色" onclick={() => setThemeMode('dark')}>
+                {#if themeMode === 'dark'}✓{/if} 🌙 深色
+              </button>
+            </div>
+          </div>
+          <div class="set-group-title">色彩主题</div>
+          <div class="set-group">
+            <div class="swatch-grid">
+              {#each PRESET_COLORS as c (c)}
+                <button
+                  class="swatch"
+                  class:on={((settings.theme_seed as string) || '').toLowerCase() === c.toLowerCase()}
+                  style="--sw:{c};--sw-light:color-mix(in srgb, {c} 55%, white)"
+                  title={c}
+                  onclick={() => applyPreset(c)}
+                ></button>
+              {/each}
+              <label class="swatch custom" class:on={!isPreset()} title="自定义颜色">
+                🖌️
+                <input type="color" bind:value={settings.theme_seed} onchange={() => applyTheme()} />
+              </label>
+            </div>
+          </div>
+          <div class="set-group-title">详细调整</div>
+          <div class="set-group">
+            <div class="set-row">
+              <span class="set-label">背景浅色</span>
+              <input class="set-color" type="color" bind:value={settings.theme_bg} onchange={() => applyTheme()} />
+            </div>
+            <div class="set-row">
+              <span class="set-label">背景深色（卡片）</span>
+              <input class="set-color" type="color" bind:value={settings.theme_dark} onchange={() => applyTheme()} />
+            </div>
+            <div class="set-row">
+              <span class="set-label">顶栏颜色</span>
+              <input class="set-color" type="color" bind:value={settings.theme_topbar} onchange={() => applyTheme()} />
+            </div>
+          </div>
+          <div class="set-group-title">功能区排序</div>
+          <div class="set-group">
             {#each cardOrder as c, i (c)}
-              <div class="order-row">
-                <span>{c}</span>
+              <div class="set-row">
+                <span class="set-label">{c}</span>
                 <span class="order-btns">
                   <button class="order-btn" disabled={i === 0} title="上移" onclick={() => moveCard(i, -1)}>↑</button>
                   <button class="order-btn" disabled={i === cardOrder.length - 1} title="下移" onclick={() => moveCard(i, 1)}>↓</button>
@@ -1268,29 +1328,43 @@
           </div>
         {:else if settingsSection === 'proxy'}
           <div class="set-sec-title">代理</div>
-          <label>代理模式</label>
-          <select bind:value={settings.proxy_mode}>
-            <option value="none">不使用代理</option>
-            <option value="system">使用系统代理</option>
-            <option value="manual">手动设置</option>
-          </select>
-          {#if settings.proxy_mode === 'manual'}
-            <label>代理类型</label>
-            <select bind:value={settings.proxy_scheme}>
-              <option value="socks5">SOCKS5</option>
-              <option value="socks4">SOCKS4</option>
-              <option value="http">HTTP</option>
-            </select>
-            <label>IP 地址</label>
-            <input bind:value={settings.proxy_host} placeholder="127.0.0.1" />
-            <label>端口</label>
-            <input bind:value={settings.proxy_port} placeholder="7890" />
-          {/if}
+          <div class="set-group">
+            <div class="set-row">
+              <span class="set-label">代理模式</span>
+              <select class="set-select" bind:value={settings.proxy_mode}>
+                <option value="none">不使用代理</option>
+                <option value="system">使用系统代理</option>
+                <option value="manual">手动设置</option>
+              </select>
+            </div>
+            {#if settings.proxy_mode === 'manual'}
+              <div class="set-row">
+                <span class="set-label">代理类型</span>
+                <select class="set-select" bind:value={settings.proxy_scheme}>
+                  <option value="socks5">SOCKS5</option>
+                  <option value="socks4">SOCKS4</option>
+                  <option value="http">HTTP</option>
+                </select>
+              </div>
+              <div class="set-row">
+                <span class="set-label">IP 地址</span>
+                <input class="set-input" bind:value={settings.proxy_host} placeholder="127.0.0.1" />
+              </div>
+              <div class="set-row">
+                <span class="set-label">端口</span>
+                <input class="set-input" bind:value={settings.proxy_port} placeholder="7890" />
+              </div>
+            {/if}
+          </div>
         {:else}
           <div class="set-sec-title">加群频道</div>
-          <label>要加入的群组/频道链接（每行一个：https://t.me/xxx 或 @xxx 或 https://t.me/+邀请）</label>
-          <textarea class="join-links" rows="6" bind:value={joinLinks}
-            placeholder={'https://t.me/durov\nhttps://t.me/+AbCdEf...'}></textarea>
+          <div class="set-group">
+            <div class="set-row set-row-col">
+              <span class="set-label">要加入的群组/频道链接（每行一个：https://t.me/xxx 或 @xxx 或 https://t.me/+邀请）</span>
+              <textarea class="join-links" rows="6" bind:value={joinLinks}
+                placeholder={'https://t.me/durov\nhttps://t.me/+AbCdEf...'}></textarea>
+            </div>
+          </div>
           <md-filled-button onclick={doJoinChats}>全部加入（当前账号）</md-filled-button>
         {/if}
         <div class="set-footer">
@@ -1877,16 +1951,157 @@
     flex-direction: column;
   }
   .set-sec-title {
-    font-size: 17px;
+    font-size: 18px;
     font-weight: 600;
-    margin: 0 0 12px;
+    margin: 0 0 14px;
   }
-  .color-input {
-    height: 36px !important;
-    min-height: 36px;
-    padding: 3px !important;
-    border-radius: var(--md-sys-shape-corner-small) !important;
+  .set-group {
+    background: var(--md-sys-color-surface-container-low);
+    border: 1px solid var(--divider);
+    border-radius: var(--md-sys-shape-corner-medium);
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .mode-seg {
+    display: flex;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: 999px;
+    padding: 4px;
+    gap: 6px;
+  }
+  .mode-item {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: none;
+    background: none;
+    padding: 9px 0;
+    border-radius: 999px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--md-sys-color-on-surface);
     cursor: pointer;
+    transition: background 0.15s;
+  }
+  .mode-item:hover:not(.on) {
+    background: var(--state-layer);
+  }
+  .mode-item.on {
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    font-weight: 500;
+  }
+  .swatch-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    padding: 16px;
+  }
+  .swatch {
+    position: relative;
+    width: 56px;
+    height: 56px;
+    margin: 0 auto;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    background: linear-gradient(to bottom, var(--sw) 50%, var(--sw-light) 50%);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .swatch:hover {
+    transform: scale(1.08);
+  }
+  .swatch.on {
+    box-shadow: 0 0 0 2px var(--md-sys-color-surface-container), 0 0 0 4px var(--sw);
+  }
+  .swatch.on::after {
+    content: '✓';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--sw);
+    color: #ffffff;
+    font-size: 11px;
+    display: grid;
+    place-items: center;
+  }
+  .swatch.custom {
+    display: grid;
+    place-items: center;
+    background: var(--md-sys-color-surface-container-high);
+    border: 1px dashed var(--md-sys-color-outline);
+    font-size: 18px;
+  }
+  .swatch.custom.on {
+    box-shadow: 0 0 0 2px var(--md-sys-color-surface-container), 0 0 0 4px var(--md-sys-color-primary);
+  }
+  .swatch.custom input {
+    display: none;
+  }
+  .set-group-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--md-sys-color-on-surface-variant);
+    margin: 8px 2px 8px;
+  }
+  .set-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px;
+    min-height: 48px;
+  }
+  .set-row + .set-row {
+    border-top: 1px solid var(--divider);
+  }
+  .set-row-col {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .set-label {
+    font-size: 13px;
+    color: var(--md-sys-color-on-surface);
+  }
+  .set-input,
+  .set-select {
+    width: 240px;
+    flex-shrink: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: 10px;
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    margin: 0;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .set-input:focus,
+  .set-select:focus {
+    border-color: var(--md-sys-color-primary);
+    box-shadow: var(--focus-ring);
+  }
+  .set-color {
+    width: 44px;
+    height: 32px;
+    padding: 2px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: 8px;
+    background: none;
+    cursor: pointer;
+    margin: 0;
+    flex-shrink: 0;
+  }
+  .set-row-col .join-links {
+    margin-bottom: 0;
   }
   .set-footer {
     margin-top: auto;
@@ -1906,21 +2121,6 @@
   .modal-head h3 {
     margin: 0;
     font-size: 18px;
-  }
-  .order-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-bottom: 8px;
-  }
-  .order-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 10px;
-    border: 1px solid var(--divider);
-    border-radius: var(--md-sys-shape-corner-small);
-    font-size: 13px;
   }
   .order-btns {
     display: flex;

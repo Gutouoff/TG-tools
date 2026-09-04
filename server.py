@@ -246,12 +246,21 @@ async def connect(body: dict):
         info['username'] = (me or {}).get('username', '') if ok else ''
     except Exception:
         info['username'] = ''
-    # 消息接收开关若为开,自动对刚上线的账号生效
+    # 连接成功即自动开启消息接收(规则沿用设置;用户可在界面随时关闭,重连恢复开启)
     try:
         s = _load_settings()
-        if s.get('recv_on'):
-            eng.set_recv(True, {k: s.get(k) for k in
-                                ('recv_exclude_channels', 'recv_exclude_groups', 'recv_exclude_bots')})
+        eng.set_recv(True, {k: s.get(k) for k in
+                            ('recv_exclude_channels', 'recv_exclude_groups', 'recv_exclude_bots')})
+        if not s.get('recv_on'):
+            s['recv_on'] = True
+            _save_settings(s)
+    except Exception:
+        pass
+    # 连接成功后自动拉取会话列表(前端进"消息接收"页零等待)
+    dialogs = []
+    try:
+        _d = await asyncio.wait_for(asyncio.wrap_future(eng.list_dialogs(info['name'])), 60)
+        dialogs = _d or []
     except Exception:
         pass
     # 同步返回池中所有在线账号(前端按 name 匹配打在线徽标)
@@ -262,7 +271,8 @@ async def connect(body: dict):
             online = onl
     except Exception:
         pass
-    return {'ok': True, 'info': _jsonable(info), 'online': _jsonable(online)}
+    return {'ok': True, 'info': _jsonable(info), 'online': _jsonable(online),
+            'dialogs': _jsonable(dialogs)}
 
 
 # ---------- 聊天: 消息接收 / 加群频道 ----------
@@ -441,6 +451,13 @@ async def switch(body: dict):
         return {'ok': False, 'msg': str(e)}
     if not info:
         return {'ok': False, 'msg': '该账号不在线,请先连接'}
+    # 秒切后保持消息接收开启(幂等,已注册的 client 不会重复)
+    try:
+        s = _load_settings()
+        eng.set_recv(True, {k: s.get(k) for k in
+                            ('recv_exclude_channels', 'recv_exclude_groups', 'recv_exclude_bots')})
+    except Exception:
+        pass
     return {'ok': True, 'info': _jsonable(info)}
 
 
