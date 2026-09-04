@@ -896,7 +896,7 @@ class Engine:
         client = entry['client']
         msgs = []
         sender_cache = {}    # sender_id -> (sender, name);同一发送者多条消息只解析一次
-        async for m in client.iter_messages(dialog_id, limit=limit, offset_id=offset_id or None):
+        async for m in client.iter_messages(dialog_id, limit=limit, offset_id=offset_id):
             sid = m.sender_id
             if sid in sender_cache:
                 sender, name = sender_cache[sid]
