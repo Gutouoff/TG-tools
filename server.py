@@ -309,6 +309,38 @@ async def join_channels(body: dict):
     return {'ok': True, 'results': _jsonable(results or [])}
 
 
+@app.get('/api/dialogs')
+async def get_dialogs(account: str = ''):
+    """抓取在线账号的会话列表。"""
+    if not account:
+        return {'ok': False, 'msg': '缺少 account'}
+    eng = init_engine()
+    fut = eng.list_dialogs(account)
+    try:
+        dialogs = await asyncio.wait_for(asyncio.wrap_future(fut), 90)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': True, 'dialogs': _jsonable(dialogs or [])}
+
+
+@app.post('/api/history')
+async def history(body: dict):
+    """拉取会话历史消息;offset_id 传最早一条 id 向更早翻页。"""
+    account = str(body.get('account') or '')
+    dialog_id = body.get('dialog_id')
+    if not account or dialog_id is None:
+        return {'ok': False, 'msg': '参数缺失'}
+    eng = init_engine()
+    limit = min(int(body.get('limit') or 20), 100)
+    offset_id = int(body.get('offset_id') or 0)
+    fut = eng.fetch_history(account, dialog_id, limit, offset_id)
+    try:
+        msgs = await asyncio.wait_for(asyncio.wrap_future(fut), 90)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': True, 'msgs': _jsonable(msgs or [])}
+
+
 @app.get('/api/me')
 async def me():
     eng = init_engine()

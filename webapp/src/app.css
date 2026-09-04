@@ -18,6 +18,8 @@
 
   --md-sys-color-error: #D9534F;
   --md-sys-color-on-error: #ffffff;
+  --md-sys-color-secondary-container: #CCE8E4;
+  --md-sys-color-on-secondary-container: #062F2A;
 
   --md-sys-shape-corner-small: 8px;
   --md-sys-shape-corner-medium: 16px;
@@ -30,6 +32,7 @@
   --hover-overlay: rgba(0, 150, 136, 0.08);
   --focus-ring: 0 0 0 2px rgba(0, 150, 136, 0.25);
   --divider: #DCE9E5;
+  --state-layer: rgba(23, 32, 30, 0.08);
 }
 
 /* 深色模式 */
@@ -52,6 +55,8 @@
 
   --md-sys-color-error: #FFB4AB;
   --md-sys-color-on-error: #690005;
+  --md-sys-color-secondary-container: #284C47;
+  --md-sys-color-on-secondary-container: #B0CCC5;
 
   --topbar-color: #003731;
   --status-warning: #FFB74D;
@@ -61,6 +66,7 @@
   --hover-overlay: rgba(131, 220, 207, 0.12);
   --focus-ring: 0 0 0 2px rgba(131, 220, 207, 0.35);
   --divider: #2E3B37;
+  --state-layer: rgba(223, 228, 225, 0.08);
 }
 
 /* 键盘操作可见焦点 */

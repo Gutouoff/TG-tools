@@ -824,22 +824,34 @@ class Engine:
                 'chat_type': ('channel' if is_broadcast
                               else 'group' if event.is_group else 'private'),
                 'sender': '',
+                'sender_id': None,
+                'sender_username': None,
+                'sender_phone': None,
                 'text': ((msg.message or '').strip()
                          or ('(媒体消息)' if msg.media else '')),
                 'date': msg.date.strftime('%H:%M:%S') if msg.date else '',
             }
+
+            def _fill_sender(sd, fallback=''):
+                data['sender'] = ((getattr(sd, 'first_name', '') or '') + ' '
+                                  + (getattr(sd, 'last_name', '') or '')).strip() or fallback
+                data['sender_id'] = getattr(sd, 'id', None)
+                data['sender_username'] = getattr(sd, 'username', None) or None
+                data['sender_phone'] = getattr(sd, 'phone', None) or None
+
             if rules.get('exclude_bots') and data['chat_type'] != 'channel':
                 sender = await event.get_sender()
                 if getattr(sender, 'bot', False):
                     return
-                data['sender'] = ((getattr(sender, 'first_name', '') or '') + ' '
-                                  + (getattr(sender, 'last_name', '') or '')).strip()
+                _fill_sender(sender, data['chat'])
             elif data['chat_type'] == 'channel':
+                # 频道消息的 sender 即频道本身(无 first_name)
                 data['sender'] = data['chat']
+                data['sender_id'] = getattr(chat, 'id', None)
+                data['sender_username'] = getattr(chat, 'username', None) or None
             else:
                 sender = await event.get_sender()
-                data['sender'] = ((getattr(sender, 'first_name', '') or '') + ' '
-                                  + (getattr(sender, 'last_name', '') or '')).strip()
+                _fill_sender(sender, data['chat'])
             self._gui_schedule(lambda d=data: self.on_message(d))
         except Exception as e:
             # 不再静默: 收不到消息时这里是最重要的诊断点
@@ -848,6 +860,63 @@ class Engine:
     def join_chats(self, links):
         """加入群组/频道(当前账号)。links: t.me/xxx、@xxx、t.me/+邀请。"""
         return self._submit(self._do_join_chats(links))
+
+    def list_dialogs(self, account, limit=100):
+        """抓取在线账号的 Telegram 会话列表(置顶+最近在前)。"""
+        return self._submit(self._do_list_dialogs(account, limit))
+
+    async def _do_list_dialogs(self, account, limit):
+        entry = self._pool.get(account)
+        if not entry:
+            raise RuntimeError(f'账号 {account} 不在线')
+        client = entry['client']
+        out = []
+        async for d in client.iter_dialogs(limit=limit):
+            last = d.message
+            out.append({
+                'id': d.id,
+                'name': d.name or '未知会话',
+                'type': ('channel' if (d.is_channel and not d.is_group)
+                         else 'group' if d.is_group else 'private'),
+                'unread': int(d.unread_count or 0),
+                'pinned': bool(d.pinned),
+                'last_text': ((last.message or '').strip() or ('(媒体消息)' if last and last.media else ''))[:80] if last else '',
+                'last_date': last.date.strftime('%H:%M') if last and last.date else '',
+            })
+        return out
+
+    def fetch_history(self, account, dialog_id, limit=20, offset_id=0):
+        """拉取会话历史消息(新->旧);offset_id 传最早一条 id 可向更早翻页。"""
+        return self._submit(self._do_fetch_history(account, int(dialog_id), int(limit), int(offset_id)))
+
+    async def _do_fetch_history(self, account, dialog_id, limit, offset_id):
+        entry = self._pool.get(account)
+        if not entry:
+            raise RuntimeError(f'账号 {account} 不在线')
+        client = entry['client']
+        msgs = []
+        async for m in client.iter_messages(dialog_id, limit=limit, offset_id=offset_id or None):
+            sender = None
+            name = ''
+            try:
+                sender = await m.get_sender()
+                name = (((getattr(sender, 'first_name', '') or '') + ' '
+                         + (getattr(sender, 'last_name', '') or '')).strip()
+                        or getattr(sender, 'title', None)
+                        or getattr(sender, 'username', None) or '')
+            except Exception:
+                # 单条发送者解析失败(匿名管理员/已注销/服务消息)不能炸整批历史
+                name = ''
+            msgs.append({
+                'id': m.id,
+                'out': bool(m.out),          # True=小号自己发出
+                'sender': name,
+                'sender_id': getattr(sender, 'id', None) if sender else None,
+                'sender_username': (getattr(sender, 'username', None) or None) if sender else None,
+                'text': (m.message or '').strip() or ('(媒体消息)' if m.media else '(服务消息)'),
+                'date': m.date.strftime('%m-%d %H:%M') if m.date else '',
+            })
+        return msgs
 
     @staticmethod
     def _parse_chat_ref(link):

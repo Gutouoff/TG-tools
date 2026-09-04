@@ -192,6 +192,21 @@ export const setRecv = (on: boolean, rules?: Record<string, boolean>) =>
   postJson('/api/recv', { on, rules });
 export const joinChats = (links: string[]) => postJson('/api/join-channels', { links });
 
+export interface DialogItem {
+  id: number; name: string; type: 'private' | 'group' | 'channel';
+  unread: number; pinned: boolean; last_text: string; last_date: string;
+}
+export interface HistoryMsg {
+  id: number; out: boolean; sender: string; sender_id: number | null;
+  sender_username: string | null; text: string; date: string;
+}
+export const getDialogs = (account: string): Promise<{ ok: boolean; dialogs?: DialogItem[]; msg?: string }> =>
+  getJson(`/api/dialogs?account=${encodeURIComponent(account)}`);
+export const getHistory = (
+  account: string, dialogId: number, limit = 20, offsetId = 0,
+): Promise<{ ok: boolean; msgs?: HistoryMsg[]; msg?: string }> =>
+  postJson('/api/history', { account, dialog_id: dialogId, limit, offset_id: offsetId });
+
 // ---------- tdata 转换 / 导入 ----------
 export const convertTdata = (path: string) => postJson('/api/convert-tdata', { path });
 export const importArchive = (data: string, name: string) => postJson('/api/import', { data, name });

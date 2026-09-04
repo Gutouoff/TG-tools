@@ -329,6 +329,7 @@
   let historyMsgs = $state<any[]>([]);
   let historyLoading = $state(false);
   let historyHasMore = $state(false);
+  let historyError = $state('');
   let chatUnread = $state(0);
   let recvOn = $state(false);
   let recvRules = $state<Record<string, boolean>>({
@@ -371,6 +372,7 @@
     curDialog = d;
     historyMsgs = [];
     historyHasMore = false;
+    historyError = '';
     await loadHistory(true);
     scrollHistoryBottom();
   }
@@ -381,14 +383,17 @@
       const offset = initial ? 0 : (historyMsgs[0]?.id ?? 0);
       const r = await getHistory(current.name, curDialog.id, 20, offset);
       if (r.ok) {
+        historyError = '';
         const older = (r.msgs || []).slice().reverse();  // 新->旧 反转为旧->新
         historyMsgs = initial ? older : [...older, ...historyMsgs];
         historyHasMore = (r.msgs || []).length >= 20;
       } else {
+        historyError = r.msg || '未知错误';
         addLog(`记录获取失败: ${r.msg || '未知错误'}`);
       }
     } catch (e: any) {
-      addLog(`记录获取异常: ${e?.message ?? e}`);
+      historyError = String(e?.message ?? e);
+      addLog(`记录获取异常: ${historyError}`);
     } finally {
       historyLoading = false;
     }
@@ -1044,13 +1049,16 @@
         <ul class="dlg-list">
           {#each dialogs as d (d.id)}
             <li class="dlg" onclick={() => openDialog(d)}>
-              <div class="dlg-row1">
-                <span class="dlg-name">{d.name}</span>
-                <span class="dlg-time">{d.last_date}</span>
-              </div>
-              <div class="dlg-row2">
-                <span class="dlg-last">{d.last_text || ' '}</span>
-                {#if d.unread}<span class="badge">{d.unread > 99 ? '99+' : d.unread}</span>{/if}
+              <span class="dlg-ava" style="background:{avatarColor(d.name)}">{(d.name || '?')[0]}</span>
+              <div class="dlg-body">
+                <div class="dlg-row1">
+                  <span class="dlg-name">{d.name}</span>
+                  <span class="dlg-time">{d.last_date}</span>
+                </div>
+                <div class="dlg-row2">
+                  <span class="dlg-last">{d.last_text || ' '}</span>
+                  {#if d.unread}<span class="badge">{d.unread > 99 ? '99+' : d.unread}</span>{/if}
+                </div>
               </div>
             </li>
           {/each}
@@ -1070,12 +1078,16 @@
             <li class="bbl-row" class:out={m.out}>
               <div class="bbl">
                 {#if !m.out && curDialog.type === 'group' && m.sender}<span class="bbl-sender">{m.sender}</span>{/if}
-                <div class="bbl-text">{m.text || '[媒体消息]'}</div>
-                <span class="bbl-time">{m.date}{m.out ? ' ✓✓' : ''}</span>
+                <div class="bbl-text">{m.text || '[媒体消息]'}<span class="bbl-time">{m.date}{m.out ? ' ✓✓' : ''}</span></div>
               </div>
             </li>
           {/each}
-          {#if !historyMsgs.length}
+          {#if historyError}
+            <p class="empty" style="color: var(--md-sys-color-error)">
+              历史消息加载失败：{historyError}
+              <button class="back" onclick={() => loadHistory(true)}>[重试]</button>
+            </p>
+          {:else if !historyMsgs.length}
             <p class="empty">{historyLoading ? '正在加载…' : '暂无消息'}</p>
           {/if}
         </ul>
@@ -1372,9 +1384,9 @@
     color: var(--md-sys-color-primary);
   }
   .grp.on {
-    background: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
-    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    border-color: var(--md-sys-color-secondary-container);
   }
   .grp.add {
     font-weight: 600;
@@ -1903,8 +1915,8 @@
     border-left: 1px solid var(--md-sys-color-outline);
   }
   .seg.on {
-    background: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
   }
   .ctx-check {
     display: flex;
@@ -2082,15 +2094,16 @@
     border-color: var(--md-sys-color-primary);
   }
   .badge {
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    border-radius: 999px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
     background: var(--md-sys-color-error);
-    color: #ffffff;
+    color: var(--md-sys-color-on-error);
     font-size: 11px;
-    line-height: 18px;
-    font-weight: 600;
+    line-height: 16px;
+    font-weight: 500;
+    flex-shrink: 0;
   }
   .recv-rules {
     display: flex;
@@ -2110,15 +2123,16 @@
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s, color 0.15s;
   }
-  .rule-chip:hover {
+  .rule-chip:hover:not(.on) {
     border-color: var(--md-sys-color-primary);
     color: var(--md-sys-color-primary);
   }
   .rule-chip.on {
-    background: var(--md-sys-color-primary);
-    border-color: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
+    background: var(--md-sys-color-secondary-container);
+    border-color: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
   }
+  /* ---------- 会话列表 (M3 List 两行样式) ---------- */
   .dlg-list {
     list-style: none;
     margin: 12px 0 0;
@@ -2127,29 +2141,47 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
   }
   .dlg {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 8px 10px;
-    border-radius: var(--md-sys-shape-corner-medium);
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 16px;
     cursor: pointer;
     transition: background 0.15s;
   }
   .dlg:hover {
-    background: var(--hover-overlay);
+    background: var(--state-layer);
+  }
+  .dlg-ava {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 500;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+  .dlg-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
   .dlg-row1 {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
     gap: 8px;
   }
   .dlg-name {
-    font-weight: 600;
-    font-size: 13px;
+    font-size: 14px;
+    font-weight: 500;
     color: var(--md-sys-color-on-surface);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2169,21 +2201,23 @@
   .dlg-last {
     flex: 1;
     font-size: 12px;
+    line-height: 1.4;
     color: var(--md-sys-color-on-surface-variant);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
   }
+  /* ---------- 聊天记录 (M3 气泡: 20dp 圆角尾角 4dp) ---------- */
   .chat-history {
     list-style: none;
     margin: 8px 0 0;
-    padding: 4px 2px;
+    padding: 8px 4px;
     overflow-y: auto;
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
   }
   .bbl-row {
     display: flex;
@@ -2192,11 +2226,12 @@
     justify-content: flex-end;
   }
   .bbl {
-    max-width: 78%;
-    padding: 6px 10px;
-    border-radius: 12px;
+    max-width: 80%;
+    padding: 8px 12px;
+    border-radius: 20px;
     background: var(--md-sys-color-surface-container-high);
-    font-size: 13px;
+    color: var(--md-sys-color-on-surface);
+    font-size: 14px;
     overflow-wrap: break-word;
   }
   .bbl-row:not(.out) .bbl {
@@ -2209,17 +2244,18 @@
   }
   .bbl-sender {
     display: block;
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 12px;
+    font-weight: 500;
     color: var(--md-sys-color-primary);
     margin-bottom: 2px;
   }
   .bbl-time {
-    display: block;
-    font-size: 10px;
-    text-align: right;
-    opacity: 0.65;
-    margin-top: 2px;
+    display: inline-block;
+    margin-left: 8px;
+    font-size: 11px;
+    opacity: 0.6;
+    vertical-align: bottom;
+    white-space: nowrap;
   }
   .load-older {
     display: block;
@@ -2235,7 +2271,7 @@
     transition: background 0.15s, border-color 0.15s, color 0.15s;
   }
   .load-older:hover:not(:disabled) {
-    background: var(--hover-overlay);
+    background: var(--state-layer);
     border-color: var(--md-sys-color-primary);
     color: var(--md-sys-color-primary);
   }
