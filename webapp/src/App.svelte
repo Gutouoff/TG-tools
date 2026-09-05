@@ -1615,6 +1615,11 @@
     margin-bottom: 8px;
     overflow: hidden;
   }
+  /* flex 子项 + overflow:hidden 会把 min-height:auto 清零,
+     卡片全开时被压缩穿模;禁止收缩让 .mid 正常滚动 */
+  .mid > .card {
+    flex: none;
+  }
   .card summary {
     padding: 12px 16px;
     cursor: pointer;
@@ -1895,6 +1900,8 @@
     max-height: 86vh;
     padding: 0;
     flex-direction: row;
+    border-radius: 28px;
+    overflow: hidden;
   }
   .set-nav {
     width: 170px;
@@ -1914,9 +1921,9 @@
   .set-nav-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    height: 44px;
-    padding: 0 14px;
+    gap: 12px;
+    height: 48px;
+    padding: 0 16px;
     border: none;
     background: none;
     cursor: pointer;
@@ -1937,8 +1944,8 @@
     font-weight: 500;
   }
   .set-nav-icon {
-    font-size: 15px;
-    width: 20px;
+    font-size: 16px;
+    width: 22px;
     text-align: center;
     flex-shrink: 0;
   }
@@ -1951,14 +1958,16 @@
     flex-direction: column;
   }
   .set-sec-title {
+    flex-shrink: 0;
     font-size: 18px;
     font-weight: 600;
     margin: 0 0 14px;
   }
   .set-group {
+    flex-shrink: 0;
     background: var(--md-sys-color-surface-container-low);
     border: 1px solid var(--divider);
-    border-radius: var(--md-sys-shape-corner-medium);
+    border-radius: 12px;
     margin-bottom: 16px;
     overflow: hidden;
   }
@@ -2066,19 +2075,19 @@
     gap: 8px;
   }
   .set-label {
-    font-size: 13px;
+    font-size: 14px;
     color: var(--md-sys-color-on-surface);
   }
   .set-input,
   .set-select {
-    width: 240px;
+    width: 220px;
     flex-shrink: 0;
     padding: 8px 12px;
     border: 1px solid var(--md-sys-color-outline);
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--md-sys-color-surface);
     color: var(--md-sys-color-on-surface);
-    font-size: 13px;
+    font-size: 14px;
     font-family: inherit;
     outline: none;
     margin: 0;
@@ -2104,13 +2113,27 @@
     margin-bottom: 0;
   }
   .set-footer {
+    flex-shrink: 0;
     margin-top: auto;
     padding-top: 12px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .set-footer md-filled-button {
+    width: auto;
+    min-width: 120px;
   }
   .set-close {
     position: absolute;
-    top: 12px;
-    right: 14px;
+    top: 14px;
+    right: 16px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 14px;
   }
   .modal-head {
     display: flex;
@@ -2274,26 +2297,6 @@
     height: 40px;
     padding: 2px;
     cursor: pointer;
-  }
-  /* 美化滚动条 */
-  .list::-webkit-scrollbar,
-  .log::-webkit-scrollbar,
-  .sec-list::-webkit-scrollbar,
-  .form::-webkit-scrollbar {
-    width: 8px;
-  }
-  .list::-webkit-scrollbar-thumb,
-  .log::-webkit-scrollbar-thumb,
-  .sec-list::-webkit-scrollbar-thumb,
-  .form::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-color);
-    border-radius: 4px;
-  }
-  .list::-webkit-scrollbar-track,
-  .log::-webkit-scrollbar-track,
-  .sec-list::-webkit-scrollbar-track,
-  .form::-webkit-scrollbar-track {
-    background: transparent;
   }
   /* ---------- 聊天: 消息接收 ---------- */
   .chat-ctl {
