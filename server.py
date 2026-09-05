@@ -351,6 +351,23 @@ async def history(body: dict):
     return {'ok': True, 'msgs': _jsonable(msgs or [])}
 
 
+@app.post('/api/chat/send')
+async def chat_send(body: dict):
+    """在指定会话发送文本消息(目前仅适配文本)。"""
+    account = str(body.get('account') or '')
+    dialog_id = body.get('dialog_id')
+    text = str(body.get('text') or '').strip()
+    if not account or dialog_id is None or not text:
+        return {'ok': False, 'msg': '参数缺失'}
+    eng = init_engine()
+    fut = eng.send_message(account, int(dialog_id), text)
+    try:
+        msg = await asyncio.wait_for(asyncio.wrap_future(fut), 30)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': True, 'msg': _jsonable(msg)}
+
+
 @app.get('/api/me')
 async def me():
     eng = init_engine()
@@ -562,6 +579,36 @@ async def update_telegram():
     eng = init_engine()
     eng.update_telegram()
     return {'ok': True}
+
+
+@app.post('/api/launch-client')
+async def launch_client(body: dict):
+    """启动账号目录内的 Telegram 便携版客户端(找到 Telegram.exe 即启动)。"""
+    import subprocess
+    path = _ensure_in_root(body.get('path', ''))
+    if not os.path.isdir(path):
+        return {'ok': False, 'msg': '账号目录不存在'}
+    exe = None
+    for root, dirs, files in os.walk(path):
+        if 'Telegram.exe' in files:
+            exe = os.path.join(root, 'Telegram.exe')
+            break
+        for n in tg_tool.EXE_NAMES:
+            if n in files:
+                exe = os.path.join(root, n)
+                break
+        if exe:
+            break
+    if not exe:
+        return {'ok': False, 'msg': '该账号目录下未找到 Telegram.exe,可先用「更新本体」安装便携版'}
+    try:
+        subprocess.Popen(
+            [exe], cwd=os.path.dirname(exe),
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            close_fds=True)
+    except Exception as e:
+        return {'ok': False, 'msg': f'启动失败: {e}'}
+    return {'ok': True, 'msg': os.path.relpath(exe, path)}
 
 
 # ---------- 安全: 2FA / passkey / 邮箱 / 设备 / 资料 ----------
@@ -1014,7 +1061,7 @@ DEFAULT_SETTINGS = {
     'recv_exclude_channels': True,  # 默认排除所有频道
     'recv_exclude_groups': False,
     'recv_exclude_bots': False,
-    'join_links': '',               # 要加入的群/频道链接(每行一个)
+    'join_links': [],               # 要加入的群/频道 [{name:备注,link,type:'group'|'channel'}]
 }
 
 
@@ -1032,6 +1079,20 @@ def _load_settings():
                     merged['proxy_scheme'] = p.get('scheme', 'socks5')
                     merged['proxy_host'] = str(p.get('host', '') or '')
                     merged['proxy_port'] = str(p.get('port', '') or '')
+                # 兼容旧 join_links 字符串(每行一个) → 结构化条目
+                jl = merged.get('join_links')
+                if isinstance(jl, str):
+                    merged['join_links'] = [
+                        {'name': '', 'link': ln.strip(), 'type': 'group'}
+                        for ln in jl.splitlines() if ln.strip()]
+                elif not isinstance(jl, list):
+                    merged['join_links'] = []
+                else:
+                    merged['join_links'] = [
+                        {'name': str(e.get('name', '') or ''),
+                         'link': str(e.get('link', '') or ''),
+                         'type': 'channel' if e.get('type') == 'channel' else 'group'}
+                        for e in jl if isinstance(e, dict)]
                 return merged
     except Exception:
         pass

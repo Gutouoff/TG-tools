@@ -924,6 +924,28 @@ class Engine:
             })
         return msgs
 
+    def send_message(self, account, dialog_id, text):
+        """发送文本消息到指定会话(目前仅适配文本)。"""
+        return self._submit(self._do_send_message(account, dialog_id, text))
+
+    async def _do_send_message(self, account, dialog_id, text):
+        entry = self._pool.get(account)
+        if not entry:
+            raise RuntimeError(f'账号 {account} 不在线')
+        text = (text or '').strip()
+        if not text:
+            raise RuntimeError('消息内容为空')
+        m = await entry['client'].send_message(dialog_id, text)
+        return {
+            'id': m.id,
+            'out': True,
+            'sender': '',
+            'sender_id': None,
+            'sender_username': None,
+            'text': (m.message or '').strip(),
+            'date': m.date.strftime('%m-%d %H:%M') if m.date else '',
+        }
+
     @staticmethod
     def _parse_chat_ref(link):
         """链接 -> (类型, 值)。类型: 'invite' 邀请链接 / 'username' 公开名。"""

@@ -36,7 +36,6 @@
     convertTdata,
     importArchive,
     packAccount,
-    fetchAvatars,
     refreshAvatar,
     getSettings,
     saveSettings,
@@ -46,6 +45,8 @@
     getDialogs,
     getHistory,
     joinChats,
+    sendChatMsg,
+    launchClient,
     TOKEN,
     type Account,
     type LogEvent,
@@ -59,6 +60,8 @@
   let search = $state('');
   let current = $state<Account | null>(null);
   let connected = $state(false);
+  // 连接/重连进行中的提示文案(顶栏状态),空=不在连接中
+  let connectingLabel = $state('');
   let logs = $state<string[]>([]);
   let progress = $state({ done: 0, total: 0, label: '' });
 
@@ -156,14 +159,23 @@
     });
   }
 
-  async function onConnect(a: Account) {
+  async function onConnect(a: Account, reconnect = false) {
     // 已在线的账号直接秒切,不重连
     if (onlineNames.has(a.name) && current?.name !== a.name) {
       await onSwitch(a);
       return;
     }
     current = a;
-    addLog(`正在连接 ${a.name} …`);
+    connectingLabel = reconnect ? '重新连接…' : '连接中…';
+    addLog(`${reconnect ? '正在重新连接' : '正在连接'} ${a.name} …`);
+    try {
+      await doConnectFlow(a);
+    } finally {
+      connectingLabel = '';
+    }
+  }
+
+  async function doConnectFlow(a: Account) {
     const r = await connectAccount(a.path);
     if (r.ok && r.info) {
       const uname = r.info.username || '';
@@ -234,7 +246,17 @@
       addLog('请先选择账号');
       return;
     }
-    await onConnect(current);
+    await onConnect(current, true);
+  }
+
+  // 启动当前账号目录内的 Telegram 便携版客户端
+  async function doLaunchClient() {
+    if (!current) {
+      addLog('请先选择账号');
+      return;
+    }
+    const r = await launchClient(current.path);
+    addLog(r.ok ? `已启动客户端: ${current.name}(${r.msg})` : `启动客户端失败: ${r.msg}`);
   }
   async function doPack() {
     if (!current) {
@@ -254,10 +276,30 @@
     onlineNames = next;
   }
 
-  async function doFetchAvatars() {
-    addLog('开始一键获取头像(后台,每号间隔1s)…');
-    const r = await fetchAvatars();
-    addLog(r.ok ? '头像获取任务已启动' : `失败: ${r.msg}`);
+  async function doRefreshAccountInfo() {
+    // 仅刷新当前账号的头像/资料(替代原「一键获取头像」全量刷新)
+    if (!current) {
+      addLog('请先选择账号');
+      return;
+    }
+    addLog(`正在刷新账号信息: ${current.name} …`);
+    try {
+      const r = await refreshAvatar(current.name);
+      if (r.ok && r.info) {
+        if (r.info.avatar) {
+          current.avatar = r.info.avatar;
+          avatarFailed = new Set([...avatarFailed].filter((n) => n !== current!.name));
+        }
+        if (r.info.display) current.display = r.info.display;
+        if (r.info.username) current.username = r.info.username;
+        applyFilter();
+        addLog(`已刷新账号信息: ${current.name}`);
+      } else {
+        addLog(`刷新失败: ${r.msg || '未知错误'}`);
+      }
+    } catch (e: any) {
+      addLog(`刷新异常: ${e?.message ?? e}`);
+    }
   }
 
   // 速度分段(五档: 极快/快速/默认/慢速/极慢)
@@ -275,28 +317,32 @@
   }
 
   // 设置
-  let settings = $state<Record<string, string | boolean>>({});
+  let settings = $state<Record<string, any>>({});
   let settingsOpen = $state(false);
-  let settingsSection = $state<'general' | 'appearance' | 'proxy' | 'join'>('general');
+  let settingsSection = $state<'general' | 'appearance' | 'proxy' | 'join' | 'whitelist'>('general');
   let themeMode = $derived((settings.theme_mode as string) || 'light');
   async function loadSettings() {
     settings = {
       pack_naming: '{name}_账号包', pack_password: '',
       theme_seed: '#009688', theme_bg: '#F7FAF9', theme_dark: '#FFFFFF', theme_topbar: '#00796B', theme_mode: 'light', card_order: '基本信息,聊天,安全,删除,其他设置',
       proxy_mode: 'none', proxy_scheme: 'socks5', proxy_host: '', proxy_port: '',
-      join_links: '',
+      join_links: [],
     };
     settingsOpen = true;
     try {
       settings = await getSettings();
-      joinLinks = (settings.join_links as string) || '';
+      applyJoinEntries(settings.join_links);
       applyTheme();
     } catch (e) {
       // 保持默认值
     }
   }
+  function openSettings(section: typeof settingsSection) {
+    settingsSection = section;
+    loadSettings();
+  }
   async function doSaveSettings() {
-    settings = { ...settings, join_links: joinLinks };
+    settings = { ...settings, join_links: joinEntries };
     await saveSettings(settings);
     settingsOpen = false;
     addLog('设置已保存');
@@ -337,7 +383,7 @@
   }
 
   // 右栏视图
-  let rightView = $state<'log' | 'passkey' | '2fa' | 'email' | 'devices' | 'profile' | 'whitelist' | 'settings' | 'chat'>('log');
+  let rightView = $state<'log' | 'passkey' | '2fa' | 'email' | 'devices' | 'profile' | 'settings' | 'chat' | 'join'>('log');
   function setView(v: typeof rightView) {
     flushSync(() => {
       rightView = v;
@@ -358,18 +404,28 @@
   let recvRules = $state<Record<string, boolean>>({
     exclude_channels: true, exclude_groups: false, exclude_bots: false,
   });
-  let joinLinks = $state('');
+  // 加群频道条目(备注名 + 链接 + 类型),持久化在 settings.join_links
+  let joinEntries = $state<Array<{ name: string; link: string; type: string }>>([]);
 
-  // 打开设置弹窗并定位到「加群频道」输入区
-  async function openJoinChannels() {
-    settingsSection = 'join';
-    await loadSettings();
-    setTimeout(() => {
-      const el = document.querySelector('.join-links');
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el?.classList.add('flash');
-      setTimeout(() => el?.classList.remove('flash'), 1600);
-    }, 60);
+  function applyJoinEntries(raw: any) {
+    if (Array.isArray(raw)) {
+      joinEntries = raw.map((e: any) => ({
+        name: String(e?.name ?? ''),
+        link: String(e?.link ?? ''),
+        type: e?.type === 'channel' ? 'channel' : 'group',
+      }));
+    } else if (typeof raw === 'string' && raw) {
+      // 兼容旧格式(每行一个链接)
+      joinEntries = raw.split('\n').map((s) => s.trim()).filter(Boolean)
+        .map((link) => ({ name: '', link, type: 'group' }));
+    } else {
+      joinEntries = [];
+    }
+  }
+
+  // 打开右栏加群频道控制视图
+  function openJoinView() {
+    setView('join');
   }
 
   // ---------- 会话列表 / 聊天记录 ----------
@@ -428,6 +484,28 @@
       if (el) el.scrollTop = el.scrollHeight;
     }, 30);
   }
+  // 发送文本消息(目前仅适配文本)
+  let chatDraft = $state('');
+  let sending = $state(false);
+  async function doSendMsg() {
+    const text = chatDraft.trim();
+    if (!text || !current || !curDialog || sending) return;
+    sending = true;
+    try {
+      const r = await sendChatMsg(current.name, curDialog.id, text);
+      if (r.ok && (r as any).msg && typeof (r as any).msg === 'object') {
+        historyMsgs = [...historyMsgs, (r as any).msg];
+        chatDraft = '';
+        scrollHistoryBottom();
+      } else {
+        addLog(`[发送失败] ${(r as any).msg || '未知错误'}`);
+      }
+    } catch (e: any) {
+      addLog(`[发送异常] ${e?.message ?? e}`);
+    } finally {
+      sending = false;
+    }
+  }
   async function loadRecv() {
     try {
       const r = await getRecv();
@@ -450,8 +528,27 @@
   function onRecvRuleChange(key: string) {
     applyRecv(recvOn, { ...recvRules, [key]: !recvRules[key] });
   }
+  async function doJoinOne(e: { name: string; link: string; type: string }) {
+    if (!e.link) return;
+    if (!current || !onlineNames.has(current.name)) {
+      addLog('[加群] 请先连接账号');
+      return;
+    }
+    addLog(`[加群] 正在加入 ${e.name || e.link} …`);
+    try {
+      const r = await joinChats([e.link]);
+      if (r.ok) {
+        const res = (r.results ?? [])[0];
+        addLog(`[加群] ${e.name || e.link}: ${res?.ok ? '成功' : `失败 ${res?.err ?? ''}`}`);
+      } else {
+        addLog(`[加群] 失败: ${r.msg}`);
+      }
+    } catch (err: any) {
+      addLog(`[加群] 失败: ${err?.message ?? err}`);
+    }
+  }
   async function doJoinChats() {
-    const links = joinLinks.split('\n').map((s) => s.trim()).filter(Boolean);
+    const links = joinEntries.map((e) => e.link.trim()).filter(Boolean);
     if (!links.length) {
       addLog('[加群] 链接列表为空');
       return;
@@ -593,7 +690,6 @@
   let wlGroupInput = $state('');
 
   async function loadWhitelist() {
-    setView('whitelist');
     const wl = await getWhitelist();
     wlUsers = wl.users;
     wlGroups = wl.groups;
@@ -850,8 +946,9 @@
 
 <header class="topbar">
   <span class="title">TG小号工具箱</span>
-  <span class="conn" class:on={connected}>{connected ? '● 已连接' : '● 未连接'}</span>
+  <span class="conn" class:on={connected && !connectingLabel}>{connectingLabel ? `● ${connectingLabel}` : connected ? '● 已连接' : '● 未连接'}</span>
   <button class="topbtn" onclick={doReconnect}>重新连接</button>
+  <button class="topbtn" onclick={doLaunchClient}>启动客户端</button>
   <button class="topbtn" onclick={doDisconnect}>断开连接</button>
   <button class="topbtn" onclick={doPack}>打包</button>
   <button class="topbtn iconbtn" onclick={toggleTheme} title={themeMode === 'dark' ? '切换到浅色' : '切换到深色'}>
@@ -976,7 +1073,7 @@
             消息列表
             {#if chatUnread}<span class="badge">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}
           </button>
-          <button class="chat-entry" onclick={openJoinChannels}>加群频道…</button>
+          <button class="chat-entry" onclick={openJoinView}>加群频道…</button>
         </div>
       </div>
     </details>
@@ -1013,8 +1110,7 @@
       <summary>其他设置</summary>
       <div class="grid">
         <md-outlined-button onclick={() => updateTelegram()}>更新本体</md-outlined-button>
-        <md-outlined-button onclick={loadWhitelist}>白名单管理</md-outlined-button>
-        <md-outlined-button onclick={doFetchAvatars}>一键获取头像</md-outlined-button>
+        <md-outlined-button onclick={doRefreshAccountInfo}>刷新账号信息</md-outlined-button>
       </div>
     </details>
       {/if}
@@ -1044,7 +1140,10 @@
       {#if !curDialog}
         <div class="sec-head">
           <h3>会话{#if chatUnread} <span class="badge">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}</h3>
-          <button class="back" onclick={loadDialogs}>{dialogsLoading ? '加载中…' : '⟳ 刷新'}</button>
+          <span class="head-btns">
+            <button class="back" onclick={() => setView('log')}>日志</button>
+            <button class="back" onclick={loadDialogs}>{dialogsLoading ? '加载中…' : '⟳ 刷新'}</button>
+          </span>
         </div>
         <div class="chat-switch-row">
           <span class="chat-switch-label">
@@ -1094,7 +1193,10 @@
       {:else}
         <div class="sec-head">
           <h3>{curDialog.name}</h3>
-          <button class="back" onclick={() => (curDialog = null)}>← 会话列表</button>
+          <span class="head-btns">
+            <button class="back" onclick={() => setView('log')}>日志</button>
+            <button class="back" onclick={() => (curDialog = null)}>会话列表</button>
+          </span>
         </div>
         {#if historyHasMore}
           <button class="load-older" disabled={historyLoading} onclick={() => loadHistory(false)}>
@@ -1119,12 +1221,24 @@
             <p class="empty">{historyLoading ? '正在加载…' : '暂无消息'}</p>
           {/if}
         </ul>
+        <div class="chat-input-row">
+          <input
+            class="chat-input"
+            placeholder="输入消息（目前仅支持文本）…"
+            bind:value={chatDraft}
+            disabled={!onlineNames.has(current?.name || '')}
+            onkeydown={(e) => { if (e.key === 'Enter') doSendMsg(); }}
+          />
+          <button class="send-btn" disabled={sending || !chatDraft.trim()} onclick={doSendMsg}>
+            {sending ? '发送中…' : '发送'}
+          </button>
+        </div>
       {/if}
 
     {:else if rightView === 'passkey'}
       <div class="sec-head">
         <h3>通行密钥</h3>
-        <button class="back" onclick={() => setView('log')}>← 返回</button>
+        <button class="back" onclick={() => setView('log')}>日志</button>
       </div>
       <md-filled-button onclick={doInitPasskey}>＋ 添加通行密钥</md-filled-button>
       {#if pkQrImg}
@@ -1145,7 +1259,7 @@
     {:else if rightView === '2fa'}
       <div class="sec-head">
         <h3>两步验证</h3>
-        <button class="back" onclick={() => setView('log')}>← 返回</button>
+        <button class="back" onclick={() => setView('log')}>日志</button>
       </div>
       <p>当前状态：{has2fa ? '已开启' : '未开启'}</p>
       {#if has2fa}
@@ -1156,7 +1270,7 @@
     {:else if rightView === 'email'}
       <div class="sec-head">
         <h3>邮箱登录</h3>
-        <button class="back" onclick={() => setView('log')}>← 返回</button>
+        <button class="back" onclick={() => setView('log')}>日志</button>
       </div>
       <input placeholder="邮箱地址" bind:value={emailInput} />
       <md-outlined-button onclick={doSendEmail}>发送验证码</md-outlined-button>
@@ -1165,7 +1279,7 @@
     {:else if rightView === 'devices'}
       <div class="sec-head">
         <h3>登录设备</h3>
-        <button class="back" onclick={() => setView('log')}>← 返回</button>
+        <button class="back" onclick={() => setView('log')}>日志</button>
       </div>
       <ul class="sec-list">
         {#each devices as d}
@@ -1181,7 +1295,7 @@
     {:else if rightView === 'profile'}
       <div class="sec-head">
         <h3>编辑资料</h3>
-        <button class="back" onclick={() => setView('log')}>← 返回</button>
+        <button class="back" onclick={() => setView('log')}>日志</button>
       </div>
       <div class="bi">
         {#if current?.avatar && !avatarFailed.has(current.name)}
@@ -1217,31 +1331,32 @@
         <input type="file" accept="image/*" onchange={doUploadAvatar} />
         <md-filled-button onclick={doSaveProfile}>保存</md-filled-button>
       </div>
-    {:else if rightView === 'whitelist'}
+    {:else if rightView === 'join'}
       <div class="sec-head">
-        <h3>白名单管理</h3>
-        <button class="back" onclick={() => setView('log')}>← 返回</button>
+        <h3>加群频道</h3>
+        <span class="head-btns">
+          <button class="back" onclick={() => openSettings('join')}>编辑链接</button>
+          <button class="back" onclick={() => setView('log')}>日志</button>
+        </span>
       </div>
-      <h4>用户白名单</h4>
-      <div class="row2">
-        <input placeholder="用户 ID" bind:value={wlUserInput} />
-        <md-outlined-button onclick={doAddUser}>添加</md-outlined-button>
-      </div>
-      <ul class="sec-list">
-        {#each wlUsers as u}
-          <li class="sec-item"><span>{u}</span><button class="danger" onclick={() => doRemoveUser(u)}>移除</button></li>
-        {/each}
-      </ul>
-      <h4>群/频道白名单</h4>
-      <div class="row2">
-        <input placeholder="群 ID" bind:value={wlGroupInput} />
-        <md-outlined-button onclick={doAddGroup}>添加</md-outlined-button>
-      </div>
-      <ul class="sec-list">
-        {#each wlGroups as g}
-          <li class="sec-item"><span>{g}</span><button class="danger" onclick={() => doRemoveGroup(g)}>移除</button></li>
-        {/each}
-      </ul>
+      {#each [['group', '群'], ['channel', '频道']] as [cat, catLabel]}
+        <div class="join-cat">{catLabel}</div>
+        <ul class="sec-list">
+          {#each joinEntries.filter((e) => e.type === cat) as e, i (i)}
+            <li class="sec-item join-item">
+              <span class="join-item-meta">
+                <b>{e.name || '(未命名)'}</b>
+                <small>{e.link}</small>
+              </span>
+              <button class="back" onclick={() => doJoinOne(e)}>加入</button>
+            </li>
+          {/each}
+          {#if !joinEntries.some((e) => e.type === cat)}
+            <li class="empty">暂无{catLabel}链接，点右上角「编辑链接」添加</li>
+          {/if}
+        </ul>
+      {/each}
+      <md-filled-button onclick={doJoinChats}>全部加入（当前账号）</md-filled-button>
     {/if}
   </section>
 </div>
@@ -1255,6 +1370,7 @@
         <button class="set-nav-item" class:on={settingsSection === 'appearance'} onclick={() => (settingsSection = 'appearance')}><span class="set-nav-icon">🎨</span>外观</button>
         <button class="set-nav-item" class:on={settingsSection === 'proxy'} onclick={() => (settingsSection = 'proxy')}><span class="set-nav-icon">🌐</span>代理</button>
         <button class="set-nav-item" class:on={settingsSection === 'join'} onclick={() => (settingsSection = 'join')}><span class="set-nav-icon">📨</span>加群频道</button>
+        <button class="set-nav-item" class:on={settingsSection === 'whitelist'} onclick={() => { settingsSection = 'whitelist'; loadWhitelist(); }}><span class="set-nav-icon">🛡️</span>白名单</button>
       </div>
       <div class="set-content">
         {#if settingsSection === 'general'}
@@ -1356,16 +1472,58 @@
               </div>
             {/if}
           </div>
-        {:else}
+        {:else if settingsSection === 'join'}
           <div class="set-sec-title">加群频道</div>
           <div class="set-group">
             <div class="set-row set-row-col">
-              <span class="set-label">要加入的群组/频道链接（每行一个：https://t.me/xxx 或 @xxx 或 https://t.me/+邀请）</span>
-              <textarea class="join-links" rows="6" bind:value={joinLinks}
-                placeholder={'https://t.me/durov\nhttps://t.me/+AbCdEf...'}></textarea>
+              <span class="set-label">要加入的群组/频道链接（可添加备注名，右栏「加群频道」页会显示备注）</span>
             </div>
+            {#each joinEntries as e, i}
+              <div class="join-edit-row">
+                <select class="set-select join-type" bind:value={e.type}>
+                  <option value="group">群</option>
+                  <option value="channel">频道</option>
+                </select>
+                <input class="set-input join-name" bind:value={e.name} placeholder="备注名" />
+                <input class="set-input join-link" bind:value={e.link} placeholder="https://t.me/xxx 或 @xxx 或邀请链接" />
+                <button class="order-btn" title="删除此条" onclick={() => joinEntries.splice(i, 1)}>✕</button>
+              </div>
+            {/each}
+            {#if !joinEntries.length}
+              <p class="empty">还没有链接，点下方「添加链接」</p>
+            {/if}
+            <md-outlined-button onclick={() => joinEntries = [...joinEntries, { name: '', link: '', type: 'group' }]}>＋ 添加链接</md-outlined-button>
           </div>
           <md-filled-button onclick={doJoinChats}>全部加入（当前账号）</md-filled-button>
+        {:else if settingsSection === 'whitelist'}
+          <div class="set-sec-title">白名单</div>
+          <p class="set-hint">白名单内的用户/群永久受删除任务保护。</p>
+          <div class="set-group-title">用户白名单</div>
+          <div class="set-group">
+            <div class="join-edit-row">
+              <input class="set-input join-link" placeholder="用户 ID" bind:value={wlUserInput} />
+              <md-outlined-button onclick={doAddUser}>添加</md-outlined-button>
+            </div>
+            <ul class="sec-list">
+              {#each wlUsers as u}
+                <li class="sec-item"><span>{u}</span><button class="danger" onclick={() => doRemoveUser(u)}>移除</button></li>
+              {/each}
+            </ul>
+          </div>
+          <div class="set-group-title">群/频道白名单</div>
+          <div class="set-group">
+            <div class="join-edit-row">
+              <input class="set-input join-link" placeholder="群 ID" bind:value={wlGroupInput} />
+              <md-outlined-button onclick={doAddGroup}>添加</md-outlined-button>
+            </div>
+            <ul class="sec-list">
+              {#each wlGroups as g}
+                <li class="sec-item"><span>{g}</span><button class="danger" onclick={() => doRemoveGroup(g)}>移除</button></li>
+              {/each}
+            </ul>
+          </div>
+        {:else}
+          <div class="set-sec-title">通用</div>
         {/if}
         <div class="set-footer">
           <md-filled-button onclick={doSaveSettings}>保存设置</md-filled-button>
@@ -1735,6 +1893,85 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
+  }
+  .head-btns {
+    display: inline-flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  /* 聊天输入行 */
+  .chat-input-row {
+    display: flex;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--divider);
+  }
+  .chat-input {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    font-size: 14px;
+    outline: none;
+  }
+  .chat-input:focus {
+    border-color: var(--md-sys-color-primary);
+  }
+  .send-btn {
+    padding: 8px 20px;
+    border: none;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-primary);
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .send-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  /* 加群频道 */
+  .join-cat {
+    font-weight: 600;
+    font-size: 14px;
+    margin: 8px 0 4px;
+  }
+  .join-item-meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .join-item-meta small {
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .join-edit-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .join-type {
+    width: 76px;
+    flex-shrink: 0;
+  }
+  .join-name {
+    width: 110px;
+    flex-shrink: 0;
+  }
+  .join-link {
+    flex: 1;
+    min-width: 0;
+  }
+  .set-hint {
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    margin: 4px 0 10px;
   }
   .sec-head h3 {
     margin: 0;

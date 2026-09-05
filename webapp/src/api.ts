@@ -218,3 +218,22 @@ export const refreshAvatar = (name: string) => postJson('/api/refresh-avatar', {
 export const getSettings = () => getJson('/api/settings');
 export const saveSettings = (s: object) => postJson('/api/settings', s);
 export const getMe = () => getJson('/api/me');
+
+// ---------- 启动客户端 / 发送消息 ----------
+export async function launchClient(path: string) {
+  const r = await apiFetch('/api/launch-client', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ path }),
+  });
+  return r.json() as Promise<{ ok: boolean; msg?: string }>;
+}
+
+export async function sendChatMsg(account: string, dialogId: number, text: string) {
+  const r = await apiFetch('/api/chat/send', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ account, dialog_id: dialogId, text }),
+  });
+  return r.json() as Promise<{ ok: boolean; msg?: HistoryMsg; } | { ok: boolean; msg: string }>;
+}
