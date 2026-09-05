@@ -1627,14 +1627,16 @@
               <span class="set-label">要加入的群组/频道链接（可添加备注名，右栏「加群频道」页会显示备注）</span>
             </div>
             {#each joinEntries as e, i}
-              <div class="join-edit-row">
-                <select class="set-select join-type" bind:value={e.type}>
-                  <option value="group">群</option>
-                  <option value="channel">频道</option>
-                </select>
-                <input class="set-input join-name" bind:value={e.name} placeholder="备注名" />
+              <div class="join-edit">
+                <div class="join-edit-row">
+                  <select class="set-select join-type" bind:value={e.type}>
+                    <option value="group">群</option>
+                    <option value="channel">频道</option>
+                  </select>
+                  <input class="set-input join-name" bind:value={e.name} placeholder="备注名" />
+                  <button class="order-btn" title="删除此条" onclick={() => joinEntries.splice(i, 1)}>✕</button>
+                </div>
                 <input class="set-input join-link" bind:value={e.link} placeholder="https://t.me/xxx 或 @xxx 或邀请链接" />
-                <button class="order-btn" title="删除此条" onclick={() => joinEntries.splice(i, 1)}>✕</button>
               </div>
             {/each}
             {#if !joinEntries.length}
@@ -1677,7 +1679,6 @@
             <div class="about-row"><span class="set-label">版本</span><span class="about-ver">v{appVersion || '…'}</span></div>
             <div class="about-row"><span class="set-label">仓库</span><span>github.com/Gutouoff/TG-tools</span></div>
           </div>
-          <p class="set-hint">版本号规则：X.Y.Z = 大版本.小版本.微调；测试版带 -beta.N 后缀（发布前的预览版）。</p>
         {:else}
           <div class="set-sec-title">通用</div>
         {/if}
@@ -2114,6 +2115,21 @@
     gap: 6px;
     align-items: center;
     margin-bottom: 6px;
+  }
+  /* 加群条目: 两行布局(类型+备注+删除 / 链接独占整行),避免单行挤出弹窗 */
+  .join-edit {
+    margin-bottom: 8px;
+  }
+  .join-edit .join-edit-row {
+    margin-bottom: 4px;
+  }
+  .join-edit .join-name {
+    flex: 1;
+    width: auto;
+  }
+  .join-edit .join-link {
+    width: 100%;
+    box-sizing: border-box;
   }
   .join-type {
     width: 76px;
@@ -2643,6 +2659,8 @@
     margin-bottom: 8px;
     overflow-y: auto;
     max-height: 300px;
+    min-height: 43px;
+    field-sizing: content;  /* 换行自动加长(Chromium 123+/WebView2) */
   }
   .row2 {
     display: grid;
