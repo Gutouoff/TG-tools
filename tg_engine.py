@@ -1577,6 +1577,118 @@ class Engine:
         """将 session+json 转换为 Telegram Desktop tdata。"""
         return self._submit(self._do_convert_to_tdata(account_dir))
 
+    def refresh_session_from_tdata(self, account_dir):
+        """tdata → session+json(覆盖刷新,修复过期 ss)。在线账号只刷 json。"""
+        return self._submit(self._do_refresh_session_from_tdata(account_dir))
+
+    def refresh_sessions_batch(self, root):
+        """批量刷新: 对所有有 tdata 且测活失败的离线账号重建 session+json。"""
+        return self._submit(self._do_refresh_sessions_batch(root))
+
+    def _write_json_from_me(self, account_dir, me):
+        """用在线 me 信息写出/刷新账号凭据 json。"""
+        import glob as _g
+        name = os.path.basename(account_dir)
+        sess = sorted(_g.glob(os.path.join(account_dir, '*.session')))
+        cfg = {
+            'phone': getattr(me, 'phone', '') or '',
+            'session_file': os.path.basename(sess[0]) if sess else f'{name}.session',
+            'app_id': 2040,
+            'app_hash': 'b18441a1ff607e10a989891a5462e627',
+            'device': 'PC',
+            'sdk': 'Windows',
+            'app_version': '6.6.4 x64',
+            'user_id': str(me.id),
+            'first_name': me.first_name or '',
+            'last_name': me.last_name or '',
+            'username': getattr(me, 'username', '') or '',
+        }
+        json.dump(cfg, open(os.path.join(account_dir, name + '.json'), 'w',
+                            encoding='utf-8'), ensure_ascii=False, indent=1)
+
+    async def _do_refresh_session_from_tdata(self, account_dir):
+        _ensure_telethon()
+        name = os.path.basename(account_dir)
+        if name in self._pool:
+            # 在线: session 活着,只刷新 json 元数据
+            me = await self._pool[name]['client'].get_me()
+            self._write_json_from_me(account_dir, me)
+            self._log(f'[刷新] {name}: 在线账号,已刷新 json 元数据')
+            return True
+        if not os.path.isdir(os.path.join(account_dir, 'tdata')):
+            raise RuntimeError('该账号没有 tdata,无法从 tdata 刷新 session')
+        # 离线: 删除失效旧 session,从 tdata 重建(转换含联网校验)
+        import glob as _g
+        for old in _g.glob(os.path.join(account_dir, '*.session')):
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+        loop = asyncio.get_event_loop()
+        ok = await loop.run_in_executor(None, tg_tool._convert_tdata, account_dir)
+        if not ok:
+            raise RuntimeError('tdata → session 转换失败(tdata 可能已失效)')
+        self._log(f'[刷新] {name}: tdata → s+s 完成')
+        return True
+
+    async def _do_refresh_sessions_batch(self, root):
+        import glob
+        if self._task_running:
+            self._state('done', '已有任务在运行')
+            return None
+        _ensure_telethon()
+        poll = {}
+        try:
+            p = os.path.join(tg_tool.SCRIPT_DIR, 'poll_results.json')
+            if os.path.isfile(p):
+                poll = json.load(open(p, encoding='utf-8'))
+        except Exception:
+            poll = {}
+        targets = []
+        for name, path, st in scan_accounts(root):
+            if name in self._pool:
+                continue
+            if not os.path.isdir(os.path.join(path, 'tdata')):
+                continue
+            if poll.get(name, {}).get('alive') is True:
+                continue  # 存活账号不需要刷新
+            targets.append((name, path))
+        self._log(T('t169', len(targets)))
+        if not targets:
+            self._state('done', '没有需要刷新的账号(仅处理有 tdata 且测活失败的)')
+            return None
+        self._task_running = True
+        self._cancel.clear()
+        self._state('task_start', '刷新 s+s 数据')
+        ok_n = 0
+        try:
+            for i, (name, path) in enumerate(targets, 1):
+                if self._check_cancel():
+                    self._log(T('t164'))
+                    break
+                self._prog(i, len(targets), name)
+                for old in glob.glob(os.path.join(path, '*.session')):
+                    try:
+                        os.remove(old)
+                    except OSError:
+                        pass
+                loop = asyncio.get_event_loop()
+                ok = await loop.run_in_executor(None, tg_tool._convert_tdata, path)
+                if ok:
+                    ok_n += 1
+                    self._log(T('t170', i, len(targets), name))
+                else:
+                    self._log(f'[刷新] {i}/{len(targets)} {name}: 转换失败(tdata 已失效?)')
+                await self._sleep(1.0)
+            self._log(T('t172', ok_n, len(targets)))
+            self._state('done', f'刷新完成: {ok_n}/{len(targets)}')
+        except Exception as e:
+            self._log(f'[!] 刷新出错: {type(e).__name__}: {e}')
+            self._state('done', f'刷新出错: {e}')
+        finally:
+            self._task_running = False
+        return ok_n
+
     async def _do_convert_to_tdata(self, account_dir):
         _ensure_telethon()
         import opentele.api as op_api
@@ -1620,17 +1732,38 @@ class Engine:
 
     # ---------- 账号轮询(保活+测活) ----------
 
-    def poll_accounts(self, root):
-        """轮询全部账号: 逐个登录一次防死号,顺带测活。结果落盘 poll_results.json。"""
-        return self._submit(self._do_poll_accounts(root))
+    def poll_accounts(self, root, group=None):
+        """轮询账号: 逐个登录一次防死号,顺带测活。group 限定范围(分组名/'ungrouped'/None=全部)。
+        结果落盘 poll_results.json。"""
+        return self._submit(self._do_poll_accounts(root, group))
 
-    async def _do_poll_accounts(self, root):
+    async def _do_poll_accounts(self, root, group=None):
         if self._task_running:
             self._state('done', '已有任务在运行')
             return None
         _ensure_telethon()
         import tg_profile
         accounts = scan_accounts(root)
+        # 分组范围过滤: group='ungrouped'=未分组,其他=groups.json 里的成员
+        scope = '全部账号'
+        if group and group != 'all':
+            gpath = os.path.join(tg_tool.SCRIPT_DIR, 'groups.json')
+            groups = {}
+            try:
+                groups = json.load(open(gpath, encoding='utf-8'))
+            except Exception:
+                groups = {}
+            if group == 'ungrouped':
+                grouped = set()
+                for names in groups.values():
+                    if isinstance(names, list):
+                        grouped.update(names)
+                accounts = [a for a in accounts if a[0] not in grouped]
+                scope = '未分组'
+            else:
+                members = set(groups.get(group, []) or [])
+                accounts = [a for a in accounts if a[0] in members]
+                scope = f'分组「{group}」'
         results_path = os.path.join(tg_tool.SCRIPT_DIR, 'poll_results.json')
         self._task_running = True
         self._cancel.clear()
@@ -1648,7 +1781,7 @@ class Engine:
 
         results, ok_n = {}, 0
         total = len(accounts)
-        self._log(f'[轮询] 开始: 共 {total} 个账号,逐号登录保活+测活(每号间隔 1s)')
+        self._log(f'[轮询] 开始: 范围 {scope}, 共 {total} 个账号,逐号登录保活+测活(每号间隔 1s)')
         try:
             for i, (name, path, st) in enumerate(accounts, 1):
                 if self._check_cancel():

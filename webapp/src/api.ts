@@ -246,7 +246,8 @@ export async function renameAccount(path: string, newName: string) {
   return r.json() as Promise<{ ok: boolean; msg?: string; new_path?: string }>;
 }
 
-export const pollAccounts = () => postJson('/api/poll-accounts');
+export const pollAccounts = (group?: string) =>
+  postJson('/api/poll-accounts', { group: group ?? null });
 
 export async function convertToTdata(path: string) {
   const r = await apiFetch('/api/convert-to-tdata', {
@@ -256,6 +257,17 @@ export async function convertToTdata(path: string) {
   });
   return r.json() as Promise<{ ok: boolean; msg?: string; path?: string }>;
 }
+
+export async function refreshSession(path: string) {
+  const r = await apiFetch('/api/refresh-session', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ path }),
+  });
+  return r.json() as Promise<{ ok: boolean; msg?: string }>;
+}
+
+export const refreshSsBatch = () => postJson('/api/refresh-ss-batch');
 
 export async function deleteAccount(path: string) {
   const r = await apiFetch('/api/delete-account', {

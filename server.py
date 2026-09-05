@@ -735,11 +735,13 @@ async def update_telegram():
 
 
 @app.post('/api/poll-accounts')
-async def poll_accounts():
-    """账号轮询: 逐号登录一次保活+测活(后台任务,进度走 WebSocket)。"""
+async def poll_accounts(body: dict = None):
+    """账号轮询: 逐号登录一次保活+测活(后台任务,进度走 WebSocket)。
+    body.group 可限定范围: 分组名 / 'ungrouped' / 缺省=全部。"""
     eng = init_engine()
+    group = (body or {}).get('group') if isinstance(body, dict) else None
     try:
-        eng.poll_accounts(ROOT)
+        eng.poll_accounts(ROOT, group)
     except Exception as e:
         return {'ok': False, 'msg': str(e)}
     return {'ok': True, 'msg': '已开始'}
@@ -756,6 +758,30 @@ async def convert_to_tdata(body: dict):
     except Exception as e:
         return {'ok': False, 'msg': str(e)}
     return {'ok': True, 'path': target, 'msg': os.path.basename(path)}
+
+
+@app.post('/api/refresh-session')
+async def refresh_session(body: dict):
+    """tdata → session+json 覆盖刷新(在线账号只刷 json 元数据)。"""
+    path = _ensure_in_root(body.get('path', ''))
+    eng = init_engine()
+    fut = eng.refresh_session_from_tdata(path)
+    try:
+        await asyncio.wait_for(asyncio.wrap_future(fut), 180)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': True, 'msg': '已刷新'}
+
+
+@app.post('/api/refresh-ss-batch')
+async def refresh_ss_batch():
+    """批量刷新: 所有有 tdata 且测活失败的离线账号重建 session+json(后台任务)。"""
+    eng = init_engine()
+    try:
+        eng.refresh_sessions_batch(ROOT)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': True, 'msg': '已开始'}
 
 
 def _load_poll_results():
@@ -1341,6 +1367,9 @@ def _account_kind(d):
     js = [f for f in glob.glob(os.path.join(d, '*.json')) if tg_tool._is_account_json(f)]
     if sess and js:
         return 'session'
+    if sess:
+        # 仅 session: json 在首次连接时自愈补建(make_json_from_session)
+        return 'session'
     return None
 
 
@@ -1421,7 +1450,20 @@ async def import_archive(body: dict):
             eng = init_engine()
             fut = eng.convert_tdata(target)
             await asyncio.wait_for(asyncio.wrap_future(fut), 300)
-        return {'ok': True, 'msg': f'已导入 {os.path.basename(target)}'}
+        # 自动放置客户端: 账号根目录有 Telegram.exe 就复制一份进新账号文件夹,
+        # 让「启动客户端」开箱即用
+        exe_src = os.path.join(ROOT, 'Telegram.exe')
+        exe_dst = os.path.join(target, 'Telegram.exe')
+        msg = f'已导入 {os.path.basename(target)}'
+        if kind == 'session':
+            msg += '(仅 session,凭据 json 将在首次连接时自动补建)'
+        if os.path.isfile(exe_src) and not os.path.isfile(exe_dst):
+            try:
+                shutil.copy2(exe_src, exe_dst)
+                msg += ',已自动放置 Telegram.exe'
+            except OSError:
+                pass
+        return {'ok': True, 'msg': msg}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1442,7 +1484,7 @@ DEFAULT_SETTINGS = {
     'proxy_host': '',
     'proxy_port': '',
     'card_open': {},
-    'card_order': '基本信息,聊天,安全,删除,其他设置',  # 中栏功能区顺序(逗号分隔)
+    'card_order': '基本信息,聊天,安全,删除,转换,其他设置',  # 中栏功能区顺序(逗号分隔)
     'recv_on': False,               # 消息接收开关(连接后自动恢复)
     'recv_exclude_channels': True,  # 默认排除所有频道
     'recv_exclude_groups': False,

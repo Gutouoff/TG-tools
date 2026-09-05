@@ -53,6 +53,8 @@
     renameAccount,
     pollAccounts,
     convertToTdata,
+    refreshSession,
+    refreshSsBatch,
     deleteAccount,
     getPing,
     TOKEN,
@@ -96,7 +98,7 @@
     return cardOpen[name] ?? def;
   }
   // 卡片排序(settings.card_order 逗号分隔持久化)
-  const DEFAULT_CARD_ORDER = ['基本信息', '聊天', '安全', '删除', '其他设置'];
+  const DEFAULT_CARD_ORDER = ['基本信息', '聊天', '安全', '删除', '转换', '其他设置'];
   let cardOrder = $state<string[]>([...DEFAULT_CARD_ORDER]);
   function parseCardOrder(v: unknown): string[] {
     const names = typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : [];
@@ -161,6 +163,13 @@
     // $state 深代理可直接 push,避免每条日志整组拷贝(O(n))
     logs.push(line);
     if (logs.length > 2000) logs.splice(0, logs.length - 2000);
+    // 日志视图自动滚到最底,免手动滑动
+    if (rightView === 'log') {
+      setTimeout(() => {
+        const el = document.querySelector('.log');
+        if (el) el.scrollTop = el.scrollHeight;
+      }, 0);
+    }
   }
 
   async function loadAccounts() {
@@ -275,8 +284,9 @@
   // 账号轮询: 逐号登录保活+测活(后台任务,进度/结果走日志页)
   async function doPollAccounts() {
     setView('log');
-    addLog('开始账号轮询(逐号登录保活+测活,每号间隔1s)…');
-    const r = await pollAccounts();
+    const scope = curGroup === 'all' ? '全部账号' : curGroup === 'ungrouped' ? '未分组' : `分组「${curGroup}」`;
+    addLog(`开始账号轮询(范围: ${scope},逐号登录保活+测活,每号间隔1s)…`);
+    const r = await pollAccounts(curGroup);
     if (!r.ok) addLog(`轮询启动失败: ${r.msg}`);
   }
 
@@ -307,6 +317,43 @@
     } finally {
       converting = false;
     }
+  }
+
+  // tdata → s+s: 覆盖刷新会话(修复过期 ss;在线账号只刷 json)
+  let t2sOpen = $state(false);
+  let t2sConverting = $state(false);
+  function doOpenTdataToSs() {
+    if (!current) {
+      addLog('请先选择账号');
+      return;
+    }
+    t2sOpen = true;
+  }
+  async function doTdataToSsConfirm() {
+    if (!current || t2sConverting) return;
+    t2sConverting = true;
+    try {
+      const r = await refreshSession(current.path);
+      if (r.ok) {
+        addLog(`已从 tdata 刷新 session+json: ${current.name}`);
+        t2sOpen = false;
+        await loadAccounts();
+      } else {
+        addLog(`刷新失败: ${r.msg}`);
+      }
+    } catch (e: any) {
+      addLog(`刷新异常: ${e?.message ?? e}`);
+    } finally {
+      t2sConverting = false;
+    }
+  }
+
+  // 批量刷新 s+s 数据: 所有有 tdata 且测活失败的离线账号(后台任务)
+  async function doRefreshSsBatch() {
+    setView('log');
+    addLog('开始批量刷新 s+s 数据(仅处理有 tdata 且测活失败的账号,每号间隔1s)…');
+    const r = await refreshSsBatch();
+    if (!r.ok) addLog(`批量刷新启动失败: ${r.msg}`);
   }
 
   // 删除账号(二级确认): 弹窗醒目显示将被删除的文件夹,勾选确认才能执行
@@ -1420,6 +1467,15 @@
         </div>
       </div>
     </details>
+      {:else if c === '转换'}
+    <details class="card" data-card="转换" open={isCardOpen('转换', false)} ontoggle={(e) => onCardToggle('转换', (e.currentTarget as HTMLDetailsElement).open)}>
+      <summary>转换</summary>
+      <div class="conv-group">
+        <md-filled-button class="full-row" onclick={doOpenTdataToSs}>tdata 转 s+s（覆盖刷新会话）</md-filled-button>
+        <md-outlined-button class="full-row" onclick={doOpenConvertTdata} disabled={converting}>{converting ? '转换中…' : 's+s 转 tdata'}</md-outlined-button>
+        <md-outlined-button onclick={doRefreshSsBatch}>刷新 s+s 数据（批量修复测活失败）</md-outlined-button>
+      </div>
+    </details>
       {:else if c === '其他设置'}
     <details class="card" data-card="其他设置" open={isCardOpen('其他设置', false)} ontoggle={(e) => onCardToggle('其他设置', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>其他设置</summary>
@@ -1427,7 +1483,6 @@
         <md-outlined-button onclick={() => updateTelegram()}>更新本体</md-outlined-button>
         <md-outlined-button onclick={doRefreshAccountInfo}>刷新账号信息</md-outlined-button>
         <md-outlined-button onclick={doPollAccounts}>账号轮询</md-outlined-button>
-        <md-outlined-button onclick={doOpenConvertTdata} disabled={converting}>{converting ? '转换中…' : '格式转换'}</md-outlined-button>
         <md-outlined-button onclick={doExportAccounts} disabled={exporting}>{exporting ? '导出中…' : '导出表格'}</md-outlined-button>
         <md-outlined-button class="danger-btn" onclick={doOpenDeleteAccount}>删除账号</md-outlined-button>
       </div>
@@ -1730,6 +1785,32 @@
         <md-outlined-button onclick={() => (groupDelOpen = false)}>取消</md-outlined-button>
         <md-filled-button class="danger-btn" disabled={groupDeleting} onclick={doGroupDeleteConfirm}>
           {groupDeleting ? '删除中…' : '删除'}
+        </md-filled-button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if t2sOpen && current}
+  <div class="modal-mask" onclick={() => (t2sOpen = false)}>
+    <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
+      <div class="rename-head">
+        <span>tdata 转 s+s（覆盖刷新会话）</span>
+        <button class="back set-close rename-x" title="关闭" onclick={() => (t2sOpen = false)}>✕</button>
+      </div>
+      <p class="set-hint">
+        将用账号 <b>{current.display || current.name}</b> 的 <b>tdata</b> 重新生成
+        session+json，覆盖现有会话数据。
+      </p>
+      <p class="set-hint" style="color: var(--md-sys-color-error)">
+        注意：① 在线账号只会刷新 json 元数据（session 本就有效）；
+        ② 离线账号的旧 session 文件会被删除后从 tdata 重建——tdata 已失效则刷新失败；
+        ③ 适用于「session 过期导致测活失败」的账号。
+      </p>
+      <div class="rename-btns">
+        <md-outlined-button onclick={() => (t2sOpen = false)}>取消</md-outlined-button>
+        <md-filled-button disabled={t2sConverting} onclick={doTdataToSsConfirm}>
+          {t2sConverting ? '刷新中…' : '开始刷新'}
         </md-filled-button>
       </div>
     </div>
@@ -2339,6 +2420,17 @@
     grid-template-columns: 1fr 1fr;
     gap: 8px;
     padding: 0 16px 12px;
+  }
+  /* 转换组: 长按钮独占一行 */
+  .conv-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 16px 12px;
+  }
+  .conv-group md-filled-button,
+  .conv-group md-outlined-button {
+    width: 100%;
   }
   .grid md-filled-button,
   .grid md-outlined-button {
