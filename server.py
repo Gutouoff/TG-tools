@@ -451,7 +451,18 @@ async def refresh_avatar(body: dict):
         if info is None:
             # refresh_one 已把原因打进日志(无json/无session/登录失效/连接失败)
             return {'ok': False, 'msg': '刷新失败(原因见日志)', 'info': {}}
-    return {'ok': info is not None, 'info': _jsonable(info) if info else {}}
+    # 刷新成功 = 账号必然活着: 若轮询曾标记死号,改回存活让标识消失
+    try:
+        import time as _t
+        p = os.path.join(tg_tool.SCRIPT_DIR, 'poll_results.json')
+        res = json.load(open(p, encoding='utf-8')) if os.path.isfile(p) else {}
+        if res.get(name, {}).get('alive') is not True:
+            res[name] = {'alive': True, 'msg': '存活(手动刷新账号信息)',
+                         'time': _t.strftime('%Y-%m-%d %H:%M')}
+            json.dump(res, open(p, 'w', encoding='utf-8'), ensure_ascii=False)
+    except Exception:
+        pass
+    return {'ok': True, 'info': _jsonable(info)}
 
 
 @app.get('/api/export-accounts')

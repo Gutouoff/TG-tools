@@ -351,7 +351,7 @@
   // 批量刷新 s+s 数据: 所有有 tdata 且测活失败的离线账号(后台任务)
   async function doRefreshSsBatch() {
     setView('log');
-    addLog('开始批量刷新 s+s 数据(仅处理有 tdata 且测活失败的账号,每号间隔1s)…');
+    addLog('开始批量刷新session(仅处理有 tdata 且测活失败的账号,每号间隔1s)…');
     const r = await refreshSsBatch();
     if (!r.ok) addLog(`批量刷新启动失败: ${r.msg}`);
   }
@@ -466,6 +466,8 @@
           current.display = `${r.info.first || ''} ${r.info.last || ''}`.trim();
         }
         if (r.info.username) current.username = r.info.username;
+        // 刷新成功=账号活着,立即摘掉轮询死号标识(后端已同步 poll_results)
+        (current as any).poll_alive = true;
         applyFilter();
         addLog(`已刷新账号信息: ${current.name}`);
       } else {
@@ -1471,9 +1473,9 @@
     <details class="card" data-card="转换" open={isCardOpen('转换', false)} ontoggle={(e) => onCardToggle('转换', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>转换</summary>
       <div class="conv-group">
-        <md-filled-button class="full-row" onclick={doOpenTdataToSs}>tdata 转 s+s（覆盖刷新会话）</md-filled-button>
-        <md-outlined-button class="full-row" onclick={doOpenConvertTdata} disabled={converting}>{converting ? '转换中…' : 's+s 转 tdata'}</md-outlined-button>
-        <md-outlined-button onclick={doRefreshSsBatch}>刷新 s+s 数据（批量修复测活失败）</md-outlined-button>
+        <md-filled-button class="full-row" onclick={doOpenTdataToSs}>tdata 转 session+json</md-filled-button>
+        <md-outlined-button class="full-row" onclick={doOpenConvertTdata} disabled={converting}>{converting ? '转换中…' : 'session+json 转 tdata'}</md-outlined-button>
+        <md-outlined-button onclick={doRefreshSsBatch}>刷新session（批量修复测活失败）</md-outlined-button>
       </div>
     </details>
       {:else if c === '其他设置'}
@@ -1795,7 +1797,7 @@
   <div class="modal-mask" onclick={() => (t2sOpen = false)}>
     <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
       <div class="rename-head">
-        <span>tdata 转 s+s（覆盖刷新会话）</span>
+        <span>tdata 转 session+json（覆盖刷新会话）</span>
         <button class="back set-close rename-x" title="关闭" onclick={() => (t2sOpen = false)}>✕</button>
       </div>
       <p class="set-hint">
@@ -1821,7 +1823,7 @@
   <div class="modal-mask" onclick={() => (convOpen = false)}>
     <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
       <div class="rename-head">
-        <span>格式转换：session → tdata</span>
+        <span>session+json 转 tdata</span>
         <button class="back set-close rename-x" title="关闭" onclick={() => (convOpen = false)}>✕</button>
       </div>
       <p class="set-hint">

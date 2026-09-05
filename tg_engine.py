@@ -1659,7 +1659,7 @@ class Engine:
             return None
         self._task_running = True
         self._cancel.clear()
-        self._state('task_start', '刷新 s+s 数据')
+        self._state('task_start', '刷新session')
         ok_n = 0
         try:
             for i, (name, path) in enumerate(targets, 1):
