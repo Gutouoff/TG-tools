@@ -48,6 +48,7 @@
     sendChatMsg,
     launchClient,
     renameAccount,
+    getPing,
     TOKEN,
     type Account,
     type LogEvent,
@@ -64,6 +65,8 @@
   // 连接/重连进行中的提示文案(顶栏状态),空=不在连接中
   let connectingLabel = $state('');
   let logs = $state<string[]>([]);
+  // 程序版本号(顶栏显示,来自后端 APP_VERSION)
+  let appVersion = $state('');
   let progress = $state({ done: 0, total: 0, label: '' });
 
   function avatarColor(name: string): string {
@@ -978,6 +981,12 @@
     loadGroups();
     loadAccounts();
     loadRecv();
+    try {
+      const p = await getPing();
+      if (p?.version) appVersion = String(p.version);
+    } catch {
+      // 版本号显示失败不影响使用
+    }
     // 页面刷新后恢复在线徽标(连接池仍在)
     try {
       const on = await getOnline();
@@ -1013,7 +1022,7 @@
 </script>
 
 <header class="topbar">
-  <span class="title">TG小号工具箱</span>
+  <span class="title">TG小号工具箱{appVersion ? ` <span class="ver">v${appVersion}</span>` : ''}</span>
   <span class="conn" class:on={connected && !connectingLabel}>{connectingLabel ? `● ${connectingLabel}` : connected ? '● 已连接' : '● 未连接'}</span>
   <button class="topbtn" onclick={doReconnect}>重新连接</button>
   <button class="topbtn" onclick={doLaunchClient}>启动客户端</button>
@@ -1684,6 +1693,12 @@
     font-size: 20px;
     font-weight: 600;
     letter-spacing: 0.5px;
+  }
+  .title .ver {
+    font-size: 12px;
+    font-weight: 400;
+    opacity: 0.85;
+    margin-left: 6px;
   }
   .conn {
     margin-left: auto;

@@ -150,6 +150,8 @@ async function postJson(url: string, body: object = {}) {
   return r.json();
 }
 
+export const getPing = () => getJson('/api/ping');
+
 export const getPasskeys = () => getJson('/api/passkeys');
 export const deletePasskey = (id: string) => postJson('/api/passkeys/delete', { id });
 export const initPasskey = () => postJson('/api/passkeys/init');

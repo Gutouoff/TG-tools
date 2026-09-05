@@ -51,3 +51,12 @@ CLI（tg_tool.py）仍可用；Tkinter GUI（tg_ui.py）已归档至 `legacy/`�
 - 新增界面文案：tg_tool.py DEFAULT_TEXTS 加 key（t0xx 序号）+ 界面文本.txt 同步
 - 打包账号必须设 pack_password（AES-256 加密 zip）,禁止生成明文账号包
 - token 是唯一访问控制,绝不落盘（settings.json/日志/URL 之外不新增暴露点）
+
+## 版本号规则（semver）
+
+- 格式 `X.Y.Z`,唯一权威在 `tg_tool.py` 的 `APP_VERSION` 常量；`/api/ping` 与前端顶栏都读它
+- **X 大版本**：架构级/破坏性变更（settings.json、profiles.json 等数据结构变更须配套迁移代码）
+- **Y 小版本**：新功能
+- **Z 微调**：bug 修复、界面小改
+- **预发布**：大/小版本发布前先出 `-beta.N`（如 `1.1.0-beta.1`）给测试者;**beta 不做不可逆配置迁移**（保持向后兼容,退回正式版不坏数据）
+- 发布节奏：改功能 → bump `APP_VERSION` → 构建 → git tag `v{版本}` → 推送 tag
