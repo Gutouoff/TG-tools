@@ -367,7 +367,7 @@
   // 设置
   let settings = $state<Record<string, any>>({});
   let settingsOpen = $state(false);
-  let settingsSection = $state<'general' | 'appearance' | 'proxy' | 'join' | 'whitelist'>('general');
+  let settingsSection = $state<'general' | 'appearance' | 'proxy' | 'join' | 'whitelist' | 'about'>('general');
   let themeMode = $derived((settings.theme_mode as string) || 'light');
   async function loadSettings() {
     settings = {
@@ -707,6 +707,10 @@
     editUsername = current?.username || '';
     const r = await getProfile();
     if (r.ok && r.profile) {
+      // 名字/姓氏必须取真实字段(display 是姓+名拼接,不能当名字用)
+      editFirstName = r.profile.first || '';
+      editLastName = r.profile.last || '';
+      editUsername = r.profile.username || current?.username || '';
       editAbout = r.profile.about || '';
       if (r.profile.birthday) {
         editDay = String(r.profile.birthday.day || '');
@@ -1022,7 +1026,7 @@
 </script>
 
 <header class="topbar">
-  <span class="title">TG小号工具箱{appVersion ? ` <span class="ver">v${appVersion}</span>` : ''}</span>
+  <span class="title">TG小号工具箱</span>
   <span class="conn" class:on={connected && !connectingLabel}>{connectingLabel ? `● ${connectingLabel}` : connected ? '● 已连接' : '● 未连接'}</span>
   <button class="topbtn" onclick={doReconnect}>重新连接</button>
   <button class="topbtn" onclick={doLaunchClient}>启动客户端</button>
@@ -1507,6 +1511,7 @@
         <button class="set-nav-item" class:on={settingsSection === 'proxy'} onclick={() => (settingsSection = 'proxy')}><span class="set-nav-icon">🌐</span>代理</button>
         <button class="set-nav-item" class:on={settingsSection === 'join'} onclick={() => (settingsSection = 'join')}><span class="set-nav-icon">📨</span>加群频道</button>
         <button class="set-nav-item" class:on={settingsSection === 'whitelist'} onclick={() => { settingsSection = 'whitelist'; loadWhitelist(); }}><span class="set-nav-icon">🛡️</span>白名单</button>
+        <button class="set-nav-item" class:on={settingsSection === 'about'} onclick={() => (settingsSection = 'about')}><span class="set-nav-icon">ℹ️</span>关于</button>
       </div>
       <div class="set-content">
         {#if settingsSection === 'general'}
@@ -1665,6 +1670,14 @@
               {/each}
             </ul>
           </div>
+        {:else if settingsSection === 'about'}
+          <div class="set-sec-title">关于</div>
+          <div class="set-group">
+            <div class="about-row"><span class="set-label">程序名</span><span>TG小号工具箱（Web版）</span></div>
+            <div class="about-row"><span class="set-label">版本</span><span class="about-ver">v{appVersion || '…'}</span></div>
+            <div class="about-row"><span class="set-label">仓库</span><span>github.com/Gutouoff/TG-tools</span></div>
+          </div>
+          <p class="set-hint">版本号规则：X.Y.Z = 大版本.小版本.微调；测试版带 -beta.N 后缀（发布前的预览版）。</p>
         {:else}
           <div class="set-sec-title">通用</div>
         {/if}
@@ -1693,17 +1706,14 @@
     font-size: 20px;
     font-weight: 600;
     letter-spacing: 0.5px;
-  }
-  .title .ver {
-    font-size: 12px;
-    font-weight: 400;
-    opacity: 0.85;
-    margin-left: 6px;
+    white-space: nowrap;
   }
   .conn {
     margin-left: auto;
     font-size: 13px;
     color: rgba(255, 255, 255, 0.75);
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .conn.on {
     color: #A5D6A7;
@@ -2122,6 +2132,21 @@
     color: var(--md-sys-color-on-surface-variant);
     margin: 4px 0 10px;
   }
+  .about-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0;
+    font-size: 13px;
+  }
+  .about-row .set-label {
+    width: 60px;
+    flex-shrink: 0;
+  }
+  .about-ver {
+    font-weight: 600;
+    color: var(--md-sys-color-primary);
+  }
   /* 文件夹重命名弹窗 */
   .rename-modal {
     width: 400px;
@@ -2247,6 +2272,8 @@
     cursor: pointer;
     font-size: 13px;
     margin-left: 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
     transition: background 0.15s, border-color 0.15s;
   }
   .topbtn:hover {

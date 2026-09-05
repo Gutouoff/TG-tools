@@ -1288,7 +1288,12 @@ class Engine:
             from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest
             full = await self._client(GetFullUserRequest(id='me'))
             chans = await self._client(GetAdminedPublicChannelsRequest())
+            users = list(getattr(full, 'users', []) or [])
+            me = users[0] if users else await self._client.get_me()
             data = {
+                'first': getattr(me, 'first_name', '') or '',
+                'last': getattr(me, 'last_name', '') or '',
+                'username': getattr(me, 'username', '') or '',
                 'about': getattr(full.full_user, 'about', '') or '',
                 'birthday': getattr(full.full_user, 'birthday', None),
                 'channels': list(getattr(chans, 'chats', []) or []),
