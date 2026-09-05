@@ -1455,7 +1455,7 @@
     <details class="card" data-card="删除" open={isCardOpen('删除', true)} ontoggle={(e) => onCardToggle('删除', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>删除</summary>
       <div class="grid">
-        <md-filled-button onclick={() => postTask('/api/tasks/delete-contacts')}>删联系人</md-filled-button>
+        <md-outlined-button onclick={() => postTask('/api/tasks/delete-contacts')}>删联系人</md-outlined-button>
         <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'users' })}>删对话</md-outlined-button>
         <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'bots' })}>删机器人</md-outlined-button>
         <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'groups' })}>删频道</md-outlined-button>
@@ -1473,7 +1473,7 @@
     <details class="card" data-card="转换" open={isCardOpen('转换', false)} ontoggle={(e) => onCardToggle('转换', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>转换</summary>
       <div class="conv-group">
-        <md-filled-button class="full-row" onclick={doOpenTdataToSs}>tdata 转 session+json</md-filled-button>
+        <md-outlined-button class="full-row" onclick={doOpenTdataToSs}>tdata 转 session+json</md-outlined-button>
         <md-outlined-button class="full-row" onclick={doOpenConvertTdata} disabled={converting}>{converting ? '转换中…' : 'session+json 转 tdata'}</md-outlined-button>
         <md-outlined-button onclick={doRefreshSsBatch}>刷新session（批量修复测活失败）</md-outlined-button>
       </div>
