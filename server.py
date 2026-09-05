@@ -236,7 +236,7 @@ def _scan_accounts():
         a['country'] = cname
         pr = poll.get(name)
         if pr:
-            a['poll_alive'] = bool(pr.get('alive'))
+            a['poll_alive'] = pr.get('alive')   # True/False/None(None=未判定,前端显示?不显示死)
             a['poll_time'] = str(pr.get('time', ''))
             a['poll_msg'] = str(pr.get('msg', ''))
         out.append(a)
@@ -1129,6 +1129,34 @@ async def delete_group(name: str):
     groups.pop(name, None)
     _save_groups(groups)
     return {'ok': True, 'groups': groups}
+
+
+@app.post('/api/groups/rename')
+async def rename_group(body: dict):
+    old = (body.get('old') or '').strip()
+    new = (body.get('new') or '').strip()
+    groups = _load_groups()
+    if not new or old not in groups:
+        return {'ok': False, 'msg': '原分组不存在或新名称无效'}
+    if new != old and new in groups:
+        return {'ok': False, 'msg': '新分组名已存在'}
+    # 重命名键并保持原顺序(成员不变)
+    groups = {(new if k == old else k): v for k, v in groups.items()}
+    _save_groups(groups)
+    return {'ok': True, 'groups': groups}
+
+
+@app.post('/api/groups/reorder')
+async def reorder_groups(body: dict):
+    """按给定顺序重排分组(dict 键序即持久化顺序)。"""
+    order = body.get('order') or []
+    groups = _load_groups()
+    new = {k: groups[k] for k in order if k in groups}
+    for k in groups:
+        if k not in new:
+            new[k] = groups[k]
+    _save_groups(new)
+    return {'ok': True, 'groups': new}
 
 
 @app.post('/api/groups/move')

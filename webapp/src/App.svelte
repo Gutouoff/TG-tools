@@ -32,6 +32,8 @@
     uploadAvatar,
     getGroups,
     createGroup,
+    renameGroup,
+    reorderGroups,
     moveAccount,
     convertTdata,
     importArchive,
@@ -868,6 +870,104 @@
       applyFilter();
     }
   }
+
+  // ---------- 分组标签: 拖动排序 + 右键重命名/删除 ----------
+  let dragGroup = $state('');
+  let dragGroupOver = $state('');
+  function onGroupDragStart(e: DragEvent, g: string) {
+    dragGroup = g;
+    e.dataTransfer?.setData('text/plain', g);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+  }
+  function onGroupDragOver(e: DragEvent, g: string) {
+    if (!dragGroup || dragGroup === g || g === 'all' || g === 'ungrouped') return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    dragGroupOver = g;
+  }
+  async function onGroupDrop(e: DragEvent, g: string) {
+    if (!dragGroup) return;  // 账号拖动: 交给 aside 的 onDrop(移入分组)
+    e.preventDefault();
+    e.stopPropagation();
+    const from = dragGroup;
+    dragGroup = '';
+    dragGroupOver = '';
+    if (from === g || g === 'all' || g === 'ungrouped') return;
+    const keys = Object.keys(groups);
+    const fromIdx = keys.indexOf(from);
+    const toIdx = keys.indexOf(g);
+    if (fromIdx < 0 || toIdx < 0) return;
+    keys.splice(toIdx, 0, keys.splice(fromIdx, 1)[0]);
+    const ordered: Record<string, string[]> = {};
+    for (const k of keys) ordered[k] = groups[k];
+    groups = ordered;
+    const r = await reorderGroups(keys);
+    if (!r.ok) addLog(`分组排序保存失败: ${r.msg}`);
+  }
+  // 分组右键菜单
+  let groupMenu = $state<{ x: number; y: number; name: string } | null>(null);
+  function onGroupContext(e: MouseEvent, g: string) {
+    if (g === 'all' || g === 'ungrouped') return;
+    e.preventDefault();
+    e.stopPropagation();
+    groupMenu = { x: e.clientX, y: e.clientY, name: g };
+  }
+  // 分组重命名弹窗
+  let groupRenameOpen = $state(false);
+  let groupRenameTarget = $state('');
+  let groupRenameInput = $state('');
+  function doOpenGroupRename() {
+    if (!groupMenu) return;
+    groupRenameTarget = groupMenu.name;
+    groupRenameInput = groupMenu.name;
+    groupMenu = null;
+    groupRenameOpen = true;
+  }
+  async function doGroupRenameConfirm() {
+    const newName = groupRenameInput.trim();
+    if (!newName || newName === groupRenameTarget) {
+      groupRenameOpen = false;
+      return;
+    }
+    const r = await renameGroup(groupRenameTarget, newName);
+    if (r.ok) {
+      groups = r.groups;
+      if (curGroup === groupRenameTarget) curGroup = newName;
+      groupRenameOpen = false;
+    } else {
+      addLog(`重命名失败: ${r.msg}`);
+    }
+  }
+  // 分组删除确认弹窗(成员回到未分组)
+  let groupDelOpen = $state(false);
+  let groupDelTarget = $state('');
+  let groupDeleting = $state(false);
+  function doOpenGroupDelete() {
+    if (!groupMenu) return;
+    groupDelTarget = groupMenu.name;
+    groupMenu = null;
+    groupDelOpen = true;
+  }
+  async function doGroupDeleteConfirm() {
+    if (groupDeleting) return;
+    groupDeleting = true;
+    try {
+      const r = await deleteGroup(groupDelTarget);
+      if (r.ok) {
+        groups = r.groups;
+        if (curGroup === groupDelTarget) curGroup = 'all';
+        applyFilter();
+        groupDelOpen = false;
+      } else {
+        addLog(`删除分组失败: ${r.msg}`);
+      }
+    } catch (e: any) {
+      addLog(`删除分组异常: ${e?.message ?? e}`);
+    } finally {
+      groupDeleting = false;
+    }
+  }
+
   let ctxMenu = $state<{ x: number; y: number; name: string } | null>(null);
   function onAccountContext(e: MouseEvent, a: Account) {
     e.preventDefault();
@@ -889,6 +989,7 @@
   }
   function closeCtx() {
     ctxMenu = null;
+    groupMenu = null;
   }
 
   // 三栏宽度拖动
@@ -1103,7 +1204,19 @@
   <aside class="left" style="width:{leftW}px" ondragover={onDragOver} ondrop={onDrop} onclick={closeCtx}>
     <div class="groups">
       {#each ['all', 'ungrouped', ...Object.keys(groups)] as g}
-        <button class="grp" class:on={curGroup === g} onclick={() => selectGroup(g)}>
+        <button
+          class="grp"
+          class:on={curGroup === g}
+          class:drag-over={dragGroupOver === g}
+          draggable={g !== 'all' && g !== 'ungrouped'}
+          onclick={() => selectGroup(g)}
+          oncontextmenu={(e) => onGroupContext(e, g)}
+          ondragstart={(e) => onGroupDragStart(e, g)}
+          ondragend={() => { dragGroup = ''; dragGroupOver = ''; }}
+          ondragover={(e) => onGroupDragOver(e, g)}
+          ondragleave={() => { if (dragGroupOver === g) dragGroupOver = ''; }}
+          ondrop={(e) => onGroupDrop(e, g)}
+        >
           {g === 'all' ? '全部' : g === 'ungrouped' ? '未分组' : g}
         </button>
       {/each}
@@ -1133,7 +1246,7 @@
           <span class="meta">
             <span class="nm">
               {a.display || a.name}
-              {#if (a as any).poll_alive === false}<span class="dead-tag" title={`轮询: ${(a as any).poll_msg || '死号'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''}`}>死</span>{/if}
+              {#if (a as any).poll_alive === false}<span class="dead-tag" title={`轮询: ${(a as any).poll_msg || '死号'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''}`}>死</span>{:else if (a as any).poll_alive === null}<span class="unk-tag" title={`轮询: ${(a as any).poll_msg || '状态未知'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''} —— 账号未必已死,请重试/重新登录,勿直接删除`}>?</span>{/if}
               {#if a.username}<span class="uname">{a.username}</span>{/if}
             </span>
             <span class="sub">{a.country ? `${a.country} ` : ''}{a.phone ? `+${a.phone}` : a.state}</span>
@@ -1516,6 +1629,56 @@
   </section>
 </div>
 
+  {#if groupMenu}
+    <div class="ctx" style="left:{groupMenu.x}px;top:{groupMenu.y}px" onclick={(e) => e.stopPropagation()}>
+      <div class="ctx-title">分组：{groupMenu.name}</div>
+      <button onclick={doOpenGroupRename}>重命名…</button>
+      <button class="ctx-disconnect" onclick={doOpenGroupDelete}>删除分组（账号回未分组）</button>
+    </div>
+  {/if}
+
+  {#if groupRenameOpen}
+  <div class="modal-mask" onclick={() => (groupRenameOpen = false)}>
+    <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
+      <div class="rename-head">
+        <span>分组重命名</span>
+        <button class="back set-close rename-x" title="关闭" onclick={() => (groupRenameOpen = false)}>✕</button>
+      </div>
+      <input
+        class="rename-input"
+        bind:value={groupRenameInput}
+        onkeydown={(e) => { if (e.key === 'Enter') doGroupRenameConfirm(); }}
+        placeholder="输入新的分组名称"
+        maxlength="30"
+      />
+      <div class="rename-btns">
+        <md-outlined-button onclick={() => (groupRenameOpen = false)}>取消</md-outlined-button>
+        <md-filled-button disabled={!groupRenameInput.trim()} onclick={doGroupRenameConfirm}>确定</md-filled-button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if groupDelOpen}
+  <div class="modal-mask" onclick={() => (groupDelOpen = false)}>
+    <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
+      <div class="rename-head">
+        <span>删除分组</span>
+        <button class="back set-close rename-x" title="关闭" onclick={() => (groupDelOpen = false)}>✕</button>
+      </div>
+      <p class="set-hint">
+        确定删除分组「<b>{groupDelTarget}</b>」？组内账号不会被删除，将回到「未分组」。
+      </p>
+      <div class="rename-btns">
+        <md-outlined-button onclick={() => (groupDelOpen = false)}>取消</md-outlined-button>
+        <md-filled-button class="danger-btn" disabled={groupDeleting} onclick={doGroupDeleteConfirm}>
+          {groupDeleting ? '删除中…' : '删除'}
+        </md-filled-button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 {#if delOpen && delTarget}
   <div class="modal-mask" onclick={() => (delOpen = false)}>
     <div class="modal rename-modal del-modal" onclick={(e) => e.stopPropagation()}>
@@ -1874,6 +2037,13 @@
     font-size: 12px;
     transition: background 0.15s, border-color 0.15s, color 0.15s;
   }
+  .grp[draggable='true'] {
+    cursor: grab;
+  }
+  .grp.drag-over {
+    outline: 2px dashed var(--md-sys-color-primary);
+    outline-offset: -2px;
+  }
   .grp:hover:not(.on) {
     background: var(--hover-overlay);
     border-color: var(--md-sys-color-primary);
@@ -2018,6 +2188,15 @@
     font-size: 10px;
     color: #fff;
     background: var(--md-sys-color-error, #b3261e);
+    border-radius: 4px;
+    padding: 0 4px;
+    margin-left: 4px;
+    cursor: default;
+  }
+  .unk-tag {
+    font-size: 10px;
+    color: var(--md-sys-color-on-surface);
+    background: var(--status-warning);
     border-radius: 4px;
     padding: 0 4px;
     margin-left: 4px;

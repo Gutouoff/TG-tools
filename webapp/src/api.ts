@@ -183,6 +183,9 @@ export const uploadAvatar = (data: string) => postJson('/api/avatar', { data });
 // ---------- 账号分组 ----------
 export const getGroups = (): Promise<Record<string, string[]>> => getJson('/api/groups');
 export const createGroup = (name: string) => postJson('/api/groups', { name });
+export const renameGroup = (oldName: string, newName: string) =>
+  postJson('/api/groups/rename', { old: oldName, new: newName });
+export const reorderGroups = (order: string[]) => postJson('/api/groups/reorder', { order });
 export const deleteGroup = (name: string) =>
   apiFetch(`/api/groups/${encodeURIComponent(name)}`, { method: 'DELETE' }).then((r) => r.json());
 export const moveAccount = (name: string, group: string) => postJson('/api/groups/move', { name, group });
