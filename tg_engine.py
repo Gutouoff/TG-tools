@@ -924,6 +924,40 @@ class Engine:
             })
         return msgs
 
+    def refresh_profile(self, account):
+        """用池中在线 client 刷新账号资料+头像(避免二次连接撞 session 锁)。"""
+        return self._submit(self._do_refresh_profile(account))
+
+    async def _do_refresh_profile(self, account):
+        entry = self._pool.get(account)
+        if not entry:
+            raise RuntimeError(f'账号 {account} 不在线')
+        import tg_profile
+        client = entry['client']
+        me = await client.get_me()
+        info = {
+            'username': me.username or '',
+            'first': me.first_name or '',
+            'last': me.last_name or '',
+            'phone': str(me.phone or ''),
+            'uid': str(me.id),
+            'dc': str(getattr(client.session, 'dc_id', '') or ''),
+        }
+        try:
+            os.makedirs(tg_profile.AVATAR_DIR, exist_ok=True)
+            path = await client.download_profile_photo(me, tg_profile.avatar_path(account))
+            if path:
+                info['avatar'] = path
+        except Exception:
+            pass  # 头像拉取失败不阻塞资料刷新
+        prof = tg_profile.load_profiles()
+        old = prof.get(account, {})
+        if not info.get('avatar') and old.get('avatar'):
+            info['avatar'] = old['avatar']
+        prof[account] = info
+        tg_profile.save_profiles(prof)
+        return info
+
     def send_message(self, account, dialog_id, text):
         """发送文本消息到指定会话(目前仅适配文本)。"""
         return self._submit(self._do_send_message(account, dialog_id, text))

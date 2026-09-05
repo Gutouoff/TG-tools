@@ -410,13 +410,25 @@ def _guess_image_media(path):
 
 @app.post('/api/refresh-avatar')
 async def refresh_avatar(body: dict):
-    """连接账号后刷新单个账号头像(后台线程,同步等待)。"""
-    name = body.get('name', '')
+    """刷新单个账号头像/资料(同步等待)。在线账号用池内 client,离线才临时开 client。"""
+    name = str(body.get('name', ''))
     if not name:
         return {'ok': False, 'msg': '缺少账号名'}
-    def _run():
-        return tg_profile.refresh_one(ROOT, name)
-    info = await asyncio.to_thread(_run)
+    if name in ('.', '..') or '/' in name or '\\' in name:
+        return {'ok': False, 'msg': '非法账号名'}
+    eng = init_engine()
+    # 在线账号: 复用池内 client(二次连接会撞 .session 的 SQLite 锁)
+    fut = eng.refresh_profile(name)
+    try:
+        info = await asyncio.wait_for(asyncio.wrap_future(fut), 60)
+    except RuntimeError:
+        info = None  # 不在线 → 走临时 client
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    if info is None:
+        def _run():
+            return tg_profile.refresh_one(ROOT, name)
+        info = await asyncio.to_thread(_run)
     return {'ok': info is not None, 'info': _jsonable(info) if info else {}}
 
 

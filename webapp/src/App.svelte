@@ -384,8 +384,11 @@
 
   // 右栏视图
   let rightView = $state<'log' | 'passkey' | '2fa' | 'email' | 'devices' | 'profile' | 'settings' | 'chat' | 'join'>('log');
+  // 日志页的「返回」目标: 从哪个界面点进日志,就回哪个界面
+  let lastView = $state<typeof rightView>('log');
   function setView(v: typeof rightView) {
     flushSync(() => {
+      if (v === 'log' && rightView !== 'log') lastView = rightView;
       rightView = v;
       if (v === 'chat') chatUnread = 0;
     });
@@ -1121,6 +1124,12 @@
 
   <section class="right">
     {#if rightView === 'log'}
+      <div class="sec-head">
+        <h3>日志</h3>
+        {#if lastView !== 'log'}
+          <button class="back" onclick={() => setView(lastView)}>返回</button>
+        {/if}
+      </div>
       <div class="prog">
         <span>{progress.label || '无任务'}</span>
         <span>{progress.total ? `${progress.done}/${progress.total}` : ''}</span>
