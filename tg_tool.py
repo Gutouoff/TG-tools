@@ -479,6 +479,10 @@ def _mask_phone_text(s):
         return s
 
 
+# UI 日志回调(Web 版由 server 挂接,把 log() 的行广播到前端日志页)
+UI_LOG_HOOK = None
+
+
 def log(msg):
     if not isinstance(msg, str):
         msg = str(msg)
@@ -493,6 +497,11 @@ def log(msg):
         try:
             LOGFILE.write(line + '\n')
             LOGFILE.flush()
+        except Exception:
+            pass
+    if UI_LOG_HOOK:
+        try:
+            UI_LOG_HOOK(msg)
         except Exception:
             pass
 

@@ -187,10 +187,12 @@ async def _fetch_one(loop, name, d, cfg_path, cfg):
         client = TelegramClient(StringSession(cfg['session_str']), cfg['app_id'],
                                 cfg['app_hash'], proxy=proxy, **kw)
     if client is None:
+        tg_tool.log(f'[资料] {name}: 无 session 文件且无 session_str,无法连接')
         return None
     try:
         await asyncio.wait_for(client.connect(), timeout=20)
         if not await asyncio.wait_for(client.is_user_authorized(), timeout=10):
+            tg_tool.log(f'[资料] {name}: 登录态失效(session 过期或在别处被踢)')
             return None
         me = await asyncio.wait_for(client.get_me(), timeout=15)
         info = {
@@ -268,16 +270,19 @@ def refresh_one(root, name):
     import tg_tool
     js = tg_tool._account_jsons(os.path.join(root, name))
     if not js:
+        tg_tool.log(f'[资料] {name}: 找不到账号 json(目录结构不符)')
         return None
     try:
         cfg = json.load(open(js[0], encoding='utf-8'))
-    except Exception:
+    except Exception as e:
+        tg_tool.log(f'[资料] {name}: json 解析失败 {type(e).__name__}: {e}')
         return None
     loop = asyncio.new_event_loop()
     try:
         info = loop.run_until_complete(
             asyncio.wait_for(_fetch_one(loop, name, os.path.join(root, name), js[0], cfg), timeout=90))
-    except Exception:
+    except Exception as e:
+        tg_tool.log(f'[资料] {name}: 连接/拉取失败 {type(e).__name__}: {e}')
         info = None
     finally:
         loop.close()

@@ -948,8 +948,11 @@ class Engine:
             path = await client.download_profile_photo(me, tg_profile.avatar_path(account))
             if path:
                 info['avatar'] = path
-        except Exception:
-            pass  # 头像拉取失败不阻塞资料刷新
+            else:
+                # 官方语义: 账号未设置头像(或已删除)时返回 None,不算错误
+                self._log(f'[资料] {account}: 该账号未设置头像')
+        except Exception as e:
+            self._log(f'[资料] {account} 头像下载失败: {type(e).__name__}: {e}')
         prof = tg_profile.load_profiles()
         old = prof.get(account, {})
         if not info.get('avatar') and old.get('avatar'):

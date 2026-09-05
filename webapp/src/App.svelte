@@ -782,12 +782,31 @@
     curGroup = g;
     applyFilter();
   }
-  async function doCreateGroup() {
-    const name = prompt('输入分组名称：');
-    if (!name) return;
-    const r = await createGroup(name.trim());
-    if (r.ok) groups = r.groups;
-    else addLog(`新建失败: ${r.msg}`);
+  // 新建分组弹窗(M3,替代原生 prompt)
+  let groupModalOpen = $state(false);
+  let groupInput = $state('');
+  let groupCreating = $state(false);
+  function doCreateGroup() {
+    groupInput = '';
+    groupModalOpen = true;
+  }
+  async function doCreateGroupConfirm() {
+    const name = groupInput.trim();
+    if (!name || groupCreating) return;
+    groupCreating = true;
+    try {
+      const r = await createGroup(name);
+      if (r.ok) {
+        groups = r.groups;
+        groupModalOpen = false;
+      } else {
+        addLog(`新建失败: ${r.msg}`);
+      }
+    } catch (e: any) {
+      addLog(`新建异常: ${e?.message ?? e}`);
+    } finally {
+      groupCreating = false;
+    }
   }
   async function doMoveAccount(name: string, group: string) {
     const r = await moveAccount(name, group);
@@ -1060,10 +1079,14 @@
       {#each Object.keys(groups) as g}
         <label class="ctx-check">
           <input
+            class="ctx-check-native"
             type="checkbox"
             checked={(groups[g] || []).includes(ctxMenu.name)}
             onchange={() => doMoveAccount(ctxMenu.name, g)}
           />
+          <span class="ctx-check-box" class:on={(groups[g] || []).includes(ctxMenu.name)}>
+            {#if (groups[g] || []).includes(ctxMenu.name)}✓{/if}
+          </span>
           <span>{g}</span>
         </label>
       {/each}
@@ -1416,6 +1439,30 @@
     {/if}
   </section>
 </div>
+
+{#if groupModalOpen}
+  <div class="modal-mask" onclick={() => (groupModalOpen = false)}>
+    <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
+      <div class="rename-head">
+        <span>新建分组</span>
+        <button class="back set-close rename-x" title="关闭" onclick={() => (groupModalOpen = false)}>✕</button>
+      </div>
+      <input
+        class="rename-input"
+        bind:value={groupInput}
+        onkeydown={(e) => { if (e.key === 'Enter') doCreateGroupConfirm(); }}
+        placeholder="输入分组名称"
+        maxlength="30"
+      />
+      <div class="rename-btns">
+        <md-outlined-button onclick={() => (groupModalOpen = false)}>取消</md-outlined-button>
+        <md-filled-button disabled={groupCreating || !groupInput.trim()} onclick={doCreateGroupConfirm}>
+          {groupCreating ? '处理中…' : '确定'}
+        </md-filled-button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if renameOpen}
   <div class="modal-mask" onclick={() => (renameOpen = false)}>
@@ -2604,9 +2651,39 @@
     cursor: pointer;
     font-size: 13px;
     color: var(--md-sys-color-on-surface);
+    border-radius: 6px;
   }
-  .ctx-check input {
-    margin: 0;
+  .ctx-check:hover {
+    background: var(--hover-overlay);
+  }
+  /* 隐藏原生勾选框,用 M3 风格自绘 */
+  .ctx-check-native {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .ctx-check-box {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--md-sys-color-outline);
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: transparent;
+    flex-shrink: 0;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .ctx-check-box.on {
+    background: var(--md-sys-color-primary);
+    border-color: var(--md-sys-color-primary);
+    color: #fff;
+  }
+  .ctx-check-native:focus-visible + .ctx-check-box {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
   }
   .check-row {
     display: flex;

@@ -94,6 +94,9 @@ def _emit(data: dict):
 
 def init_engine():
     global _engine
+    # tg_tool.log 的行(资料刷新失败原因等)也广播到 Web 日志页
+    if tg_tool.UI_LOG_HOOK is None:
+        tg_tool.UI_LOG_HOOK = lambda msg: _emit({'type': 'log', 'line': msg})
     if _engine is None:
         _engine = tg_engine.Engine(
             on_log=lambda msg: _emit({'type': 'log', 'line': msg}),
@@ -438,6 +441,9 @@ async def refresh_avatar(body: dict):
         def _run():
             return tg_profile.refresh_one(ROOT, name)
         info = await asyncio.to_thread(_run)
+        if info is None:
+            # refresh_one 已把原因打进日志(无json/无session/登录失效/连接失败)
+            return {'ok': False, 'msg': '刷新失败(原因见日志)', 'info': {}}
     return {'ok': info is not None, 'info': _jsonable(info) if info else {}}
 
 
