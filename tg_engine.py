@@ -1498,6 +1498,7 @@ class Engine:
             self._state('done', '已有任务在运行')
             return None
         _ensure_telethon()
+        import tg_profile
         accounts = scan_accounts(root)
         results_path = os.path.join(tg_tool.SCRIPT_DIR, 'poll_results.json')
         self._task_running = True
@@ -1547,15 +1548,17 @@ class Engine:
                         cfg_path, cfg = find_cfg(path)
                         client = make_client(cfg_path, cfg)
                         try:
-                            await client.connect()
+                            await asyncio.wait_for(client.connect(), timeout=30)
                             if await client.is_user_authorized():
                                 ok_n += 1
                                 results[name] = {'alive': True, 'msg': '存活', 'time': now}
                                 self._log(T('t160', i, total, name))
                             else:
-                                results[name] = {'alive': False,
-                                                 'msg': '登录态失效', 'time': now}
-                                self._log(T('t161', i, total, name, '登录态失效'))
+                                # authorized=False = session 被服务器拒绝,账号未死,重新登录即可
+                                results[name] = {'alive': None,
+                                                 'msg': 'session 失效,账号未死,请重新登录(勿删号!)',
+                                                 'time': now}
+                                self._log(f'[轮询] {i}/{total} {name}: session 失效,未判定死号(重新登录可恢复)')
                         finally:
                             try:
                                 await client.disconnect()
@@ -1573,11 +1576,15 @@ class Engine:
                                              'msg': f'存活(限流)', 'time': now}
                             self._log(T('t160', i, total, name) + '(限流)')
                         else:
-                            results[name] = {'alive': False, 'msg': msg[:80], 'time': now}
-                            self._log(T('t161', i, total, name, msg[:60]))
+                            kind = tg_profile.classify_conn_error(e)
+                            # 只有封禁/注销才是真死号;session 失效与网络失败一律不判死
+                            results[name] = {'alive': kind == 'banned',
+                                             'msg': tg_profile._err_msg(kind, e)[:80],
+                                             'time': now}
+                            self._log(f'[轮询] {i}/{total} {name}: {tg_profile._err_msg(kind, e)}')
                 _save(results)
                 await self._sleep(1.0)
-            dead_n = sum(1 for v in results.values() if not v.get('alive'))
+            dead_n = sum(1 for v in results.values() if v.get('alive') is False)
             self._log(T('t163', ok_n, len(results), dead_n))
             self._state('done', f'轮询完成: 存活 {ok_n}/{len(results)}')
         except Exception as e:

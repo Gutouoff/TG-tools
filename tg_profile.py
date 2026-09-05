@@ -209,8 +209,19 @@ async def _fetch_one(loop, name, d, cfg_path, cfg):
     if client is None:
         tg_tool.log(f'[资料] {name}: 无 session 文件且无 session_str,无法连接')
         return None
+    last_err = None
+    for attempt in range(3):          # 网络抖动重试,3 次都失败才算失败(不判死号)
+        try:
+            await asyncio.wait_for(client.connect(), timeout=20)
+            last_err = None
+            break
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                await asyncio.sleep(1.5 + attempt)
+    if last_err is not None:
+        raise last_err
     try:
-        await asyncio.wait_for(client.connect(), timeout=20)
         if not await asyncio.wait_for(client.is_user_authorized(), timeout=10):
             tg_tool.log(f'[资料] {name}: 登录态失效(session 过期或在别处被踢)')
             return None
@@ -239,6 +250,41 @@ async def _fetch_one(loop, name, d, cfg_path, cfg):
             await asyncio.wait_for(client.disconnect(), timeout=10)
         except Exception:
             pass
+
+
+_BANNED_KEYS = ('PHONE_NUMBER_BANNED', 'USER_DEACTIVATED')
+_SESSION_KEYS = ('AUTH_KEY_UNREGISTERED', 'AUTH_KEY_NOT_FOUND', 'AUTH_KEY_DUPLICATED',
+                 'AUTH_KEY_INVALID', 'SESSION_REVOKED', 'SESSION_EXPIRED',
+                 'SESSION_PASSWORD_NEEDED')
+
+
+def classify_conn_error(e) -> str:
+    """连接/拉取异常分类:
+    'banned' = 账号封禁/注销(真死号) / 'session' = 登录态失效(号活着,需重登,勿删!)
+    / 'net' = 网络类(未知) / 'other' = 其他异常(未知)。"""
+    text = f'{type(e).__name__}: {e}'.upper()
+    if any(k in text for k in _BANNED_KEYS):
+        return 'banned'
+    if any(k in text for k in _SESSION_KEYS):
+        return 'session'
+    if 'TIMEOUT' in type(e).__name__.upper() or isinstance(e, TimeoutError):
+        return 'net'
+    if isinstance(e, (ConnectionError, OSError)):
+        return 'net'
+    if any(k in type(e).__name__ for k in ('Connection', 'NotConnected', 'Socket', 'Cancelled')):
+        return 'net'
+    return 'other'
+
+
+def _err_msg(kind: str, e) -> str:
+    """按分类输出面向用户的提示。"""
+    if kind == 'banned':
+        return '账号封禁/注销(真死号)'
+    if kind == 'session':
+        return 'session 失效,账号未死,请重新登录(勿删号!)'
+    if kind == 'net':
+        return '网络连接失败,状态未知(勿删号,可稍后重试)'
+    return f'异常未判定: {type(e).__name__}'
 
 
 def _worker(root, on_update):
@@ -302,7 +348,8 @@ def refresh_one(root, name):
         info = loop.run_until_complete(
             asyncio.wait_for(_fetch_one(loop, name, os.path.join(root, name), js[0], cfg), timeout=90))
     except Exception as e:
-        tg_tool.log(f'[资料] {name}: 连接/拉取失败 {type(e).__name__}: {e}')
+        kind = classify_conn_error(e)
+        tg_tool.log(f'[资料] {name}: {_err_msg(kind, e)} ({type(e).__name__}: {e})')
         info = None
     finally:
         loop.close()
