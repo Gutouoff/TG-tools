@@ -1487,6 +1487,106 @@ class Engine:
             return True
         return False
 
+    # ---------- 账号轮询(保活+测活) ----------
+
+    def poll_accounts(self, root):
+        """轮询全部账号: 逐个登录一次防死号,顺带测活。结果落盘 poll_results.json。"""
+        return self._submit(self._do_poll_accounts(root))
+
+    async def _do_poll_accounts(self, root):
+        if self._task_running:
+            self._state('done', '已有任务在运行')
+            return None
+        _ensure_telethon()
+        accounts = scan_accounts(root)
+        results_path = os.path.join(tg_tool.SCRIPT_DIR, 'poll_results.json')
+        self._task_running = True
+        self._cancel.clear()
+        self._state('task_start', '账号轮询')
+
+        def _save(res):
+            try:
+                json.dump(res, open(results_path, 'w', encoding='utf-8'),
+                          ensure_ascii=False, indent=1)
+            except Exception:
+                pass
+
+        def _now():
+            return time.strftime('%Y-%m-%d %H:%M')
+
+        results, ok_n = {}, 0
+        total = len(accounts)
+        self._log(f'[轮询] 开始: 共 {total} 个账号,逐号登录保活+测活(每号间隔 1s)')
+        try:
+            for i, (name, path, st) in enumerate(accounts, 1):
+                if self._check_cancel():
+                    self._log(T('t164'))
+                    break
+                self._prog(i, total, name)
+                now = _now()
+                if st == 'empty':
+                    results[name] = {'alive': False, 'msg': '无登录态', 'time': now}
+                    self._log(T('t165', name))
+                elif name in self._pool:
+                    ok_n += 1
+                    results[name] = {'alive': True, 'msg': '在线', 'time': now}
+                    self._log(T('t160', i, total, name))
+                else:
+                    try:
+                        if st == 'tdata':
+                            loop = asyncio.get_event_loop()
+                            okc = await loop.run_in_executor(
+                                None, tg_tool._convert_tdata, path)
+                            if not okc:
+                                results[name] = {'alive': False,
+                                                 'msg': 'tdata 转换失败', 'time': now}
+                                self._log(T('t161', i, total, name, 'tdata 转换失败'))
+                                _save(results)
+                                await self._sleep(1.0)
+                                continue
+                        cfg_path, cfg = find_cfg(path)
+                        client = make_client(cfg_path, cfg)
+                        try:
+                            await client.connect()
+                            if await client.is_user_authorized():
+                                ok_n += 1
+                                results[name] = {'alive': True, 'msg': '存活', 'time': now}
+                                self._log(T('t160', i, total, name))
+                            else:
+                                results[name] = {'alive': False,
+                                                 'msg': '登录态失效', 'time': now}
+                                self._log(T('t161', i, total, name, '登录态失效'))
+                        finally:
+                            try:
+                                await client.disconnect()
+                            except Exception:
+                                pass
+                    except SystemExit:
+                        results[name] = {'alive': False, 'msg': '无凭据 json', 'time': now}
+                        self._log(T('t161', i, total, name, '无凭据 json'))
+                    except Exception as e:
+                        msg = f'{type(e).__name__}: {str(e)[:70]}'
+                        if 'FloodWait' in msg:
+                            # 限流=服务器可达=账号活着
+                            ok_n += 1
+                            results[name] = {'alive': True,
+                                             'msg': f'存活(限流)', 'time': now}
+                            self._log(T('t160', i, total, name) + '(限流)')
+                        else:
+                            results[name] = {'alive': False, 'msg': msg[:80], 'time': now}
+                            self._log(T('t161', i, total, name, msg[:60]))
+                _save(results)
+                await self._sleep(1.0)
+            dead_n = sum(1 for v in results.values() if not v.get('alive'))
+            self._log(T('t163', ok_n, len(results), dead_n))
+            self._state('done', f'轮询完成: 存活 {ok_n}/{len(results)}')
+        except Exception as e:
+            self._log(f'[!] 轮询出错: {type(e).__name__}: {e}')
+            self._state('done', f'轮询出错: {e}')
+        finally:
+            self._task_running = False
+        return results
+
 
 def _dlbl_safe(d):
     try:

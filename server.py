@@ -207,6 +207,7 @@ def _country_of(phone):
 def _scan_accounts():
     raw = tg_engine.scan_accounts(ROOT)
     prof = tg_profile.load_profiles()
+    poll = _load_poll_results()
     out = []
     for name, path, st in raw:
         a = {'name': name, 'path': path, 'state': st,
@@ -233,6 +234,11 @@ def _scan_accounts():
                             str(p.get('last') or '')).strip()
         cc, cname = _country_of(a['phone'])
         a['country'] = cname
+        pr = poll.get(name)
+        if pr:
+            a['poll_alive'] = bool(pr.get('alive'))
+            a['poll_time'] = str(pr.get('time', ''))
+            a['poll_msg'] = str(pr.get('msg', ''))
         out.append(a)
     return out
 
@@ -610,6 +616,27 @@ async def update_telegram():
     eng = init_engine()
     eng.update_telegram()
     return {'ok': True}
+
+
+@app.post('/api/poll-accounts')
+async def poll_accounts():
+    """账号轮询: 逐号登录一次保活+测活(后台任务,进度走 WebSocket)。"""
+    eng = init_engine()
+    try:
+        eng.poll_accounts(ROOT)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': True, 'msg': '已开始'}
+
+
+def _load_poll_results():
+    try:
+        p = os.path.join(tg_tool.SCRIPT_DIR, 'poll_results.json')
+        if os.path.isfile(p):
+            return json.load(open(p, encoding='utf-8'))
+    except Exception:
+        pass
+    return {}
 
 
 @app.post('/api/launch-client')

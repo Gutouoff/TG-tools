@@ -48,6 +48,7 @@
     sendChatMsg,
     launchClient,
     renameAccount,
+    pollAccounts,
     getPing,
     TOKEN,
     type Account,
@@ -264,6 +265,14 @@
     }
     const r = await launchClient(current.path);
     addLog(r.ok ? `已启动客户端: ${current.name}(${r.msg})` : `启动客户端失败: ${r.msg}`);
+  }
+
+  // 账号轮询: 逐号登录保活+测活(后台任务,进度/结果走日志页)
+  async function doPollAccounts() {
+    setView('log');
+    addLog('开始账号轮询(逐号登录保活+测活,每号间隔1s)…');
+    const r = await pollAccounts();
+    if (!r.ok) addLog(`轮询启动失败: ${r.msg}`);
   }
 
   // 文件夹重命名弹窗
@@ -1073,6 +1082,7 @@
           <span class="meta">
             <span class="nm">
               {a.display || a.name}
+              {#if (a as any).poll_alive === false}<span class="dead-tag" title={`轮询: ${(a as any).poll_msg || '死号'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''}`}>死</span>{/if}
               {#if a.username}<span class="uname">{a.username}</span>{/if}
             </span>
             <span class="sub">{a.country ? `${a.country} ` : ''}{a.phone ? `+${a.phone}` : a.state}</span>
@@ -1197,6 +1207,7 @@
       <div class="grid">
         <md-outlined-button onclick={() => updateTelegram()}>更新本体</md-outlined-button>
         <md-outlined-button onclick={doRefreshAccountInfo}>刷新账号信息</md-outlined-button>
+        <md-outlined-button onclick={doPollAccounts}>账号轮询</md-outlined-button>
       </div>
     </details>
       {/if}
@@ -1918,6 +1929,15 @@
     font-weight: 400;
     color: var(--md-sys-color-on-surface-variant);
     margin-left: 4px;
+  }
+  .dead-tag {
+    font-size: 10px;
+    color: #fff;
+    background: var(--md-sys-color-error, #b3261e);
+    border-radius: 4px;
+    padding: 0 4px;
+    margin-left: 4px;
+    cursor: default;
   }
   .sub {
     font-size: 12px;

@@ -240,6 +240,8 @@ export async function renameAccount(path: string, newName: string) {
   return r.json() as Promise<{ ok: boolean; msg?: string; new_path?: string }>;
 }
 
+export const pollAccounts = () => postJson('/api/poll-accounts');
+
 export async function sendChatMsg(account: string, dialogId: number, text: string) {
   const r = await apiFetch('/api/chat/send', {
     method: 'POST',
