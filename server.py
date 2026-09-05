@@ -558,8 +558,11 @@ async def export_accounts():
     try:
         os.startfile(out_path)          # Windows: 调系统关联程序打开
     except Exception:
+        # 无关联程序时的兜底: 资源管理器定位文件。
+        # 千万不能用 sys.executable 打开——打包环境里那是本程序 exe,
+        # 会把 xlsx 当参数再启动一个工具箱实例
         try:
-            subprocess.Popen([sys.executable, out_path], cwd=os.path.dirname(out_path))
+            subprocess.Popen(['explorer', '/select,', out_path])
         except Exception:
             pass
     return {'ok': True, 'path': out_path, 'count': len(rows), 'time': export_time}

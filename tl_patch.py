@@ -12,7 +12,7 @@ PyPI 最新的 Telethon 1.44 (2026-06-15) 尚未跟进,layer 227 落后服务器
 """
 from telethon.tl import alltlobjects
 from telethon.tl.patched import Message as PatchedMessage
-from telethon.tl.types import User
+from telethon.tl.types import User, Channel
 
 
 class MessageNew(PatchedMessage):
@@ -123,6 +123,8 @@ def apply():
         alltlobjects.tlobjects[0x3ae56482] = MessageNew
     if 0xb1b8cc83 not in alltlobjects.tlobjects:
         alltlobjects.tlobjects[0xb1b8cc83] = UserNew
+    if 0xd49f34c6 not in alltlobjects.tlobjects:
+        alltlobjects.tlobjects[0xd49f34c6] = ChannelNew
     return MessageNew
 
 
@@ -238,6 +240,40 @@ class UserNew(User):
         # user#b1b8cc83 已知字段后还带 16 字节未知尾部。不消费会破坏外层
         # (Vector 等容器)的同步解析。只在"小段且 4 字节对齐"时跳过——
         # 大段剩余更可能是解析错位或外层还有别的对象,留给上层报错。
+        try:
+            left = len(reader.stream) - reader.position
+            if 0 < left <= 64 and left % 4 == 0:
+                obj.unknown_tail = reader.read(left)
+        except Exception:
+            pass
+        return obj
+
+
+class ChannelNew(Channel):
+    """新版 channel#d49f34c6 (2026-09): 与 Telethon 1.44 的 channel#1c32b11c
+    字段布局一致,仅尾部新增 linked_community_id:flags2.20?long。
+    拉对话/更新时服务器已开始返回此构造体。
+    解析直接复用父类 from_reader(字段顺序完全一致),只补读尾部新字段。"""
+    CONSTRUCTOR_ID = 0xd49f34c6
+    SUBCLASS_OF_ID = Channel.SUBCLASS_OF_ID
+
+    @classmethod
+    def from_reader(cls, reader):
+        flags2 = 0
+        try:
+            # 先探读 flags2(第二个 int)再回退,父类从同一位置重新读
+            reader.seek(4)
+            flags2 = reader.read_int(signed=False)
+            reader.seek(-8)
+        except Exception:
+            pass
+        obj = Channel.from_reader(reader)
+        try:
+            if flags2 & 0x100000:   # flags2.20 linked_community_id
+                obj.linked_community_id = reader.read_long()
+        except Exception:
+            pass
+        # 未知尾部防御(同 UserNew): 服务器 schema 可能比已知定义更新
         try:
             left = len(reader.stream) - reader.position
             if 0 < left <= 64 and left % 4 == 0:

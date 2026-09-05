@@ -1297,8 +1297,13 @@ class Engine:
                 self._gui_schedule(lambda d=data: on_done(True, d))
             return data
         except Exception as e:
+            msg = str(e)
+            # 服务器防盗号保护: 新登录的 session 24h 内不能管理其他授权
+            if 'too new' in msg.lower() or 'SESSION_TOO_NEW' in msg:
+                msg = ('新登录的 session 24 小时内不能注册通行密钥'
+                       '(Telegram 防盗号保护),请先用该号正常挂机一天后再试')
             if on_done:
-                self._gui_schedule(lambda msg=str(e): on_done(False, msg))
+                self._gui_schedule(lambda m=msg: on_done(False, m))
             return None
 
     def register_passkey(self, cred_id, raw_id, client_data, attestation_data, on_done=None):
