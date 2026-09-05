@@ -171,6 +171,12 @@ def _iter_accounts(root):
 async def _fetch_one(loop, name, d, cfg_path, cfg):
     """连接一个账号拉 get_me + 头像。返回 dict 或 None。"""
     import tg_tool
+    # 应用 TL 构造体补丁(幂等): 冷启动直接刷新时引擎可能还没跑过 make_client
+    try:
+        import tl_patch
+        tl_patch.apply()
+    except Exception:
+        pass
     from telethon import TelegramClient, functions
     try:
         from telethon.sessions import StringSession
