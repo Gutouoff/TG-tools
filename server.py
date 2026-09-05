@@ -76,6 +76,15 @@ def _emit(data: dict):
     # 日志行统一打码手机号(引擎日志不走 tg_tool.log,补一层)
     if data.get('type') == 'log' and data.get('line'):
         data = {**data, 'line': tg_tool._mask_phone_text(data['line'])}
+    # debug 诊断事件(蓝牙原始广播/厂商数据/EID 诊断)只在 debug 等级下发
+    if data.get('type') == 'state':
+        st = str(data.get('status') or '')
+        if st.startswith(('passkey_adv:', 'passkey_mfg:', 'passkey_diag:')):
+            try:
+                if _load_settings().get('log_level') != 'debug':
+                    return
+            except Exception:
+                pass
     if _loop:
         try:
             asyncio.run_coroutine_threadsafe(_ws_broadcast(data), _loop)
@@ -448,7 +457,10 @@ async def avatar_image(name: str):
                 os.path.commonpath([real, d]) == d for d in allowed)
             if ok:
                 media = _guess_image_media(real)
-                return FileResponse(real, media_type=media) if media else FileResponse(real)
+                resp = FileResponse(real, media_type=media) if media else FileResponse(real)
+                # 头像文件会被原地覆盖更新,禁止 WebView2 缓存旧图
+                resp.headers['Cache-Control'] = 'no-cache'
+                return resp
         except ValueError:
             pass
     return JSONResponse(status_code=404, content={'detail': 'no avatar'})
@@ -621,6 +633,65 @@ async def launch_client(body: dict):
     except Exception as e:
         return {'ok': False, 'msg': f'启动失败: {e}'}
     return {'ok': True, 'msg': os.path.relpath(exe, path)}
+
+
+@app.post('/api/rename-account')
+async def rename_account(body: dict):
+    """重命名账号文件夹(在线账号会先自动断开:session 文件占用会锁住改名)。"""
+    import re
+    path = _ensure_in_root(body.get('path', ''))
+    new_name = str(body.get('new_name', '') or '').strip()
+    old_name = os.path.basename(os.path.normpath(path))
+    if not os.path.isdir(path):
+        return {'ok': False, 'msg': '账号目录不存在'}
+    if not new_name:
+        return {'ok': False, 'msg': '请输入新名称'}
+    if new_name != old_name:
+        if not re.fullmatch(r'[^\\/:*?"<>|]{1,60}', new_name):
+            return {'ok': False, 'msg': '名称含非法字符(\\ / : * ? " < > |)或过长'}
+        if new_name in tg_engine.EXCLUDE_DIRS:
+            return {'ok': False, 'msg': '该名称是保留目录名'}
+        if os.path.exists(os.path.join(os.path.dirname(path), new_name)):
+            return {'ok': False, 'msg': '同名文件夹已存在'}
+    if new_name == old_name:
+        return {'ok': True, 'new_path': path, 'msg': '名称未变化'}
+    eng = init_engine()
+    # 在线账号先断开(SQLite session 文件被占用会让 os.rename 报错)
+    try:
+        fut = eng.disconnect(old_name)
+        await asyncio.wait_for(asyncio.wrap_future(fut), 30)
+    except Exception:
+        pass
+    try:
+        os.rename(path, os.path.join(os.path.dirname(path), new_name))
+    except OSError as e:
+        return {'ok': False, 'msg': f'重命名失败: {e}(若刚用过「启动客户端」,请先关闭该客户端)'}
+    # 分组/资料缓存/头像文件同步改名(失败不阻塞,缓存下次刷新会自愈)
+    try:
+        if os.path.isfile(GROUPS_FILE):
+            g = json.load(open(GROUPS_FILE, encoding='utf-8'))
+            changed = False
+            for k, lst in g.items():
+                if isinstance(lst, list) and old_name in lst:
+                    g[k] = [new_name if x == old else x for x in lst]
+                    changed = True
+            if changed:
+                json.dump(g, open(GROUPS_FILE, 'w', encoding='utf-8'), ensure_ascii=False)
+    except Exception:
+        pass
+    try:
+        prof = tg_profile.load_profiles()
+        if old_name in prof:
+            prof[new_name] = prof.pop(old_name)
+            tg_profile.save_profiles(prof)
+        old_av = tg_profile.avatar_path(old_name)
+        if os.path.isfile(old_av):
+            os.replace(old_av, tg_profile.avatar_path(new_name))
+    except Exception:
+        pass
+    new_path = os.path.join(os.path.dirname(path), new_name)
+    _emit({'type': 'log', 'line': f'[账号] 文件夹已重命名: {old_name} → {new_name}'})
+    return {'ok': True, 'new_path': new_path, 'msg': new_name}
 
 
 # ---------- 安全: 2FA / passkey / 邮箱 / 设备 / 资料 ----------
@@ -1074,6 +1145,7 @@ DEFAULT_SETTINGS = {
     'recv_exclude_groups': False,
     'recv_exclude_bots': False,
     'join_links': [],               # 要加入的群/频道 [{name:备注,link,type:'group'|'channel'}]
+    'log_level': 'info',            # info=常规 / debug=含蓝牙原始广播等诊断日志
 }
 
 

@@ -47,6 +47,7 @@
     joinChats,
     sendChatMsg,
     launchClient,
+    renameAccount,
     TOKEN,
     type Account,
     type LogEvent,
@@ -124,7 +125,9 @@
     avatarFailed = next;
   }
   function avatarUrl(a: Account): string {
-    return `/api/avatar-image?name=${encodeURIComponent(a.name)}&token=${encodeURIComponent(TOKEN)}`;
+    // v 参数跟随头像文件更新时间变化,绕开 WebView2 对同 URL 的旧图缓存
+    const v = (a as any).avatar_v || a.avatar || '';
+    return `/api/avatar-image?name=${encodeURIComponent(a.name)}&v=${encodeURIComponent(String(v))}&token=${encodeURIComponent(TOKEN)}`;
   }
 
   function applyFilter() {
@@ -200,6 +203,7 @@
         const av = await refreshAvatar(a.name);
         if (av.ok && av.info && av.info.avatar) {
           a.avatar = av.info.avatar;
+          (a as any).avatar_v = String(Date.now());
           avatarFailed = new Set([...avatarFailed].filter((n) => n !== a.name));
           applyFilter();
         }
@@ -258,6 +262,43 @@
     const r = await launchClient(current.path);
     addLog(r.ok ? `已启动客户端: ${current.name}(${r.msg})` : `启动客户端失败: ${r.msg}`);
   }
+
+  // 文件夹重命名弹窗
+  let renameOpen = $state(false);
+  let renameTarget = $state<Account | null>(null);
+  let renameInput = $state('');
+  let renaming = $state(false);
+  function openRename(a: Account) {
+    renameTarget = a;
+    renameInput = a.name;
+    renameOpen = true;
+  }
+  async function doRename() {
+    if (!renameTarget || renaming) return;
+    const newName = renameInput.trim();
+    if (!newName) return;
+    if (newName === renameTarget.name) {
+      renameOpen = false;
+      return;
+    }
+    renaming = true;
+    try {
+      const r = await renameAccount(renameTarget.path, newName);
+      if (r.ok) {
+        addLog(`已重命名: ${renameTarget.name} → ${newName}`);
+        renameOpen = false;
+        if (current?.name === renameTarget.name) current = null;
+        markOnline(renameTarget.name, false);
+        await loadAccounts();
+      } else {
+        addLog(`重命名失败: ${r.msg}`);
+      }
+    } catch (e: any) {
+      addLog(`重命名异常: ${e?.message ?? e}`);
+    } finally {
+      renaming = false;
+    }
+  }
   async function doPack() {
     if (!current) {
       addLog('请先选择账号');
@@ -288,14 +329,18 @@
       if (r.ok && r.info) {
         if (r.info.avatar) {
           current.avatar = r.info.avatar;
+          // v 参数变化才会重新请求头像(URL 不同绕开 WebView2 缓存)
+          (current as any).avatar_v = String(Date.now());
           avatarFailed = new Set([...avatarFailed].filter((n) => n !== current!.name));
         }
-        if (r.info.display) current.display = r.info.display;
+        if (r.info.first || r.info.last) {
+          current.display = `${r.info.first || ''} ${r.info.last || ''}`.trim();
+        }
         if (r.info.username) current.username = r.info.username;
         applyFilter();
         addLog(`已刷新账号信息: ${current.name}`);
       } else {
-        addLog(`刷新失败: ${r.msg || '未知错误'}`);
+        addLog(`刷新失败: ${r.msg || (r.info ? '未知错误' : '该账号无 session 或登录态失效')}`);
       }
     } catch (e: any) {
       addLog(`刷新异常: ${e?.message ?? e}`);
@@ -327,6 +372,7 @@
       theme_seed: '#009688', theme_bg: '#F7FAF9', theme_dark: '#FFFFFF', theme_topbar: '#00796B', theme_mode: 'light', card_order: '基本信息,聊天,安全,删除,其他设置',
       proxy_mode: 'none', proxy_scheme: 'socks5', proxy_host: '', proxy_port: '',
       join_links: [],
+      log_level: 'info',
     };
     settingsOpen = true;
     try {
@@ -1025,6 +1071,7 @@
       {#if onlineNames.has(ctxMenu.name)}
         <button class="ctx-disconnect" onclick={() => { disconnectOne(ctxMenu.name); closeCtx(); }}>断开连接（保持其他在线）</button>
       {/if}
+      <button onclick={() => { const a = accounts.find((x) => x.name === ctxMenu!.name); if (a) openRename(a); closeCtx(); }}>重命名文件夹…</button>
     </div>
   {/if}
 
@@ -1370,6 +1417,30 @@
   </section>
 </div>
 
+{#if renameOpen}
+  <div class="modal-mask" onclick={() => (renameOpen = false)}>
+    <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
+      <div class="rename-head">
+        <span>文件夹重命名</span>
+        <button class="back set-close rename-x" title="关闭" onclick={() => (renameOpen = false)}>✕</button>
+      </div>
+      <input
+        class="rename-input"
+        bind:value={renameInput}
+        onkeydown={(e) => { if (e.key === 'Enter') doRename(); }}
+        placeholder="输入新的文件夹名称"
+        maxlength="60"
+      />
+      <div class="rename-btns">
+        <md-outlined-button onclick={() => (renameOpen = false)}>取消</md-outlined-button>
+        <md-filled-button disabled={renaming || !renameInput.trim()} onclick={doRename}>
+          {renaming ? '处理中…' : '确定'}
+        </md-filled-button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 {#if settingsOpen}
   <div class="modal-mask" onclick={() => (settingsOpen = false)}>
     <div class="modal settings-modal" onclick={(e) => e.stopPropagation()}>
@@ -1392,6 +1463,13 @@
             <div class="set-row">
               <span class="set-label">默认压缩密码（AES-256）</span>
               <input class="set-input" type="password" autocomplete="new-password" bind:value={settings.pack_password} placeholder="留空则不加密" />
+            </div>
+            <div class="set-row">
+              <span class="set-label">日志等级</span>
+              <select class="set-select" bind:value={settings.log_level}>
+                <option value="info">常规（info）</option>
+                <option value="debug">调试（debug，含蓝牙诊断等原始日志）</option>
+              </select>
             </div>
           </div>
         {:else if settingsSection === 'appearance'}
@@ -1981,6 +2059,42 @@
     font-size: 12px;
     color: var(--md-sys-color-on-surface-variant);
     margin: 4px 0 10px;
+  }
+  /* 文件夹重命名弹窗 */
+  .rename-modal {
+    width: 400px;
+    max-width: calc(100vw - 32px);
+  }
+  .rename-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  .rename-x {
+    font-size: 16px;
+    padding: 4px 8px;
+  }
+  .rename-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    font-size: 14px;
+    outline: none;
+  }
+  .rename-input:focus {
+    border-color: var(--md-sys-color-primary);
+  }
+  .rename-btns {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 14px;
   }
   .sec-head h3 {
     margin: 0;
