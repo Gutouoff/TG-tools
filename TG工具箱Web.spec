@@ -6,6 +6,7 @@ from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 hiddenimports = []
 hiddenimports += collect_submodules('telethon')
+hiddenimports += collect_submodules('openpyxl')
 hiddenimports += collect_submodules('opentele')
 hiddenimports += collect_submodules('fastapi')
 hiddenimports += collect_submodules('uvicorn')

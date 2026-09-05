@@ -454,6 +454,119 @@ async def refresh_avatar(body: dict):
     return {'ok': info is not None, 'info': _jsonable(info) if info else {}}
 
 
+@app.get('/api/export-accounts')
+async def export_accounts():
+    """导出账号信息到固定表格 账号总表.xlsx(ROOT 下,每次覆盖更新)并用系统程序直接打开。"""
+    import subprocess
+    import sys
+    from datetime import datetime
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return {'ok': False, 'msg': '服务器缺少 openpyxl 依赖,无法导出'}
+
+    rows = _scan_accounts()
+    eng = init_engine()
+    sec = {}
+    try:
+        ok, data = await _call(eng.online_accounts, timeout=10)
+        online = [o.get('name') if isinstance(o, dict) else o for o in (_jsonable(data) or [])]
+    except Exception:
+        online = []
+    if online:
+        try:
+            ok, data = await _call(lambda: eng.security_info(online), timeout=60)
+            if ok and data:
+                sec = data
+        except Exception:
+            pass
+
+    def _fmt_phone(raw: str) -> str:
+        """手机号 -> Excel 公式 ="+"&"62"&" "&"8112115091"。"""
+        digits = str(raw or '').strip()
+        if not digits:
+            return ''
+        if not digits.startswith('+'):
+            digits = '+' + digits
+        body = digits[1:].replace(' ', '').replace('-', '')
+        cc = body[:2] if len(body) > 2 else body
+        rest = body[2:] if len(body) > 2 else ''
+        return f'="+"&"{cc}"&" "&"{rest}"'
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '账号信息'
+    headers = ['用户名', 'ID', 'username', '手机号码', '邮箱', '通行密钥', '2FA', '注册时间', '国家', '状态', '导出时间']
+    header_fill = PatternFill('solid', fgColor='009688')
+    header_font = Font(name='微软雅黑', size=11, bold=True, color='FFFFFF')
+    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    thin = Border(*(Side(style='thin', color='DCE9E5'),) * 4)
+    body_font = Font(name='微软雅黑', size=10)
+    ws.append(headers)
+    for c in ws[1]:
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = center
+        c.border = thin
+    export_time = datetime.now().strftime('%Y-%m-%d %H:%M')
+    for a in rows:
+        name = a.get('name', '')
+        info = sec.get(name) or {}
+        poll = a.get('poll_alive')
+        status = '死号' if poll is False else ''
+        if not status and a.get('state') == 'empty':
+            status = '无登录态'
+        pk_n = info.get('passkeys')
+        ws.append([
+            a.get('display') or a.get('name', ''),
+            a.get('uid', ''),
+            a.get('username', ''),
+            _fmt_phone(a.get('phone', '')),
+            info.get('email') or '',
+            str(pk_n) if pk_n is not None else '',
+            info.get('twofa') or '',
+            '',
+            a.get('country', ''),
+            status,
+            export_time,
+        ])
+    for row in ws.iter_rows(min_row=2):
+        for c in row:
+            c.font = body_font
+            c.border = thin
+            c.alignment = Alignment(vertical='center')
+    for i, w in enumerate([18, 14, 18, 22, 28, 10, 18, 12, 10, 10, 16], 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = 'A2'
+    ws.auto_filter.ref = ws.dimensions
+
+    # 固定路径覆盖写入,每次导出都在同一表格上更新
+    # 优先部署目录(D:\Desktop\TG小号,exe 的 ROOT),源码调试时回退 ROOT
+    base = ROOT if ROOT != os.path.dirname(SCRIPT_DIR) else ROOT
+    table_root = r'D:\Desktop\TG小号' if os.path.isdir(r'D:\Desktop\TG小号') else ROOT
+    out_path = os.path.join(table_root, '账号总表.xlsx')
+    try:
+        wb.save(out_path)
+    except PermissionError:
+        return {'ok': False, 'msg': '表格正被 Excel 打开占用,请关闭表格后重试'}
+    except Exception as e:
+        return {'ok': False, 'msg': f'写入失败: {e}'}
+
+    # 用系统默认程序(Excel)直接打开表格
+    try:
+        os.startfile(out_path)          # Windows: 调系统关联程序打开
+    except Exception:
+        try:
+            subprocess.Popen([sys.executable, out_path], cwd=os.path.dirname(out_path))
+        except Exception:
+            pass
+    return {'ok': True, 'path': out_path, 'count': len(rows), 'time': export_time}
+
+
+
+
 @app.get('/api/avatar-image')
 async def avatar_image(name: str):
     """返回账号头像图片(供前端 <img> 加载,失败 404 回退色块)。"""

@@ -218,6 +218,9 @@ export const importArchive = (data: string, name: string) => postJson('/api/impo
 
 // ---------- 打包 / 设置 / 我 ----------
 export const packAccount = (path: string, name: string) => postJson('/api/pack', { path, name });
+
+export const exportAccounts = (): Promise<{ ok: boolean; path?: string; count?: number; msg?: string }> =>
+  getJson('/api/export-accounts');
 export const fetchAvatars = () => postJson('/api/fetch-avatars');
 export const refreshAvatar = (name: string) => postJson('/api/refresh-avatar', { name });
 export const getSettings = () => getJson('/api/settings');

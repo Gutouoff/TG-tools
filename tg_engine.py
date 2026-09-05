@@ -970,6 +970,64 @@ class Engine:
         tg_profile.save_profiles(prof)
         return info
 
+    def registered_date(self, name):
+        """估算账号注册时间(遍历最早对话的历史消息取最早日期,不可得返回 None)。"""
+        return self._submit(self._do_registered_date(name))
+
+    async def _do_registered_date(self, name):
+        entry = self._pool.get(name)
+        if not entry:
+            raise RuntimeError(f'账号 {name} 不在线')
+        client = entry['client']
+        best = None
+        try:
+            async for d in client.iter_dialogs(limit=30):
+                try:
+                    async for m in client.iter_messages(d.id, limit=1, reverse=True):
+                        if m.date:
+                            dt = m.date.replace(tzinfo=None)
+                            if best is None or dt < best:
+                                best = dt
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return best.strftime('%Y-%m-%d') if best else None
+
+    def security_info(self, names):
+        """批量查询在线账号的邮箱/2FA 密码提示/passkey 数量(仅在线,离线跳过)。"""
+        return self._submit(self._do_security_info(names or []))
+
+    async def _do_security_info(self, names):
+        _ensure_telethon()
+        from telethon.tl.functions.account import GetPasskeysRequest, GetPasswordRequest
+        out = {}
+        for name in names:
+            entry = self._pool.get(name)
+            if not entry:
+                continue
+            client = entry['client']
+            info = {}
+            try:
+                pwd = await asyncio.wait_for(client(GetPasswordRequest()), timeout=8)
+                if getattr(pwd, 'current_algo', None):
+                    hint = (getattr(pwd, 'hint', '') or '').strip()
+                    info['twofa'] = hint if hint else '已设置'
+                else:
+                    info['twofa'] = '未设置'
+                email = (getattr(pwd, 'email', '') or '').strip()
+                if email:
+                    info['email'] = email
+            except Exception as e:
+                info['err'] = f'{type(e).__name__}: {str(e)[:50]}'
+            try:
+                pk = await asyncio.wait_for(client(GetPasskeysRequest()), timeout=8)
+                info['passkeys'] = len(list(getattr(pk, 'passkeys', []) or []))
+            except Exception:
+                pass
+            out[name] = info
+        return out
+
     def send_message(self, account, dialog_id, text):
         """发送文本消息到指定会话(目前仅适配文本)。"""
         return self._submit(self._do_send_message(account, dialog_id, text))

@@ -37,6 +37,7 @@
     moveAccount,
     convertTdata,
     importArchive,
+    exportAccounts,
     packAccount,
     refreshAvatar,
     getSettings,
@@ -444,6 +445,23 @@
     settingsOpen = false;
     addLog('设置已保存');
     applyTheme();
+  }
+  let exporting = $state(false);
+  async function doExportAccounts() {
+    if (exporting) return;
+    exporting = true;
+    try {
+      const r = await exportAccounts();
+      if (r.ok) {
+        addLog(`表格已更新并打开(${r.count ?? '?'} 个账号): ${r.path || '账号总表.xlsx'}`);
+      } else {
+        addLog(`导出失败: ${r.msg || '未知错误'}`);
+      }
+    } catch (e: any) {
+      addLog(`导出失败: ${e?.message ?? e}`);
+    } finally {
+      exporting = false;
+    }
   }
   function toggleTheme() {
     settings = { ...settings, theme_mode: settings.theme_mode === 'dark' ? 'light' : 'dark' };
@@ -1372,6 +1390,7 @@
         <md-outlined-button onclick={() => updateTelegram()}>更新本体</md-outlined-button>
         <md-outlined-button onclick={doRefreshAccountInfo}>刷新账号信息</md-outlined-button>
         <md-outlined-button onclick={doPollAccounts}>账号轮询</md-outlined-button>
+        <md-outlined-button onclick={doExportAccounts} disabled={exporting}>{exporting ? '导出中…' : '导出表格'}</md-outlined-button>
         <md-outlined-button class="danger-btn" onclick={doOpenDeleteAccount}>删除账号</md-outlined-button>
       </div>
     </details>
@@ -1682,21 +1701,30 @@
 {#if delOpen && delTarget}
   <div class="modal-mask" onclick={() => (delOpen = false)}>
     <div class="modal rename-modal del-modal" onclick={(e) => e.stopPropagation()}>
-      <div class="rename-head">
-        <span>删除账号（不可恢复）</span>
-        <button class="back set-close rename-x" title="关闭" onclick={() => (delOpen = false)}>✕</button>
+      <div class="del-icon">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true">
+          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+        </svg>
       </div>
-      <div class="del-info">
-        <div class="del-row"><span class="set-label">账号</span><b>{delTarget.display || delTarget.name}</b></div>
-        <div class="del-row"><span class="set-label">将删除的文件夹</span></div>
-        <div class="del-path">{delTarget.path}</div>
-        <p class="set-hint" style="color: var(--md-sys-color-error)">
-          该文件夹内的 session、tdata、登录凭据等全部文件将被永久删除，无法恢复！
-        </p>
+      <div class="del-title">删除账号</div>
+      <p class="del-sub">此操作<b>不可恢复</b>。将永久删除该账号的 session、tdata、登录凭据等全部文件，删除后只能重新登录。</p>
+      <div class="set-group">
+        <div class="set-row">
+          <span class="set-label">账号</span>
+          <span class="del-val">{delTarget.display || delTarget.name}</span>
+        </div>
+        {#if delTarget.uid}<div class="set-row">
+          <span class="set-label">UID</span>
+          <span class="del-val mono">{delTarget.uid}</span>
+        </div>{/if}
+        <div class="set-row set-row-col">
+          <span class="set-label">将删除的文件夹</span>
+          <code class="del-path">{delTarget.path}</code>
+        </div>
       </div>
       <label class="del-check">
         <input type="checkbox" bind:checked={delConfirm} />
-        <span>我已确认删除该账号的全部文件</span>
+        <span>我已了解该操作不可恢复，确认删除该账号的全部文件</span>
       </label>
       <div class="rename-btns">
         <md-outlined-button onclick={() => (delOpen = false)}>取消</md-outlined-button>
@@ -2482,32 +2510,57 @@
     gap: 8px;
     margin-top: 14px;
   }
-  /* 删除账号弹窗 */
-  .del-modal .del-info {
-    margin-bottom: 8px;
+  /* 删除账号弹窗 (M3 破坏性确认) */
+  .del-modal {
+    width: 440px;
   }
-  .del-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+  .del-icon {
+    width: 52px;
+    height: 52px;
+    margin: 0 auto 12px;
+    border-radius: 50%;
+    background: var(--md-sys-color-error-container, #F9DEDC);
+    color: var(--md-sys-color-error, #B3261E);
+    display: grid;
+    place-items: center;
+  }
+  .del-title {
+    text-align: center;
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .del-sub {
+    text-align: center;
     font-size: 13px;
-    padding: 4px 0;
+    line-height: 1.6;
+    color: var(--md-sys-color-on-surface-variant);
+    margin: 0 0 14px;
+  }
+  .del-sub b {
+    color: var(--md-sys-color-error, #B3261E);
   }
   .del-row .set-label {
-    width: 100px;
     flex-shrink: 0;
-    color: var(--md-sys-color-on-surface-variant);
+  }
+  .del-val {
+    font-weight: 600;
+    color: var(--md-sys-color-on-surface);
+  }
+  .del-val.mono {
+    font-family: Consolas, monospace;
+    font-weight: 500;
   }
   .del-path {
     font-family: Consolas, monospace;
     font-size: 12px;
-    color: var(--md-sys-color-error, #b3261e);
-    background: var(--md-sys-color-surface);
-    border: 1px solid var(--md-sys-color-error, #b3261e);
-    border-radius: var(--md-sys-shape-corner-medium);
+    color: var(--md-sys-color-error, #B3261E);
+    background: color-mix(in srgb, var(--md-sys-color-error) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-error) 35%, transparent);
+    border-radius: 8px;
     padding: 8px 10px;
     word-break: break-all;
-    margin: 4px 0 8px;
+    margin: 0;
   }
   .del-check {
     display: flex;
@@ -2515,7 +2568,7 @@
     gap: 8px;
     font-size: 13px;
     cursor: pointer;
-    padding: 6px 0;
+    padding: 10px 2px;
   }
   .danger-btn {
     --md-outlined-button-color: var(--md-sys-color-error, #b3261e);
