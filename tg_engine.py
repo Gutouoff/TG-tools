@@ -239,9 +239,30 @@ class Engine:
                 cfg_path, cfg = find_cfg(account_dir)
                 client = make_client(cfg_path, cfg)
             except SystemExit:
-                # die() 会 raise SystemExit —— 引擎里转成失败状态
-                self._state('connect_fail', None)
-                return None
+                # die() 会 raise SystemExit —— 引擎里转成失败状态。
+                # 自愈: 缺 json 但有 .session 的账号,用 session 补建 json 后重试一次
+                import glob as _g
+                sess = sorted(_g.glob(os.path.join(account_dir, '*.session')))
+                healed = False
+                if sess:
+                    self._log(T('t166', name))
+                    loop = asyncio.get_event_loop()
+                    healed = await loop.run_in_executor(
+                        None, tg_tool.make_json_from_session, account_dir, sess[0])
+                if healed:
+                    try:
+                        cfg_path, cfg = find_cfg(account_dir)
+                        client = make_client(cfg_path, cfg)
+                    except SystemExit:
+                        self._state('connect_fail', None)
+                        return None
+                    except Exception as e:
+                        self._log(f'[!] {type(e).__name__}: {e}')
+                        self._state('connect_fail', None)
+                        return None
+                else:
+                    self._state('connect_fail', None)
+                    return None
             except Exception as e:
                 self._log(f'[!] {type(e).__name__}: {e}')
                 self._state('connect_fail', None)

@@ -214,6 +214,8 @@ DEFAULT_TEXTS = {
     't163': '[轮询] 完成: 存活 {0}/{1}, 死号 {2}',
     't164': '[轮询] 已停止',
     't165': '[轮询] {0}: 无登录态(缺 session),无法保活',
+    't166': '[自愈] {0}: 缺少凭据 json,正在用 session 自动补建 …',
+    't167': '[自愈] {0}: 已补建 json (账号: +{1}  昵称: {2} {3}  id={4})',
 }
 UI_TEXTS = {}
 
@@ -535,10 +537,13 @@ def pbar(done, total, width=20):
 
 def die(msg):
     log('!! ' + msg)
-    try:
-        input(T('t037'))
-    except EOFError:
-        pass
+    # CLI 交互模式才暂停;引擎线程/窗口化 exe(stdin=None)里 input() 会抛
+    # RuntimeError: lost sys.stdin —— 静默直接退出
+    if sys.stdin is not None:
+        try:
+            input(T('t037'))
+        except (EOFError, RuntimeError):
+            pass
     sys.exit(1)
 
 
@@ -617,6 +622,52 @@ def _convert_tdata(account_dir):
         if 'No account has been loaded' in str(e):
             return False   # 空 tdata(账号已登出/注销),静默跳过,不报错
         log(T('t040', folder, type(e).__name__, str(e)[:100]))
+        return False
+
+
+def make_json_from_session(account_dir, session_path):
+    """自愈: 有 .session 但缺凭据 json 的账号,用官方默认凭据连接拉 me 补写 json。
+    返回 True 成功。"""
+    import asyncio
+    stem = os.path.splitext(os.path.basename(session_path))[0]
+    try:
+        from telethon import TelegramClient
+
+        async def do():
+            client = TelegramClient(
+                session_path[:-len('.session')], 2040,
+                'b18441a1ff607e10a989891a5462e627',
+                device_model='PC', system_version='Windows', app_version='6.6.4 x64')
+            await client.connect()
+            try:
+                if not await client.is_user_authorized():
+                    return None
+                return await client.get_me()
+            finally:
+                await client.disconnect()
+
+        me = asyncio.run(do())
+        if me is None:
+            return False
+        cfg = {
+            'phone': getattr(me, 'phone', '') or '',
+            'session_file': os.path.basename(session_path),
+            'app_id': 2040,
+            'app_hash': 'b18441a1ff607e10a989891a5462e627',
+            'device': 'PC',
+            'sdk': 'Windows',
+            'app_version': '6.6.4 x64',
+            'user_id': str(me.id),
+            'first_name': me.first_name or '',
+            'last_name': me.last_name or '',
+            'username': getattr(me, 'username', '') or '',
+        }
+        json.dump(cfg, open(os.path.join(account_dir, stem + '.json'), 'w',
+                            encoding='utf-8'), ensure_ascii=False, indent=1)
+        log(T('t167', stem, cfg['phone'], me.first_name or '', me.last_name or '', me.id))
+        return True
+    except BaseException as e:
+        log(f'[!] {os.path.basename(session_path)} 补建 json 失败: {type(e).__name__}: {str(e)[:80]}')
         return False
 
 
