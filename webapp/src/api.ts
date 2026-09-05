@@ -242,6 +242,15 @@ export async function renameAccount(path: string, newName: string) {
 
 export const pollAccounts = () => postJson('/api/poll-accounts');
 
+export async function deleteAccount(path: string) {
+  const r = await apiFetch('/api/delete-account', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ path }),
+  });
+  return r.json() as Promise<{ ok: boolean; msg?: string; deleted_path?: string }>;
+}
+
 export async function sendChatMsg(account: string, dialogId: number, text: string) {
   const r = await apiFetch('/api/chat/send', {
     method: 'POST',

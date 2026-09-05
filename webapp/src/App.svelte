@@ -49,6 +49,7 @@
     launchClient,
     renameAccount,
     pollAccounts,
+    deleteAccount,
     getPing,
     TOKEN,
     type Account,
@@ -273,6 +274,42 @@
     addLog('开始账号轮询(逐号登录保活+测活,每号间隔1s)…');
     const r = await pollAccounts();
     if (!r.ok) addLog(`轮询启动失败: ${r.msg}`);
+  }
+
+  // 删除账号(二级确认): 弹窗醒目显示将被删除的文件夹,勾选确认才能执行
+  let delOpen = $state(false);
+  let delTarget = $state<Account | null>(null);
+  let delConfirm = $state(false);
+  let deleting = $state(false);
+  function doOpenDeleteAccount() {
+    if (!current) {
+      addLog('请先选择账号');
+      return;
+    }
+    delTarget = current;
+    delConfirm = false;
+    delOpen = true;
+  }
+  async function doDeleteAccount() {
+    if (!delTarget || deleting || !delConfirm) return;
+    const target = delTarget;
+    deleting = true;
+    try {
+      const r = await deleteAccount(target.path);
+      if (r.ok) {
+        addLog(`已删除账号: ${target.name}(${r.deleted_path})`);
+        delOpen = false;
+        if (current?.name === target.name) current = null;
+        markOnline(target.name, false);
+        await loadAccounts();
+      } else {
+        addLog(`删除失败: ${r.msg}`);
+      }
+    } catch (e: any) {
+      addLog(`删除异常: ${e?.message ?? e}`);
+    } finally {
+      deleting = false;
+    }
   }
 
   // 文件夹重命名弹窗
@@ -834,7 +871,21 @@
   let ctxMenu = $state<{ x: number; y: number; name: string } | null>(null);
   function onAccountContext(e: MouseEvent, a: Account) {
     e.preventDefault();
-    ctxMenu = { x: e.clientX, y: e.clientY, name: a.name };
+    flushSync(() => {
+      ctxMenu = { x: e.clientX, y: e.clientY, name: a.name };
+    });
+    // 渲染后测量菜单尺寸,靠视口边缘时向内翻转,避免被裁剪
+    const el = document.querySelector('.ctx');
+    if (!el || !ctxMenu) return;
+    const r = el.getBoundingClientRect();
+    let { x, y } = ctxMenu;
+    if (y + r.height > window.innerHeight - 8) y = Math.max(8, window.innerHeight - r.height - 8);
+    if (x + r.width > window.innerWidth - 8) x = Math.max(8, window.innerWidth - r.width - 8);
+    if (x !== ctxMenu.x || y !== ctxMenu.y) {
+      flushSync(() => {
+        ctxMenu = { x, y, name: a.name };
+      });
+    }
   }
   function closeCtx() {
     ctxMenu = null;
@@ -1208,6 +1259,7 @@
         <md-outlined-button onclick={() => updateTelegram()}>更新本体</md-outlined-button>
         <md-outlined-button onclick={doRefreshAccountInfo}>刷新账号信息</md-outlined-button>
         <md-outlined-button onclick={doPollAccounts}>账号轮询</md-outlined-button>
+        <md-outlined-button class="danger-btn" onclick={doOpenDeleteAccount}>删除账号</md-outlined-button>
       </div>
     </details>
       {/if}
@@ -1463,6 +1515,35 @@
     {/if}
   </section>
 </div>
+
+{#if delOpen && delTarget}
+  <div class="modal-mask" onclick={() => (delOpen = false)}>
+    <div class="modal rename-modal del-modal" onclick={(e) => e.stopPropagation()}>
+      <div class="rename-head">
+        <span>删除账号（不可恢复）</span>
+        <button class="back set-close rename-x" title="关闭" onclick={() => (delOpen = false)}>✕</button>
+      </div>
+      <div class="del-info">
+        <div class="del-row"><span class="set-label">账号</span><b>{delTarget.display || delTarget.name}</b></div>
+        <div class="del-row"><span class="set-label">将删除的文件夹</span></div>
+        <div class="del-path">{delTarget.path}</div>
+        <p class="set-hint" style="color: var(--md-sys-color-error)">
+          该文件夹内的 session、tdata、登录凭据等全部文件将被永久删除，无法恢复！
+        </p>
+      </div>
+      <label class="del-check">
+        <input type="checkbox" bind:checked={delConfirm} />
+        <span>我已确认删除该账号的全部文件</span>
+      </label>
+      <div class="rename-btns">
+        <md-outlined-button onclick={() => (delOpen = false)}>取消</md-outlined-button>
+        <md-filled-button class="danger-btn" disabled={deleting || !delConfirm} onclick={doDeleteAccount}>
+          {deleting ? '删除中…' : '永久删除'}
+        </md-filled-button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if groupModalOpen}
   <div class="modal-mask" onclick={() => (groupModalOpen = false)}>
@@ -1830,6 +1911,9 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
     padding: 4px;
     min-width: 140px;
+    max-width: 240px;
+    max-height: min(70vh, 420px);
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
   }
@@ -2218,6 +2302,47 @@
     justify-content: flex-end;
     gap: 8px;
     margin-top: 14px;
+  }
+  /* 删除账号弹窗 */
+  .del-modal .del-info {
+    margin-bottom: 8px;
+  }
+  .del-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    padding: 4px 0;
+  }
+  .del-row .set-label {
+    width: 100px;
+    flex-shrink: 0;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .del-path {
+    font-family: Consolas, monospace;
+    font-size: 12px;
+    color: var(--md-sys-color-error, #b3261e);
+    background: var(--md-sys-color-surface);
+    border: 1px solid var(--md-sys-color-error, #b3261e);
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 8px 10px;
+    word-break: break-all;
+    margin: 4px 0 8px;
+  }
+  .del-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 6px 0;
+  }
+  .danger-btn {
+    --md-outlined-button-color: var(--md-sys-color-error, #b3261e);
+    --md-outlined-button-outline-color: var(--md-sys-color-error, #b3261e);
+    --md-filled-button-container-color: var(--md-sys-color-error, #b3261e);
+    color: var(--md-sys-color-error, #b3261e);
   }
   .sec-head h3 {
     margin: 0;

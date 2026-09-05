@@ -639,6 +639,54 @@ def _load_poll_results():
     return {}
 
 
+def _scrub_account_meta(name, new_name=None):
+    """账号删/改名后同步清理元数据缓存(分组/资料/头像/轮询结果)。"""
+    try:
+        if os.path.isfile(GROUPS_FILE):
+            g = json.load(open(GROUPS_FILE, encoding='utf-8'))
+            changed = False
+            for k, lst in g.items():
+                if isinstance(lst, list) and name in lst:
+                    if new_name:
+                        g[k] = [new_name if x == name else x for x in lst]
+                    else:
+                        g[k] = [x for x in lst if x != name]
+                    changed = True
+            if changed:
+                json.dump(g, open(GROUPS_FILE, 'w', encoding='utf-8'),
+                          ensure_ascii=False)
+    except Exception:
+        pass
+    try:
+        prof = tg_profile.load_profiles()
+        if name in prof:
+            if new_name:
+                prof[new_name] = prof.pop(name)
+            else:
+                prof.pop(name)
+            tg_profile.save_profiles(prof)
+        av = tg_profile.avatar_path(name)
+        if os.path.isfile(av):
+            if new_name:
+                os.replace(av, tg_profile.avatar_path(new_name))
+            else:
+                os.remove(av)
+    except Exception:
+        pass
+    try:
+        p = os.path.join(tg_tool.SCRIPT_DIR, 'poll_results.json')
+        if os.path.isfile(p):
+            res = json.load(open(p, encoding='utf-8'))
+            if name in res:
+                if new_name:
+                    res[new_name] = res.pop(name)
+                else:
+                    res.pop(name)
+                json.dump(res, open(p, 'w', encoding='utf-8'), ensure_ascii=False)
+    except Exception:
+        pass
+
+
 @app.post('/api/launch-client')
 async def launch_client(body: dict):
     """启动账号目录内的 Telegram 便携版客户端(找到 Telegram.exe 即启动)。"""
@@ -726,6 +774,57 @@ async def rename_account(body: dict):
     new_path = os.path.join(os.path.dirname(path), new_name)
     _emit({'type': 'log', 'line': f'[账号] 文件夹已重命名: {old_name} → {new_name}'})
     return {'ok': True, 'new_path': new_path, 'msg': new_name}
+
+
+@app.post('/api/delete-account')
+async def delete_account(body: dict):
+    """永久删除账号文件夹及其全部内容(二级确认由前端保证)。"""
+    import shutil
+    path = _ensure_in_root(body.get('path', ''))
+    real = os.path.realpath(path)
+    root_real = os.path.realpath(ROOT)
+    name = os.path.basename(real)
+    if real == root_real:
+        return {'ok': False, 'msg': '不能删除账号根目录'}
+    if os.path.dirname(real) != root_real:
+        return {'ok': False, 'msg': '只允许删除账号根目录下的一级文件夹'}
+    if name in tg_engine.EXCLUDE_DIRS:
+        return {'ok': False, 'msg': '该目录不是账号文件夹,拒绝删除'}
+    if '工具箱' in name or name.startswith('TG') or name in ('qifu', 'modules'):
+        return {'ok': False, 'msg': '该目录疑似程序目录,拒绝删除'}
+    if not os.path.isdir(real):
+        return {'ok': False, 'msg': '账号目录不存在'}
+    has_data = (os.path.isdir(os.path.join(real, 'tdata'))
+                or glob.glob(os.path.join(real, '*.session'))
+                or tg_tool._account_jsons(real))
+    if not has_data:
+        return {'ok': False, 'msg': '该目录不含账号数据(tdata/session/json),拒绝删除'}
+    # 统计规模(供日志)
+    total_size, total_files = 0, 0
+    for r_, _d, f_ in os.walk(real):
+        for fn in f_:
+            try:
+                total_size += os.path.getsize(os.path.join(r_, fn))
+                total_files += 1
+            except OSError:
+                pass
+    # 在线账号先断开(session 占用会让 rmtree 失败)
+    eng = init_engine()
+    try:
+        fut = eng.disconnect(name)
+        await asyncio.wait_for(asyncio.wrap_future(fut), 30)
+    except Exception:
+        pass
+    try:
+        shutil.rmtree(real)
+    except OSError as e:
+        return {'ok': False, 'msg': f'删除失败: {e}(若该号的客户端/资源管理器开着,请先关闭)'}
+    _scrub_account_meta(name)
+    size_mb = total_size / 1048576
+    _emit({'type': 'log',
+           'line': f'[账号] 已删除文件夹: {real} (共 {total_files} 个文件, {size_mb:.1f} MB)'})
+    return {'ok': True, 'msg': name, 'deleted_path': real,
+            'files': total_files, 'size_mb': round(size_mb, 1)}
 
 
 # ---------- 安全: 2FA / passkey / 邮箱 / 设备 / 资料 ----------
