@@ -1127,7 +1127,14 @@
           connected = false;
         }
       }
-      if (e.status === 'done') addLog('[完成]');
+      if (e.status === 'done') {
+        addLog('[完成]');
+        // 账号轮询会更新 poll_results.json,完成后立即刷新账号卡片，
+        // 让上次的「死」标识随本次存活结果消失
+        if (String(e.data ?? '').startsWith('轮询完成')) {
+          loadAccounts();
+        }
+      }
       if (e.status === 'error') addLog(`[错误] ${String(e.data ?? '')}`);
       if (e.status === 'passkey_done') {
         const d = e.data as any;
@@ -2013,7 +2020,7 @@
           </div>
         {:else if settingsSection === 'about'}
           <div class="set-sec-title">关于</div>
-          <div class="set-group">
+          <div class="about-list">
             <div class="about-row"><span class="set-label">程序名</span><span>TG小号工具箱（Web版）</span></div>
             <div class="about-row"><span class="set-label">版本</span><span class="about-ver">v{appVersion || '…'}</span></div>
             <div class="about-row"><span class="set-label">仓库</span><span>github.com/Gutouoff/TG-tools</span></div>
@@ -2621,16 +2628,31 @@
   .del-check {
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: flex-start;
+    gap: 10px;
     font-size: 13px;
     cursor: pointer;
-    padding: 10px 2px;
+    padding: 12px 2px;
+  }
+  .del-check input {
+    width: 16px;
+    height: 16px;
+    min-width: 16px;
+    margin: 0;
+    padding: 0;
+    accent-color: var(--md-sys-color-error, #B3261E);
+    cursor: pointer;
   }
   .danger-btn {
     --md-outlined-button-color: var(--md-sys-color-error, #b3261e);
     --md-outlined-button-outline-color: var(--md-sys-color-error, #b3261e);
-    --md-filled-button-container-color: var(--md-sys-color-error, #b3261e);
+    --md-filled-button-container-color: #B3261E;
+    --md-filled-button-label-color: #FFFFFF;
     color: var(--md-sys-color-error, #b3261e);
+  }
+  .del-modal md-outlined-button {
+    --md-outlined-button-color: var(--md-sys-color-on-surface-variant);
+    --md-outlined-button-outline-color: var(--md-sys-color-outline);
   }
   .sec-head h3 {
     margin: 0;
@@ -2949,6 +2971,28 @@
   }
   .swatch.custom input {
     display: none;
+  }
+  .about-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .about-list .about-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 4px;
+    min-height: 40px;
+  }
+  .about-list .about-row + .about-row {
+    border-top: 1px solid var(--divider);
+  }
+  .about-list .set-label {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .about-ver {
+    font-weight: 600;
+    color: var(--md-sys-color-primary);
   }
   .set-group-title {
     font-size: 13px;
