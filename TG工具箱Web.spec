@@ -24,6 +24,9 @@ hiddenimports += collect_submodules('winrt')
 datas = [('界面文本.txt', '.')]
 datas += [('webapp/dist', 'webapp/dist')]
 datas += collect_data_files('pywebview')
+# opentele 非代码数据文件(devices.json 等): tdata 转换必需,缺失报
+# "[Errno 2] No such file or directory: ..._internal\opentele\devices.json"
+datas += collect_data_files('opentele')
 
 a = Analysis(
     ['web_main.py'],
