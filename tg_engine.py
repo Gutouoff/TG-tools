@@ -226,6 +226,15 @@ class Engine:
                 return entry['info']
             self._account_dir = account_dir
             self._log(T('t050a', os.path.basename(account_dir)))
+            # tdata-only 账号: 自动转换成 session 再连(登录态优先级
+            # .session > json.session_str > tdata 转换,与 make_client 一致)
+            if _is_tdata_only(account_dir):
+                self._log(T('t159', name))
+                loop = asyncio.get_event_loop()
+                ok = await loop.run_in_executor(None, tg_tool._convert_tdata, account_dir)
+                if not ok:
+                    self._state('connect_fail', None)
+                    return None
             try:
                 cfg_path, cfg = find_cfg(account_dir)
                 client = make_client(cfg_path, cfg)

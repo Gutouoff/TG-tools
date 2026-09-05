@@ -249,7 +249,8 @@ async def connect(body: dict):
     path = _ensure_in_root(body.get('path', ''))
     fut = eng.connect(path)
     try:
-        info = await asyncio.wait_for(asyncio.wrap_future(fut), 60)
+        # tdata-only 账号会先自动转换(opentele 含网络操作,耗时较长)
+        info = await asyncio.wait_for(asyncio.wrap_future(fut), 180)
     except Exception as e:
         return {'ok': False, 'msg': str(e)}
     # 登录后获取 username
