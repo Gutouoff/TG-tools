@@ -111,8 +111,22 @@ def save_profiles(prof):
         pass
 
 
+def _ensure_avatar_dir():
+    """保证 AVATAR_DIR 是目录。历史 bug 曾把一张头像直接写到 avatars 路径上,
+    导致 makedirs(exist_ok=True) 抛 FileExistsError、所有头像下载失败。"""
+    if os.path.isdir(AVATAR_DIR):
+        return
+    if os.path.exists(AVATAR_DIR):  # 是文件: 归档为 avatars.recovered.jpg 再建目录
+        try:
+            os.replace(AVATAR_DIR, AVATAR_DIR + '.recovered.jpg')
+        except OSError:
+            pass
+    os.makedirs(AVATAR_DIR, exist_ok=True)
+
+
 def avatar_path(name):
     # Telegram 头像本质是 JPEG,存 .jpg 避免 JPEG 字节塞进 .png 导致前端 content-type 不匹配
+    _ensure_avatar_dir()
     return os.path.join(AVATAR_DIR, f'{name}.jpg')
 
 
