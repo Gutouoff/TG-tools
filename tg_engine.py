@@ -1571,6 +1571,53 @@ class Engine:
             return True
         return False
 
+    # ---------- 格式转换 ----------
+
+    def convert_to_tdata(self, account_dir):
+        """将 session+json 转换为 Telegram Desktop tdata。"""
+        return self._submit(self._do_convert_to_tdata(account_dir))
+
+    async def _do_convert_to_tdata(self, account_dir):
+        _ensure_telethon()
+        import opentele.api as op_api
+        from opentele.td import TDesktop
+        name = os.path.basename(account_dir)
+        target = os.path.join(account_dir, 'tdata')
+        if os.path.exists(target) and os.listdir(target):
+            raise RuntimeError('目标 tdata 已存在且非空,为避免覆盖未执行转换')
+        os.makedirs(target, exist_ok=True)
+        temp_client = None
+        try:
+            if name in self._pool:
+                client = self._pool[name]['client']
+                owned = False
+            else:
+                cfg_path, cfg = find_cfg(account_dir)
+                client = make_client(cfg_path, cfg)
+                await client.connect()
+                temp_client = client
+            if not await client.is_user_authorized():
+                raise RuntimeError('session 登录态已失效')
+            desktop = await TDesktop.FromTelethon(
+                client, flag=op_api.CreateNewSession,
+                api=op_api.API.TelegramDesktop)
+            if not desktop.SaveTData(target):
+                raise RuntimeError('tdata 写入失败')
+            self._log(f'[转换] {name}: session+json → tdata 完成')
+            return target
+        finally:
+            if temp_client:
+                try:
+                    await temp_client.disconnect()
+                except Exception:
+                    pass
+        """温和停止: 当前动作完成后停。返回是否真的请求了停止。"""
+        if self._task_running:
+            self._cancel.set()
+            self._log('[停止] 已请求停止,当前动作完成后中止…')
+            return True
+        return False
+
     # ---------- 账号轮询(保活+测活) ----------
 
     def poll_accounts(self, root):

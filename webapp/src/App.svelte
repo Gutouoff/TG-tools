@@ -52,6 +52,7 @@
     launchClient,
     renameAccount,
     pollAccounts,
+    convertToTdata,
     deleteAccount,
     getPing,
     TOKEN,
@@ -277,6 +278,35 @@
     addLog('开始账号轮询(逐号登录保活+测活,每号间隔1s)…');
     const r = await pollAccounts();
     if (!r.ok) addLog(`轮询启动失败: ${r.msg}`);
+  }
+
+  // 格式转换: session+json → tdata(二级确认弹窗)
+  let convOpen = $state(false);
+  let converting = $state(false);
+  function doOpenConvertTdata() {
+    if (!current) {
+      addLog('请先选择账号');
+      return;
+    }
+    convOpen = true;
+  }
+  async function doConvertTdataConfirm() {
+    if (!current || converting) return;
+    converting = true;
+    try {
+      const r = await convertToTdata(current.path);
+      if (r.ok) {
+        addLog(`已转换出 tdata: ${r.path}`);
+        convOpen = false;
+        await loadAccounts();
+      } else {
+        addLog(`转换失败: ${r.msg}`);
+      }
+    } catch (e: any) {
+      addLog(`转换异常: ${e?.message ?? e}`);
+    } finally {
+      converting = false;
+    }
   }
 
   // 删除账号(二级确认): 弹窗醒目显示将被删除的文件夹,勾选确认才能执行
@@ -1390,6 +1420,7 @@
         <md-outlined-button onclick={() => updateTelegram()}>更新本体</md-outlined-button>
         <md-outlined-button onclick={doRefreshAccountInfo}>刷新账号信息</md-outlined-button>
         <md-outlined-button onclick={doPollAccounts}>账号轮询</md-outlined-button>
+        <md-outlined-button onclick={doOpenConvertTdata} disabled={converting}>{converting ? '转换中…' : '格式转换'}</md-outlined-button>
         <md-outlined-button onclick={doExportAccounts} disabled={exporting}>{exporting ? '导出中…' : '导出表格'}</md-outlined-button>
         <md-outlined-button class="danger-btn" onclick={doOpenDeleteAccount}>删除账号</md-outlined-button>
       </div>
@@ -1692,6 +1723,31 @@
         <md-outlined-button onclick={() => (groupDelOpen = false)}>取消</md-outlined-button>
         <md-filled-button class="danger-btn" disabled={groupDeleting} onclick={doGroupDeleteConfirm}>
           {groupDeleting ? '删除中…' : '删除'}
+        </md-filled-button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if convOpen && current}
+  <div class="modal-mask" onclick={() => (convOpen = false)}>
+    <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
+      <div class="rename-head">
+        <span>格式转换：session → tdata</span>
+        <button class="back set-close rename-x" title="关闭" onclick={() => (convOpen = false)}>✕</button>
+      </div>
+      <p class="set-hint">
+        将把当前账号 <b>{current.display || current.name}</b> 的 session 登录态转换为
+        Telegram Desktop 的 <b>tdata</b>（写入账号文件夹下的 tdata\ 子目录）。
+      </p>
+      <p class="set-hint" style="color: var(--md-sys-color-error)">
+        注意：① 目标 tdata\ 已存在且非空时不会执行；② 转换出的 tdata 仍需配合 Telegram.exe 使用；
+        ③ 原 session 保留不变，转换后两种登录态并存。
+      </p>
+      <div class="rename-btns">
+        <md-outlined-button onclick={() => (convOpen = false)}>取消</md-outlined-button>
+        <md-filled-button disabled={converting} onclick={doConvertTdataConfirm}>
+          {converting ? '转换中…' : '开始转换'}
         </md-filled-button>
       </div>
     </div>

@@ -745,6 +745,19 @@ async def poll_accounts():
     return {'ok': True, 'msg': '已开始'}
 
 
+@app.post('/api/convert-to-tdata')
+async def convert_to_tdata(body: dict):
+    """session+json → Telegram Desktop tdata(在线账号复用池内 client)。"""
+    path = _ensure_in_root(body.get('path', ''))
+    eng = init_engine()
+    fut = eng.convert_to_tdata(path)
+    try:
+        target = await asyncio.wait_for(asyncio.wrap_future(fut), 120)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': True, 'path': target, 'msg': os.path.basename(path)}
+
+
 def _load_poll_results():
     try:
         p = os.path.join(tg_tool.SCRIPT_DIR, 'poll_results.json')
@@ -1295,6 +1308,19 @@ async def move_account(body: dict):
 
 
 # ---------- tdata 转换 ----------
+@app.post('/api/convert-to-tdata')
+async def convert_to_tdata(body: dict):
+    """将 session+json 转换为账号目录内的 Telegram Desktop tdata。"""
+    path = _ensure_in_root(body.get('path', ''))
+    eng = init_engine()
+    fut = eng.convert_to_tdata(path)
+    try:
+        target = await asyncio.wait_for(asyncio.wrap_future(fut), 180)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': True, 'path': target}
+
+
 @app.post('/api/convert-tdata')
 async def convert_tdata(body: dict):
     eng = init_engine()
