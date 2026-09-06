@@ -1466,7 +1466,7 @@
 
   <div class="splitter" onmousedown={(e) => startDrag(e, 'left')}></div>
 
-  <section class="mid" style="width:{midW}px">
+  <section class="mid" class:narrow={midW < 340} style="width:{midW}px">
     {#each cardOrder as c (c)}
       {#if c === '基本信息'}
     <details class="card" data-card="基本信息" open={isCardOpen('基本信息', true)} ontoggle={(e) => onCardToggle('基本信息', (e.currentTarget as HTMLDetailsElement).open)}>
@@ -2538,6 +2538,10 @@
     grid-template-columns: 1fr 1fr;
     gap: 8px;
     padding: 0 16px 12px;
+  }
+  /* 中栏过窄: 双列按钮塌成单列 */
+  .mid.narrow .grid {
+    grid-template-columns: 1fr;
   }
   /* 转换组: 长按钮独占一行 */
   .conv-group {

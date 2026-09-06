@@ -67,6 +67,15 @@ async def token_middleware(request, call_next):
             return JSONResponse(status_code=401, content={'detail': 'unauthorized'})
     return await call_next(request)
 
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request, exc):
+    # 兜底: 未捕获异常(SystemExit 等 BaseException 除外)一律回 JSON,
+    # 避免前端 r.json() 解析 "Internal Server Error" 纯文本再炸一次
+    return JSONResponse(status_code=500, content={
+        'ok': False,
+        'msg': f'服务器内部错误: {type(exc).__name__}: {str(exc)[:200]}'})
+
 # ---------- 引擎单例 + 回调桥接 ----------
 _loop = None
 _engine = None
@@ -741,7 +750,7 @@ async def del_group(body: dict):
 @app.post('/api/update-telegram')
 async def update_telegram():
     eng = init_engine()
-    eng.update_telegram()
+    eng.update_telegram(ROOT)   # 显式传账号根目录(打包环境 WORKDIR=exe 目录)
     return {'ok': True}
 
 

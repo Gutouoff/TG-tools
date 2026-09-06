@@ -1573,14 +1573,18 @@ class Engine:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, tg_tool._convert_tdata, account_dir)
 
-    def update_telegram(self):
-        """任务3: 复用 CLI 的 task_update_telegram,GUI 已确认故 input 自动答 y。"""
-        return self._submit(self._do_update_telegram())
+    def update_telegram(self, root=None):
+        """任务3: 复用 CLI 的 task_update_telegram,GUI 已确认故 input 自动答 y。
+        root=账号根目录(打包环境 tg_tool.WORKDIR 默认是 exe 目录,须显式传根)。"""
+        return self._submit(self._do_update_telegram(root))
 
-    async def _do_update_telegram(self):
+    async def _do_update_telegram(self, root=None):
         if self._task_running:
             self._state('done', '已有任务在运行')
             return
+        # 账号根目录交给更新任务(打包环境 tg_tool.WORKDIR=exe 目录,不是账号根)
+        if root:
+            tg_tool.WORKDIR = root
         self._task_running = True
         self._cancel.clear()
         self._state('task_start', '安装升级客户端')
@@ -1744,6 +1748,14 @@ class Engine:
         return ok_n
 
     async def _do_convert_to_tdata(self, account_dir):
+        # SystemExit(die)是 BaseException,穿透端点的 except Exception 会变成
+        # 500 纯文本——方法级统一转成 RuntimeError,保证前端拿到 JSON 错误信息
+        try:
+            return await self._convert_to_tdata_impl(account_dir)
+        except SystemExit:
+            raise RuntimeError('转换中止(账号缺少有效的凭据 json,详见日志)') from None
+
+    async def _convert_to_tdata_impl(self, account_dir):
         _ensure_telethon()
         import opentele.api as op_api
         from opentele.td import TDesktop
@@ -1773,8 +1785,11 @@ class Engine:
                             None, tg_tool.make_json_from_session, account_dir, sess[0])
                     if not healed:
                         raise RuntimeError('账号缺少凭据 json,无法转换(详见日志)')
-                    cfg_path, cfg = find_cfg(account_dir)
-                    client = make_client(cfg_path, cfg)
+                    try:
+                        cfg_path, cfg = find_cfg(account_dir)
+                        client = make_client(cfg_path, cfg)
+                    except SystemExit:
+                        raise RuntimeError('补建 json 后仍无法构造客户端(详见日志)') from None
                 await client.connect()
                 temp_client = client
             if not await client.is_user_authorized():

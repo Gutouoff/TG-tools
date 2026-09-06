@@ -219,6 +219,7 @@ DEFAULT_TEXTS = {
     't169': '[刷新] 批量开始: {0} 个账号待刷新(仅处理有 tdata 且测活失败的)',
     't170': '[刷新] {0}/{1} {2}: 完成',
     't172': '[刷新] 批量完成: 刷新 {0}/{1}',
+    't173': '  安装客户端(原先没有): {0}',
 }
 UI_TEXTS = {}
 
@@ -1458,6 +1459,31 @@ def task_update_telegram():
                 shutil.copyfile(os.path.join(ext, want), root_f)
                 ok += 1
                 log(T('t137', want))
+
+        # 安装: 有登录态但没有客户端的账号文件夹,补一份便携版客户端
+        installed = 0
+        skip_dirs = {'工具箱', 'logs', 'backups', 'modules', 'tupdates',
+                     '空白Telegram', '__pycache__', '_internal'}
+        try:
+            for sub in sorted(os.listdir(WORKDIR)):
+                d = os.path.join(WORKDIR, sub)
+                if not os.path.isdir(d) or sub in skip_dirs:
+                    continue
+                if os.path.isfile(os.path.join(d, 'Telegram.exe')):
+                    continue   # 已有客户端,替换逻辑已处理
+                has_data = (os.path.isdir(os.path.join(d, 'tdata'))
+                            or glob.glob(os.path.join(d, '*.session'))
+                            or _account_jsons(d))
+                if not has_data:
+                    continue   # 不是账号文件夹
+                for want in EXE_NAMES:
+                    src = os.path.join(ext, want)
+                    if os.path.isfile(src):
+                        shutil.copyfile(src, os.path.join(d, want))
+                        installed += 1
+                log(T('t173', sub))
+        except Exception as e:
+            log(f'[!] 客户端补装步骤出错: {type(e).__name__}: {e}')
 
         log(T('t138', ok, same, len(fail)))
         log(T('t139', version or '未识别'))
