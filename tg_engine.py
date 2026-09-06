@@ -1615,9 +1615,9 @@ class Engine:
 
     # ---------- 格式转换 ----------
 
-    def convert_to_tdata(self, account_dir, overwrite=False):
+    def convert_to_tdata(self, account_dir, overwrite=False, twofa_password=None):
         """将 session+json 转换为 Telegram Desktop tdata。overwrite=True 覆盖已有 tdata。"""
-        return self._submit(self._do_convert_to_tdata(account_dir, overwrite))
+        return self._submit(self._do_convert_to_tdata(account_dir, overwrite, twofa_password))
 
     def refresh_session_from_tdata(self, account_dir):
         """tdata → session+json(覆盖刷新,修复过期 ss)。在线账号只刷 json。"""
@@ -1747,15 +1747,15 @@ class Engine:
             self._task_running = False
         return ok_n
 
-    async def _do_convert_to_tdata(self, account_dir, overwrite=False):
+    async def _do_convert_to_tdata(self, account_dir, overwrite=False, twofa_password=None):
         # SystemExit(die)是 BaseException,穿透端点的 except Exception 会变成
         # 500 纯文本——方法级统一转成 RuntimeError,保证前端拿到 JSON 错误信息
         try:
-            return await self._convert_to_tdata_impl(account_dir, overwrite)
+            return await self._convert_to_tdata_impl(account_dir, overwrite, twofa_password)
         except SystemExit:
             raise RuntimeError('转换中止(账号缺少有效的凭据 json,详见日志)') from None
 
-    async def _convert_to_tdata_impl(self, account_dir, overwrite=False):
+    async def _convert_to_tdata_impl(self, account_dir, overwrite=False, twofa_password=None):
         _ensure_telethon()
         import opentele.api as op_api
         from opentele.td import TDesktop
@@ -1799,14 +1799,19 @@ class Engine:
             if not await client.is_user_authorized():
                 raise RuntimeError('session 登录态已失效')
             # 2FA 账号: FromTelethon 内部走 QR 登录新客户端,需要账号密码(opentele 要求)
-            twofa_pwd = ''
+            # 密码来源: 用户在弹窗手填 > 账号 json 里保存的 password/twofa 字段
+            twofa_pwd = (twofa_password or '').strip()
+            stored = ''
             try:
                 js = tg_tool._account_jsons(account_dir)
                 if js:
                     jc = json.load(open(js[0], encoding='utf-8'))
-                    twofa_pwd = str(jc.get('password') or jc.get('twofa') or '')
+                    stored = str(jc.get('password') or jc.get('twofa') or '')
             except Exception:
                 pass
+            if not twofa_pwd and stored:
+                twofa_pwd = stored
+                self._log(f'[转换] {name}: 账号开启 2FA,使用 json 中保存的密码')
             try:
                 desktop = await TDesktop.FromTelethon(
                     client, flag=op_api.CreateNewSession,
@@ -1815,8 +1820,8 @@ class Engine:
             except Exception as e:
                 if 'NoPasswordProvided' in type(e).__name__ or 'Two-step' in str(e):
                     raise RuntimeError(
-                        '该账号开启了两步验证,且账号 json 里没有保存 2FA 密码,'
-                        '无法自动转换 tdata(请把密码补进账号 json 的 password 字段)') from None
+                        '该账号开启了两步验证,需要 2FA 密码才能转换:'
+                        '请在弹窗中填写,或把密码补进账号 json 的 password 字段') from None
                 raise
             if not desktop.SaveTData(target):
                 raise RuntimeError('tdata 写入失败')

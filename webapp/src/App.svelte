@@ -321,23 +321,26 @@
   let convOpen = $state(false);
   let converting = $state(false);
   let convOverwrite = $state(false);
+  let convTwofa = $state('');
   function doOpenConvertTdata() {
     if (!current) {
       addLog('请先选择账号');
       return;
     }
     convOverwrite = false;
+    convTwofa = '';
     convOpen = true;
   }
   async function doConvertTdataConfirm() {
     if (!current || converting) return;
     const target = current;
     const overwrite = convOverwrite;
+    const twofa = convTwofa.trim();
     convOpen = false;            // 点确认立即关弹窗,结果看日志页
     setView('log');
     converting = true;
     try {
-      const r = await convertToTdata(target.path, overwrite);
+      const r = await convertToTdata(target.path, overwrite, twofa);
       if (r.ok) {
         addLog(`已转换出 tdata: ${r.path}`);
         await loadAccounts();
@@ -1948,6 +1951,11 @@
         <input type="checkbox" bind:checked={convOverwrite} />
         <span>覆盖已有的 tdata / session（默认不勾选；勾选后目标 tdata\ 非空也会执行）</span>
       </label>
+      <div class="set-row" style="margin-top:8px">
+        <span class="set-label">2FA 密码</span>
+        <input class="set-input" type="password" autocomplete="new-password"
+          bind:value={convTwofa} placeholder="账号开启两步验证时需要；留空则用 json 里保存的密码" />
+      </div>
       <div class="rename-btns">
         <md-outlined-button onclick={() => (convOpen = false)}>取消</md-outlined-button>
         <md-filled-button disabled={converting} onclick={doConvertTdataConfirm}>

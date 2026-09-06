@@ -816,8 +816,9 @@ async def convert_to_tdata(body: dict):
     """session+json → Telegram Desktop tdata(在线账号复用池内 client)。"""
     path = _ensure_in_root(body.get('path', ''))
     overwrite = bool(body.get('overwrite'))
+    twofa_password = str(body.get('twofa_password') or '')
     eng = init_engine()
-    fut = eng.convert_to_tdata(path, overwrite=overwrite)
+    fut = eng.convert_to_tdata(path, overwrite=overwrite, twofa_password=twofa_password)
     try:
         target = await asyncio.wait_for(asyncio.wrap_future(fut), 120)
     except Exception as e:
@@ -961,7 +962,8 @@ async def open_folder(body: dict):
     if not os.path.isdir(path):
         return {'ok': False, 'msg': '账号目录不存在'}
     try:
-        subprocess.Popen(['explorer', '/select,', os.path.normpath(path)])
+        # 直接打开账号文件夹本身(即 tdata/session 所在的那一级)
+        subprocess.Popen(['explorer', os.path.normpath(path)])
     except Exception as e:
         return {'ok': False, 'msg': f'打开失败: {e}'}
     return {'ok': True}

@@ -276,11 +276,11 @@ export async function renameAccount(path: string, newName: string) {
 export const pollAccounts = (group?: string) =>
   postJson('/api/poll-accounts', { group: group ?? null });
 
-export async function convertToTdata(path: string, overwrite = false) {
+export async function convertToTdata(path: string, overwrite = false, twofaPassword = '') {
   const r = await apiFetch('/api/convert-to-tdata', {
     method: 'POST',
     headers: jsonHeaders(),
-    body: JSON.stringify({ path, overwrite }),
+    body: JSON.stringify({ path, overwrite, twofa_password: twofaPassword }),
   });
   return r.json() as Promise<{ ok: boolean; msg?: string; path?: string }>;
 }
