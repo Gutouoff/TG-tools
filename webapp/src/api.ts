@@ -255,6 +255,15 @@ export async function launchClient(path: string) {
   return r.json() as Promise<{ ok: boolean; msg?: string }>;
 }
 
+export async function openFolder(path: string) {
+  const r = await apiFetch('/api/open-folder', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ path }),
+  });
+  return r.json() as Promise<{ ok: boolean; msg?: string }>;
+}
+
 export async function renameAccount(path: string, newName: string) {
   const r = await apiFetch('/api/rename-account', {
     method: 'POST',

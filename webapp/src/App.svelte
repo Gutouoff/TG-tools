@@ -50,6 +50,7 @@
     joinChats,
     sendChatMsg,
     launchClient,
+    openFolder,
     renameAccount,
     pollAccounts,
     convertToTdata,
@@ -297,6 +298,16 @@
     addLog(r.ok ? `已启动客户端: ${current.name}(${r.msg})` : `启动客户端失败: ${r.msg}`);
   }
 
+  // 右键「启动客户端」: 在资源管理器中打开账号文件夹
+  async function doOpenAccountFolder() {
+    if (!current) {
+      addLog('请先选择账号');
+      return;
+    }
+    const r = await openFolder(current.path);
+    if (!r.ok) addLog(`打开文件夹失败: ${r.msg}`);
+  }
+
   // 账号轮询: 逐号登录保活+测活(后台任务,进度/结果走日志页)
   async function doPollAccounts() {
     setView('log');
@@ -320,12 +331,15 @@
   }
   async function doConvertTdataConfirm() {
     if (!current || converting) return;
+    const target = current;
+    const overwrite = convOverwrite;
+    convOpen = false;            // 点确认立即关弹窗,结果看日志页
+    setView('log');
     converting = true;
     try {
-      const r = await convertToTdata(current.path, convOverwrite);
+      const r = await convertToTdata(target.path, overwrite);
       if (r.ok) {
         addLog(`已转换出 tdata: ${r.path}`);
-        convOpen = false;
         await loadAccounts();
       } else {
         addLog(`转换失败: ${r.msg}`);
@@ -349,12 +363,14 @@
   }
   async function doTdataToSsConfirm() {
     if (!current || t2sConverting) return;
+    const target = current;
+    t2sOpen = false;             // 点确认立即关弹窗,结果看日志页
+    setView('log');
     t2sConverting = true;
     try {
-      const r = await refreshSession(current.path);
+      const r = await refreshSession(target.path);
       if (r.ok) {
-        addLog(`已从 tdata 刷新 session+json: ${current.name}`);
-        t2sOpen = false;
+        addLog(`已从 tdata 刷新 session+json: ${target.name}`);
         await loadAccounts();
       } else {
         addLog(`刷新失败: ${r.msg}`);
@@ -1374,7 +1390,9 @@
   <span class="title">TG小号工具箱</span>
   <span class="conn" class:on={connected && !connectingLabel}>{connectingLabel ? `● ${connectingLabel}` : connected ? '● 已连接' : '● 未连接'}</span>
   <button class="topbtn" onclick={doReconnect}>重新连接</button>
-  <button class="topbtn" onclick={doLaunchClient}>启动客户端</button>
+  <button class="topbtn" onclick={doLaunchClient}
+    oncontextmenu={(e) => { e.preventDefault(); doOpenAccountFolder(); }}
+    title="启动当前账号的 Telegram 客户端（右键打开账号文件夹）">启动客户端</button>
   <button class="topbtn" onclick={doDisconnect}>断开连接</button>
   <button class="topbtn" onclick={doPack}>打包</button>
   <button class="topbtn iconbtn" onclick={toggleTheme} title={themeMode === 'dark' ? '切换到浅色' : '切换到深色'}>

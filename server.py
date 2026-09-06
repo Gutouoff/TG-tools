@@ -953,6 +953,20 @@ async def launch_client(body: dict):
     return {'ok': True, 'msg': os.path.relpath(exe, path)}
 
 
+@app.post('/api/open-folder')
+async def open_folder(body: dict):
+    """在资源管理器中打开账号文件夹并定位。"""
+    import subprocess
+    path = _ensure_in_root(body.get('path', ''))
+    if not os.path.isdir(path):
+        return {'ok': False, 'msg': '账号目录不存在'}
+    try:
+        subprocess.Popen(['explorer', '/select,', os.path.normpath(path)])
+    except Exception as e:
+        return {'ok': False, 'msg': f'打开失败: {e}'}
+    return {'ok': True}
+
+
 @app.post('/api/rename-account')
 async def rename_account(body: dict):
     """重命名账号文件夹(在线账号会先自动断开:session 文件占用会锁住改名)。"""
