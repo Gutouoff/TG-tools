@@ -29,7 +29,25 @@ export const TOKEN =
 async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   if (TOKEN) headers.set('X-TG-Token', TOKEN);
-  return fetch(url, { ...init, headers });
+  const r = await fetch(url, { ...init, headers });
+  // 兜底: 任何非 JSON 响应(旧版本 500 纯文本/代理拦截页等)重包成 JSON,
+  // 使调用方 r.json() 永不抛 "Unexpected token" 二次异常
+  const ct = r.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) {
+    const text = await r.text();
+    return new Response(
+      JSON.stringify({ ok: false, msg: `HTTP ${r.status}: ${text.slice(0, 150) || '(空响应)'}` }),
+      { status: r.status, headers: { 'content-type': 'application/json' } });
+  }
+  const text = await r.text();
+  try {
+    JSON.parse(text);
+  } catch {
+    return new Response(
+      JSON.stringify({ ok: false, msg: `HTTP ${r.status}: 响应非法 JSON: ${text.slice(0, 120)}` }),
+      { status: r.status, headers: { 'content-type': 'application/json' } });
+  }
+  return new Response(text, { status: r.status, headers: { 'content-type': 'application/json' } });
 }
 
 function jsonHeaders(extra?: Record<string, string>): Headers {

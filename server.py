@@ -65,13 +65,24 @@ async def token_middleware(request, call_next):
             token = request.query_params.get('token', '')
         if token != TOKEN:
             return JSONResponse(status_code=401, content={'detail': 'unauthorized'})
-    return await call_next(request)
+    try:
+        return await call_next(request)
+    except Exception as e:
+        # 兜底(实测 @app.exception_handler(Exception) 在本中间件栈下不生效):
+        # 未捕获异常一律回 JSON,避免前端解析 "Internal Server Error" 纯文本再炸
+        return JSONResponse(status_code=500, content={
+            'ok': False,
+            'msg': f'服务器内部错误: {type(e).__name__}: {str(e)[:200]}'})
+    except BaseException as e:
+        # SystemExit(die 的 BaseException)等: 不接住会直接中止请求甚至杀 loop
+        return JSONResponse(status_code=500, content={
+            'ok': False,
+            'msg': f'服务器异常中止: {type(e).__name__}: {str(e)[:200]}'})
 
 
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request, exc):
-    # 兜底: 未捕获异常(SystemExit 等 BaseException 除外)一律回 JSON,
-    # 避免前端 r.json() 解析 "Internal Server Error" 纯文本再炸一次
+    # 双保险(部分 Starlette 版本下中间件兜底可能不接 BaseException 以外的链路)
     return JSONResponse(status_code=500, content={
         'ok': False,
         'msg': f'服务器内部错误: {type(exc).__name__}: {str(exc)[:200]}'})

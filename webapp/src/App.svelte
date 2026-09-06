@@ -1327,7 +1327,10 @@
     loadRecv();
     try {
       const p = await getPing();
-      if (p?.version) appVersion = String(p.version);
+      if (p?.version) {
+        appVersion = String(p.version);
+        addLog(`程序版本: v${appVersion}（报问题时请带上此版本号和 logs 目录日志）`);
+      }
     } catch {
       // 版本号显示失败不影响使用
     }
