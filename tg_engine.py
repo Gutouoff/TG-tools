@@ -1823,14 +1823,24 @@ class Engine:
                     api=op_api.API.TelegramDesktop,
                     password=twofa_pwd or None)
             except Exception as e:
-                if 'NoPasswordProvided' in type(e).__name__ or 'Two-step' in str(e):
+                txt = f'{type(e).__name__}: {e}'
+                if 'NoPasswordProvided' in txt or 'Two-step' in txt:
                     raise RuntimeError(
-                        '该账号开启了两步验证,需要 2FA 密码才能转换:'
-                        '请在弹窗中填写,或把密码补进账号 json 的 twofa 字段') from None
-                if 'PasswordIncorrect' in type(e).__name__:
+                        '该账号开启了两步验证,需要正确的 2FA 密码才能转换:'
+                        '请在弹窗中填写(若该号已有 tdata 则无需转换)') from None
+                if 'PasswordIncorrect' in txt:
                     src_tip = '输入的' if pwd_source == '手填' else f'json {pwd_source}里保存的'
                     raise RuntimeError(
-                        f'{src_tip} 2FA 密码不正确,请核对后在弹窗中手动输入正确的两步验证密码') from None
+                        f'{src_tip} 2FA 密码不正确,请核对后在弹窗中手动输入正确的两步验证密码;'
+                        f'(若该号已有 tdata 则无需转换)') from None
+                raise
+            except BaseException as e:
+                # opentele 内部线程的 RPC 错误可能以非 Exception 形态穿出,按关键字识别
+                txt = f'{type(e).__name__}: {e}'
+                if 'PasswordIncorrect' in txt or 'NoPasswordProvided' in txt or 'Two-step' in txt:
+                    raise RuntimeError(
+                        '2FA 密码未提供或不正确,请在弹窗中填写正确的两步验证密码'
+                        '(若该号已有 tdata 则无需转换)') from None
                 raise
             if not desktop.SaveTData(target):
                 raise RuntimeError('tdata 写入失败')
