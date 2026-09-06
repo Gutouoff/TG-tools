@@ -418,6 +418,38 @@
     renameInput = a.name;
     renameOpen = true;
   }
+  // 重命名快捷项: 姓名/username/手机号(无加号)/用户ID,可在设置里开关+自定义前缀
+  const RENAME_QUICK_DEFS: Array<[string, string]> = [
+    ['display', '姓名'], ['username', 'username'], ['phone', '手机号'], ['uid', '用户ID'],
+  ];
+  let renameQuickOpts = $derived(
+    ((settings.rename_quick as string[]) || [])
+      .map((k) => RENAME_QUICK_DEFS.find((d) => d[0] === k))
+      .filter(Boolean) as Array<[string, string]>,
+  );
+  function renameQuickVal(key: string): string {
+    const a: any = renameTarget;
+    if (!a) return '';
+    if (key === 'display') return (a.display || '').trim();
+    if (key === 'username') return a.username || '';
+    if (key === 'phone') return String(a.phone || '').replace(/^\+/, '').trim();
+    if (key === 'uid') return String(a.uid || '').trim();
+    return '';
+  }
+  function applyRenameQuick(key: string, label: string) {
+    const val = renameQuickVal(key);
+    if (!val) {
+      addLog(`该账号没有${label},无法填充`);
+      return;
+    }
+    renameInput = String(settings.rename_prefix ?? '') + val;
+  }
+  function toggleRenameQuick(key: string) {
+    const cur = new Set<string>((settings.rename_quick as string[]) || []);
+    if (cur.has(key)) cur.delete(key);
+    else cur.add(key);
+    settings = { ...settings, rename_quick: [...cur] };
+  }
   async function doRename() {
     if (!renameTarget || renaming) return;
     const newName = renameInput.trim();
@@ -520,6 +552,8 @@
       proxy_mode: 'none', proxy_scheme: 'socks5', proxy_host: '', proxy_port: '',
       join_links: [],
       log_level: 'info',
+      rename_quick: ['display', 'username', 'phone', 'uid'],
+      rename_prefix: '',
     };
     settingsOpen = true;
     try {
@@ -1973,6 +2007,16 @@
         placeholder="输入新的文件夹名称"
         maxlength="60"
       />
+      {#if renameQuickOpts.length}
+        <div class="rename-quick">
+          <span class="rename-quick-label">快捷填充:</span>
+          {#each renameQuickOpts as [k, label]}
+            {#if renameQuickVal(k)}
+              <button class="rule-chip" title={renameQuickVal(k)} onclick={() => applyRenameQuick(k, label)}>{label}</button>
+            {/if}
+          {/each}
+        </div>
+      {/if}
       <div class="rename-btns">
         <md-outlined-button onclick={() => (renameOpen = false)}>取消</md-outlined-button>
         <md-filled-button disabled={renaming || !renameInput.trim()} onclick={doRename}>
@@ -2013,6 +2057,25 @@
                 <option value="info">常规（info）</option>
                 <option value="debug">调试（debug，含蓝牙诊断等原始日志）</option>
               </select>
+            </div>
+            <div class="set-row set-row-col">
+              <span class="set-label">文件夹重命名快捷项（勾选在弹窗中显示）</span>
+              <div class="check-row">
+                {#each RENAME_QUICK_DEFS as [k, label]}
+                  <label class="check-item">
+                    <input
+                      type="checkbox"
+                      checked={((settings.rename_quick as string[]) || []).includes(k)}
+                      onchange={() => toggleRenameQuick(k)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                {/each}
+              </div>
+            </div>
+            <div class="set-row">
+              <span class="set-label">快捷项自定义前缀</span>
+              <input class="set-input" bind:value={settings.rename_prefix} placeholder="例如 tg_（点快捷项时自动加在前面）" />
             </div>
           </div>
         {:else if settingsSection === 'appearance'}
@@ -3382,6 +3445,25 @@
     font-size: 13px;
     color: var(--md-sys-color-on-surface-variant);
     margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .check-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+  /* 重命名弹窗快捷填充 chips */
+  .rename-quick {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .rename-quick-label {
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
   }
   .check-row input {
     width: auto;

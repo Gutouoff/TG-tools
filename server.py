@@ -1518,6 +1518,8 @@ DEFAULT_SETTINGS = {
     'recv_exclude_bots': False,
     'join_links': [],               # 要加入的群/频道 [{name:备注,link,type:'group'|'channel'}]
     'log_level': 'info',            # info=常规 / debug=含蓝牙原始广播等诊断日志
+    'rename_quick': ['display', 'username', 'phone', 'uid'],  # 重命名弹窗快捷项
+    'rename_prefix': '',            # 重命名快捷项自定义前缀
 }
 
 

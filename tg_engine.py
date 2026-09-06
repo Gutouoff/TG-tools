@@ -1756,10 +1756,25 @@ class Engine:
         try:
             if name in self._pool:
                 client = self._pool[name]['client']
-                owned = False
             else:
-                cfg_path, cfg = find_cfg(account_dir)
-                client = make_client(cfg_path, cfg)
+                try:
+                    cfg_path, cfg = find_cfg(account_dir)
+                    client = make_client(cfg_path, cfg)
+                except SystemExit:
+                    # die()(缺 json/多 json 等)是 BaseException,except Exception
+                    # 接不住会变成 500 纯文本。缺 json 的 session 号先自愈再重试
+                    import glob as _g
+                    sess = sorted(_g.glob(os.path.join(account_dir, '*.session')))
+                    loop = asyncio.get_event_loop()
+                    healed = False
+                    if sess:
+                        self._log(T('t166', name))
+                        healed = await loop.run_in_executor(
+                            None, tg_tool.make_json_from_session, account_dir, sess[0])
+                    if not healed:
+                        raise RuntimeError('账号缺少凭据 json,无法转换(详见日志)')
+                    cfg_path, cfg = find_cfg(account_dir)
+                    client = make_client(cfg_path, cfg)
                 await client.connect()
                 temp_client = client
             if not await client.is_user_authorized():
