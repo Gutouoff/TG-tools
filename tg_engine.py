@@ -1799,19 +1799,24 @@ class Engine:
             if not await client.is_user_authorized():
                 raise RuntimeError('session 登录态已失效')
             # 2FA 账号: FromTelethon 内部走 QR 登录新客户端,需要账号密码(opentele 要求)
-            # 密码来源: 用户在弹窗手填 > 账号 json 里保存的 password/twofa 字段
+            # 密码来源优先级: 用户手填 > json 的 twofa 字段(明确 2FA) > json 的 password 字段
             twofa_pwd = (twofa_password or '').strip()
-            stored = ''
+            pwd_source = '手填'
             try:
                 js = tg_tool._account_jsons(account_dir)
                 if js:
                     jc = json.load(open(js[0], encoding='utf-8'))
-                    stored = str(jc.get('password') or jc.get('twofa') or '')
+                    if not twofa_pwd:
+                        for field in ('twofa', 'password'):
+                            v = str(jc.get(field) or '').strip()
+                            if v:
+                                twofa_pwd = v
+                                pwd_source = f'json {field} 字段'
+                                break
             except Exception:
                 pass
-            if not twofa_pwd and stored:
-                twofa_pwd = stored
-                self._log(f'[转换] {name}: 账号开启 2FA,使用 json 中保存的密码')
+            if twofa_pwd:
+                self._log(f'[转换] {name}: 账号开启 2FA,使用{pwd_source}的密码尝试')
             try:
                 desktop = await TDesktop.FromTelethon(
                     client, flag=op_api.CreateNewSession,
@@ -1821,7 +1826,11 @@ class Engine:
                 if 'NoPasswordProvided' in type(e).__name__ or 'Two-step' in str(e):
                     raise RuntimeError(
                         '该账号开启了两步验证,需要 2FA 密码才能转换:'
-                        '请在弹窗中填写,或把密码补进账号 json 的 password 字段') from None
+                        '请在弹窗中填写,或把密码补进账号 json 的 twofa 字段') from None
+                if 'PasswordIncorrect' in type(e).__name__:
+                    src_tip = '输入的' if pwd_source == '手填' else f'json {pwd_source}里保存的'
+                    raise RuntimeError(
+                        f'{src_tip} 2FA 密码不正确,请核对后在弹窗中手动输入正确的两步验证密码') from None
                 raise
             if not desktop.SaveTData(target):
                 raise RuntimeError('tdata 写入失败')
