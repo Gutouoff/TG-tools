@@ -1583,7 +1583,7 @@ class Engine:
             return
         self._task_running = True
         self._cancel.clear()
-        self._state('task_start', '更新 Telegram 本体')
+        self._state('task_start', '安装升级客户端')
         import builtins
         orig = builtins.input
         builtins.input = lambda *a, **k: 'y'

@@ -143,13 +143,24 @@
   }
 
   function applyFilter() {
-    const q = search.trim().toLowerCase();
+    // 关键词覆盖: 账号名/姓名/username/手机号/用户ID;
+    // '@' 前缀忽略;纯数字关键词按手机号/ID 的数字部分匹配(免输区号)
+    const raw = search.trim().toLowerCase();
+    const q = raw.replace(/^@+/, '');
+    const digits = q.replace(/\D/g, '');
     const base = groupFiltered();
-    const result = q
-      ? base.filter((a) =>
-          `${a.name} ${a.display} ${a.username} ${a.phone} ${a.uid}`.toLowerCase().includes(q),
-        )
-      : [...base];
+    const result = !q
+      ? [...base]
+      : base.filter((a) => {
+          const hay = `${a.name} ${a.display} ${a.username} ${a.phone} ${a.uid}`.toLowerCase();
+          if (hay.includes(q)) return true;
+          if (digits && digits.length >= 3) {
+            const phoneDigits = String(a.phone ?? '').replace(/\D/g, '');
+            const uidDigits = String(a.uid ?? '').replace(/\D/g, '');
+            if (phoneDigits.includes(digits) || uidDigits.includes(digits)) return true;
+          }
+          return false;
+        });
     filtered.splice(0, filtered.length, ...result);
     filterVersion++;
   }
@@ -212,6 +223,8 @@
         markOnline(a.name, true);
       }
       addLog(`已连接 ${a.name}${uname ? ` (@${uname})` : ''}`);
+      // 右栏自动回到日志页,避免停留在上一个账号的视图(资料/会话等)
+      if (rightView !== 'log') setView('log');
       // 连接成功: 后端已自动拉取会话列表并开启消息接收,前端直接就绪
       if (Array.isArray(r.dialogs) && r.dialogs.length) {
         dialogs = r.dialogs;
@@ -244,6 +257,8 @@
         onlineNames = new Set([...onlineNames, a.name]);
       });
       addLog(`已切换到 ${a.name}(保持在线)`);
+      // 右栏自动回到日志页,避免停留在上一个账号的视图
+      if (rightView !== 'log') setView('log');
     } else {
       addLog(`切换失败: ${r.msg || '未知错误'}`);
       markOnline(a.name, false);
@@ -1508,7 +1523,7 @@
     <details class="card" data-card="其他设置" open={isCardOpen('其他设置', false)} ontoggle={(e) => onCardToggle('其他设置', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>其他设置</summary>
       <div class="grid">
-        <md-outlined-button onclick={() => updateTelegram()}>更新本体</md-outlined-button>
+        <md-outlined-button onclick={() => updateTelegram()}>安装升级客户端</md-outlined-button>
         <md-outlined-button onclick={doRefreshAccountInfo}>刷新账号信息</md-outlined-button>
         <md-outlined-button onclick={doPollAccounts}>账号轮询</md-outlined-button>
         <md-outlined-button onclick={doExportAccounts} disabled={exporting}>{exporting ? '导出中…' : '导出表格'}</md-outlined-button>
