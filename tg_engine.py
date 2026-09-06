@@ -1615,9 +1615,9 @@ class Engine:
 
     # ---------- 格式转换 ----------
 
-    def convert_to_tdata(self, account_dir):
-        """将 session+json 转换为 Telegram Desktop tdata。"""
-        return self._submit(self._do_convert_to_tdata(account_dir))
+    def convert_to_tdata(self, account_dir, overwrite=False):
+        """将 session+json 转换为 Telegram Desktop tdata。overwrite=True 覆盖已有 tdata。"""
+        return self._submit(self._do_convert_to_tdata(account_dir, overwrite))
 
     def refresh_session_from_tdata(self, account_dir):
         """tdata → session+json(覆盖刷新,修复过期 ss)。在线账号只刷 json。"""
@@ -1747,22 +1747,26 @@ class Engine:
             self._task_running = False
         return ok_n
 
-    async def _do_convert_to_tdata(self, account_dir):
+    async def _do_convert_to_tdata(self, account_dir, overwrite=False):
         # SystemExit(die)是 BaseException,穿透端点的 except Exception 会变成
         # 500 纯文本——方法级统一转成 RuntimeError,保证前端拿到 JSON 错误信息
         try:
-            return await self._convert_to_tdata_impl(account_dir)
+            return await self._convert_to_tdata_impl(account_dir, overwrite)
         except SystemExit:
             raise RuntimeError('转换中止(账号缺少有效的凭据 json,详见日志)') from None
 
-    async def _convert_to_tdata_impl(self, account_dir):
+    async def _convert_to_tdata_impl(self, account_dir, overwrite=False):
         _ensure_telethon()
         import opentele.api as op_api
         from opentele.td import TDesktop
         name = os.path.basename(account_dir)
         target = os.path.join(account_dir, 'tdata')
         if os.path.exists(target) and os.listdir(target):
-            raise RuntimeError('目标 tdata 已存在且非空,为避免覆盖未执行转换')
+            if not overwrite:
+                raise RuntimeError('目标 tdata 已存在且非空,为避免覆盖未执行转换'
+                                   '(可勾选「覆盖已有 tdata/session」后重试)')
+            import shutil as _shutil
+            _shutil.rmtree(target)
         os.makedirs(target, exist_ok=True)
         temp_client = None
         try:

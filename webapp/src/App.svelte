@@ -306,21 +306,23 @@
     if (!r.ok) addLog(`轮询启动失败: ${r.msg}`);
   }
 
-  // 格式转换: session+json → tdata(二级确认弹窗)
+  // 格式转换: session+json → tdata(二级确认弹窗;覆盖勾选默认不选)
   let convOpen = $state(false);
   let converting = $state(false);
+  let convOverwrite = $state(false);
   function doOpenConvertTdata() {
     if (!current) {
       addLog('请先选择账号');
       return;
     }
+    convOverwrite = false;
     convOpen = true;
   }
   async function doConvertTdataConfirm() {
     if (!current || converting) return;
     converting = true;
     try {
-      const r = await convertToTdata(current.path);
+      const r = await convertToTdata(current.path, convOverwrite);
       if (r.ok) {
         addLog(`已转换出 tdata: ${r.path}`);
         convOpen = false;
@@ -1921,9 +1923,13 @@
         Telegram Desktop 的 <b>tdata</b>（写入账号文件夹下的 tdata\ 子目录）。
       </p>
       <p class="set-hint" style="color: var(--md-sys-color-error)">
-        注意：① 目标 tdata\ 已存在且非空时不会执行；② 转换出的 tdata 仍需配合 Telegram.exe 使用；
-        ③ 原 session 保留不变，转换后两种登录态并存。
+        注意：① 转换出的 tdata 仍需配合 Telegram.exe 使用；
+        ② 原 session 保留不变，转换后两种登录态并存。
       </p>
+      <label class="del-check">
+        <input type="checkbox" bind:checked={convOverwrite} />
+        <span>覆盖已有的 tdata / session（默认不勾选；勾选后目标 tdata\ 非空也会执行）</span>
+      </label>
       <div class="rename-btns">
         <md-outlined-button onclick={() => (convOpen = false)}>取消</md-outlined-button>
         <md-filled-button disabled={converting} onclick={doConvertTdataConfirm}>

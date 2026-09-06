@@ -55,37 +55,70 @@ app = FastAPI(title='TG工具箱', docs_url=None, redoc_url=None, lifespan=lifes
 TOKEN = secrets.token_urlsafe(32)
 
 
-@app.middleware('http')
-async def token_middleware(request, call_next):
-    from fastapi.responses import JSONResponse
-    if request.url.path.startswith('/api') and request.method != 'OPTIONS':
-        token = request.headers.get('X-TG-Token') or ''
-        # <img> 标签无法带 header,仅头像图片端点放行 query token
-        if not token and request.url.path == '/api/avatar-image':
-            token = request.query_params.get('token', '')
-        if token != TOKEN:
-            return JSONResponse(status_code=401, content={'detail': 'unauthorized'})
-    try:
-        return await call_next(request)
-    except Exception as e:
-        # 兜底(实测 @app.exception_handler(Exception) 在本中间件栈下不生效):
-        # 未捕获异常一律回 JSON,避免前端解析 "Internal Server Error" 纯文本再炸
-        return JSONResponse(status_code=500, content={
-            'ok': False,
-            'msg': f'服务器内部错误: {type(e).__name__}: {str(e)[:200]}'})
-    except BaseException as e:
-        # SystemExit(die 的 BaseException)等: 不接住会直接中止请求甚至杀 loop
-        return JSONResponse(status_code=500, content={
-            'ok': False,
-            'msg': f'服务器异常中止: {type(e).__name__}: {str(e)[:200]}'})
+class _AuthMiddleware:
+    """纯 ASGI 中间件(不走 BaseHTTPMiddleware): token 鉴权 + 异常兜底。
+    BaseHTTPMiddleware 会把路由内真实异常吞成 "No response returned.",
+    纯 ASGI 下异常原样穿透到本层,可带回真实原因。"""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] != 'http':
+            await self.app(scope, receive, send)
+            return
+        path = scope['path']
+        if path.startswith('/api') and scope['method'] != 'OPTIONS':
+            headers = {k.decode('latin-1').lower(): v.decode('latin-1')
+                       for k, v in scope.get('headers', [])}
+            token = headers.get('x-tg-token', '')
+            # <img> 标签无法带 header,仅头像图片端点放行 query token
+            if not token and path == '/api/avatar-image':
+                qs = (scope.get('query_string') or b'').decode('latin-1')
+                for kv in qs.split('&'):
+                    if kv.startswith('token='):
+                        token = kv[len('token='):]
+                        break
+            if token != TOKEN:
+                resp = json.dumps({'detail': 'unauthorized'}).encode()
+                await send({'type': 'http.response.start', 'status': 401,
+                            'headers': [(b'content-type', b'application/json'),
+                                        (b'content-length', str(len(resp)).encode())]})
+                await send({'type': 'http.response.body', 'body': resp})
+                return
+        # 异常兜底: 真实异常原样穿透到这层,转成 JSON(响应未开始时)
+        started = False
+
+        async def send_wrapper(message):
+            nonlocal started
+            if message['type'] == 'http.response.start':
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except Exception as e:
+            if not started:
+                resp = json.dumps({'ok': False,
+                                   'msg': f'服务器内部错误: {type(e).__name__}: {str(e)[:200]}'}).encode()
+                await send({'type': 'http.response.start', 'status': 500,
+                            'headers': [(b'content-type', b'application/json'),
+                                        (b'content-length', str(len(resp)).encode())]})
+                await send({'type': 'http.response.body', 'body': resp})
+            if not isinstance(e, Exception):
+                raise   # SystemExit 等继续上抛交回运行时
+        except BaseException as e:
+            if not started:
+                resp = json.dumps({'ok': False,
+                                   'msg': f'服务器异常中止: {type(e).__name__}: {str(e)[:200]}'}).encode()
+                await send({'type': 'http.response.start', 'status': 500,
+                            'headers': [(b'content-type', b'application/json'),
+                                        (b'content-length', str(len(resp)).encode())]})
+                await send({'type': 'http.response.body', 'body': resp})
+            raise
 
 
-@app.exception_handler(Exception)
-async def _unhandled_exception_handler(request, exc):
-    # 双保险(部分 Starlette 版本下中间件兜底可能不接 BaseException 以外的链路)
-    return JSONResponse(status_code=500, content={
-        'ok': False,
-        'msg': f'服务器内部错误: {type(exc).__name__}: {str(exc)[:200]}'})
+app.add_middleware(_AuthMiddleware)
 
 # ---------- 引擎单例 + 回调桥接 ----------
 _loop = None
@@ -782,8 +815,9 @@ async def poll_accounts(body: dict = None):
 async def convert_to_tdata(body: dict):
     """session+json → Telegram Desktop tdata(在线账号复用池内 client)。"""
     path = _ensure_in_root(body.get('path', ''))
+    overwrite = bool(body.get('overwrite'))
     eng = init_engine()
-    fut = eng.convert_to_tdata(path)
+    fut = eng.convert_to_tdata(path, overwrite=overwrite)
     try:
         target = await asyncio.wait_for(asyncio.wrap_future(fut), 120)
     except Exception as e:

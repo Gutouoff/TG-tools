@@ -267,11 +267,11 @@ export async function renameAccount(path: string, newName: string) {
 export const pollAccounts = (group?: string) =>
   postJson('/api/poll-accounts', { group: group ?? null });
 
-export async function convertToTdata(path: string) {
+export async function convertToTdata(path: string, overwrite = false) {
   const r = await apiFetch('/api/convert-to-tdata', {
     method: 'POST',
     headers: jsonHeaders(),
-    body: JSON.stringify({ path }),
+    body: JSON.stringify({ path, overwrite }),
   });
   return r.json() as Promise<{ ok: boolean; msg?: string; path?: string }>;
 }
