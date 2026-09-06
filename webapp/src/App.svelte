@@ -55,6 +55,7 @@
     convertToTdata,
     refreshSession,
     refreshSsBatch,
+    startChat,
     deleteAccount,
     getPing,
     TOKEN,
@@ -701,6 +702,31 @@
       addLog(`[发送异常] ${e?.message ?? e}`);
     } finally {
       sending = false;
+    }
+  }
+  // 按用户名直接发起聊天(解析实体后打开会话)
+  let startChatName = $state('');
+  let startingChat = $state(false);
+  async function doStartChat() {
+    const u = startChatName.trim();
+    if (!u || startingChat) return;
+    if (!current || !onlineNames.has(current.name)) {
+      addLog('请先连接账号再发起聊天');
+      return;
+    }
+    startingChat = true;
+    try {
+      const r = await startChat(current.name, u);
+      if (r.ok && r.dialog) {
+        startChatName = '';
+        await openDialog(r.dialog);
+      } else {
+        addLog(`发起聊天失败: ${r.msg || '未找到该用户'}`);
+      }
+    } catch (e: any) {
+      addLog(`发起聊天异常: ${e?.message ?? e}`);
+    } finally {
+      startingChat = false;
     }
   }
   async function loadRecv() {
@@ -1547,6 +1573,18 @@
           <button class="rule-chip" class:on={recvRules.exclude_channels} onclick={() => onRecvRuleChange('exclude_channels')}>{recvRules.exclude_channels ? '✓ ' : ''}排除频道</button>
           <button class="rule-chip" class:on={recvRules.exclude_groups} onclick={() => onRecvRuleChange('exclude_groups')}>{recvRules.exclude_groups ? '✓ ' : ''}排除群组</button>
           <button class="rule-chip" class:on={recvRules.exclude_bots} onclick={() => onRecvRuleChange('exclude_bots')}>{recvRules.exclude_bots ? '✓ ' : ''}排除机器人</button>
+        </div>
+        <div class="start-chat-row">
+          <input
+            class="chat-input"
+            placeholder="输入用户名直接发起聊天（@xxx）…"
+            bind:value={startChatName}
+            disabled={!current || !onlineNames.has(current.name)}
+            onkeydown={(e) => { if (e.key === 'Enter') doStartChat(); }}
+          />
+          <button class="send-btn" disabled={!startChatName.trim() || startingChat} onclick={doStartChat}>
+            {startingChat ? '查找中…' : '聊天'}
+          </button>
         </div>
         {#if !current}
           <p class="empty">请先选择账号</p>
@@ -2533,6 +2571,12 @@
     gap: 8px;
     padding-top: 8px;
     border-top: 1px solid var(--divider);
+  }
+  /* 用户名发起聊天行 */
+  .start-chat-row {
+    display: flex;
+    gap: 8px;
+    margin: 8px 0;
   }
   .chat-input {
     flex: 1;

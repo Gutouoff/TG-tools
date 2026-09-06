@@ -674,6 +674,73 @@ def make_json_from_session(account_dir, session_path):
         return False
 
 
+def reconcile_converted_json(account_dir):
+    """_convert_tdata 会按【文件夹名】写出 .session/.json;若账号原有的
+    json/session 用的是别的名字,把新 session 改回原名、me 信息合并进原 json、
+    删除多余的新 json,保证命名与先前一致。返回最终 session 文件名。"""
+    import glob as _g
+    folder = os.path.basename(os.path.abspath(account_dir))
+    new_json = os.path.join(account_dir, folder + '.json')
+    new_sess = os.path.join(account_dir, folder + '.session')
+    if not os.path.isfile(new_json):
+        return None
+    try:
+        new_cfg = json.load(open(new_json, encoding='utf-8'))
+    except Exception:
+        return folder + '.session'
+    orig_json = None
+    for f in _account_jsons(account_dir):
+        if os.path.abspath(f) != os.path.abspath(new_json):
+            orig_json = f
+            break
+    # 原命名: 原 json 的 session_file > 残留旧 session 文件名 > 无(保持 folder 命名)
+    orig_stem = None
+    if orig_json:
+        try:
+            sf = json.load(open(orig_json, encoding='utf-8')).get('session_file') or ''
+            if sf:
+                orig_stem = os.path.splitext(os.path.basename(sf))[0]
+        except Exception:
+            pass
+    if not orig_stem:
+        olds = [f for f in _g.glob(os.path.join(account_dir, '*.session'))
+                if os.path.abspath(f) != os.path.abspath(new_sess)]
+        if olds:
+            orig_stem = os.path.splitext(os.path.basename(olds[0]))[0]
+    if orig_json is None and not orig_stem:
+        return folder + '.session'   # 全新账号: 保持文件夹命名
+    target_stem = orig_stem or os.path.splitext(os.path.basename(orig_json))[0]
+    # session 改回原名
+    if target_stem != folder and os.path.isfile(new_sess):
+        target_sess = os.path.join(account_dir, target_stem + '.session')
+        if os.path.isfile(target_sess):
+            os.remove(target_sess)
+        os.replace(new_sess, target_sess)
+        new_cfg['session_file'] = target_stem + '.session'
+    if orig_json:
+        # 合并 me 信息进原 json,删除转换产生的多余 json
+        try:
+            old_cfg = json.load(open(orig_json, encoding='utf-8'))
+        except Exception:
+            old_cfg = {}
+        for k in ('phone', 'user_id', 'first_name', 'last_name', 'username'):
+            if new_cfg.get(k):
+                old_cfg[k] = new_cfg[k]
+        if new_cfg.get('session_file'):
+            old_cfg['session_file'] = new_cfg['session_file']
+        json.dump(old_cfg, open(orig_json, 'w', encoding='utf-8'),
+                  ensure_ascii=False, indent=1)
+        if os.path.isfile(new_json):
+            os.remove(new_json)
+    elif target_stem != folder:
+        # 无原 json: 新 json 改名为原 session 同名
+        dst = os.path.join(account_dir, target_stem + '.json')
+        if os.path.isfile(dst):
+            os.remove(dst)
+        os.replace(new_json, dst)
+    return new_cfg.get('session_file') or (target_stem + '.session')
+
+
 def detect_mode():
     """返回 (mode, account_dirs)。mode: 'single' / 'multi'。
     自动检测并转换"只有 tdata"的账号,让它们也能被操作。"""

@@ -795,6 +795,22 @@ async def refresh_ss_batch():
     return {'ok': True, 'msg': '已开始'}
 
 
+@app.post('/api/start-chat')
+async def start_chat(body: dict):
+    """按用户名解析会话对象,供前端直接发起聊天。"""
+    account = str(body.get('account') or '')
+    username = str(body.get('username') or '').strip()
+    if not account or not username:
+        return {'ok': False, 'msg': '参数缺失'}
+    eng = init_engine()
+    fut = eng.start_chat(account, username)
+    try:
+        dialog = await asyncio.wait_for(asyncio.wrap_future(fut), 45)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': True, 'dialog': _jsonable(dialog)}
+
+
 def _load_poll_results():
     try:
         p = os.path.join(tg_tool.SCRIPT_DIR, 'poll_results.json')

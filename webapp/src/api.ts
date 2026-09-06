@@ -269,6 +269,15 @@ export async function refreshSession(path: string) {
 
 export const refreshSsBatch = () => postJson('/api/refresh-ss-batch');
 
+export async function startChat(account: string, username: string) {
+  const r = await apiFetch('/api/start-chat', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ account, username }),
+  });
+  return r.json() as Promise<{ ok: boolean; msg?: string; dialog?: DialogItem }>;
+}
+
 export async function deleteAccount(path: string) {
   const r = await apiFetch('/api/delete-account', {
     method: 'POST',

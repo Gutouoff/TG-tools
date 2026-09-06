@@ -915,6 +915,44 @@ class Engine:
             })
         return out
 
+    def start_chat(self, account, username):
+        """按用户名解析并返回会话对象(结构同 list_dialogs),用于直接发起聊天。"""
+        return self._submit(self._do_start_chat(account, username))
+
+    async def _do_start_chat(self, account, username):
+        entry = self._pool.get(account)
+        if not entry:
+            raise RuntimeError(f'账号 {account} 不在线')
+        u = (username or '').strip().lstrip('@')
+        if not u:
+            raise RuntimeError('请输入用户名')
+        client = entry['client']
+        from telethon import utils as tl_utils
+        from telethon.tl.types import User as TlUser, Chat as TlChat, Channel as TlChannel
+        ent = await client.get_entity(u)
+        peer = await client.get_input_entity(u)
+        marked_id = tl_utils.get_peer_id(peer)
+        if isinstance(ent, TlUser):
+            dtype = 'bot' if getattr(ent, 'bot', False) else 'private'
+            disp = (((getattr(ent, 'first_name', '') or '') + ' '
+                     + (getattr(ent, 'last_name', '') or '')).strip()
+                    or getattr(ent, 'username', None) or u)
+        elif isinstance(ent, TlChat) or (isinstance(ent, TlChannel) and getattr(ent, 'megagroup', False)):
+            dtype = 'group'
+            disp = getattr(ent, 'title', None) or u
+        else:
+            dtype = 'channel'
+            disp = getattr(ent, 'title', None) or u
+        return {
+            'id': marked_id,
+            'name': disp or u,
+            'type': dtype,
+            'unread': 0,
+            'pinned': False,
+            'last_text': '',
+            'last_date': '',
+        }
+
     def fetch_history(self, account, dialog_id, limit=20, offset_id=0):
         """拉取会话历史消息(新->旧);offset_id 传最早一条 id 可向更早翻页。"""
         return self._submit(self._do_fetch_history(account, int(dialog_id), int(limit), int(offset_id)))
@@ -1586,9 +1624,10 @@ class Engine:
         return self._submit(self._do_refresh_sessions_batch(root))
 
     def _write_json_from_me(self, account_dir, me):
-        """用在线 me 信息写出/刷新账号凭据 json。"""
+        """用在线 me 信息刷新账号凭据 json(存在则原地更新,不新建第二个 json)。"""
         import glob as _g
         name = os.path.basename(account_dir)
+        js = tg_tool._account_jsons(account_dir)
         sess = sorted(_g.glob(os.path.join(account_dir, '*.session')))
         cfg = {
             'phone': getattr(me, 'phone', '') or '',
@@ -1603,8 +1642,20 @@ class Engine:
             'last_name': me.last_name or '',
             'username': getattr(me, 'username', '') or '',
         }
-        json.dump(cfg, open(os.path.join(account_dir, name + '.json'), 'w',
-                            encoding='utf-8'), ensure_ascii=False, indent=1)
+        if js:
+            # 原地更新原有 json(保留原文件名/其他字段)
+            try:
+                old = json.load(open(js[0], encoding='utf-8'))
+            except Exception:
+                old = {}
+            old.update({k: v for k, v in cfg.items() if v})
+            if sess:
+                old['session_file'] = os.path.basename(sess[0])
+            json.dump(old, open(js[0], 'w', encoding='utf-8'),
+                      ensure_ascii=False, indent=1)
+        else:
+            json.dump(cfg, open(os.path.join(account_dir, name + '.json'), 'w',
+                                encoding='utf-8'), ensure_ascii=False, indent=1)
 
     async def _do_refresh_session_from_tdata(self, account_dir):
         _ensure_telethon()
@@ -1628,7 +1679,9 @@ class Engine:
         ok = await loop.run_in_executor(None, tg_tool._convert_tdata, account_dir)
         if not ok:
             raise RuntimeError('tdata → session 转换失败(tdata 可能已失效)')
-        self._log(f'[刷新] {name}: tdata → s+s 完成')
+        # 命名按先前: 新 session/json 改回原名字,me 信息合并进原 json
+        sess_name = tg_tool.reconcile_converted_json(account_dir)
+        self._log(f'[刷新] {name}: tdata → session+json 完成(命名保持: {sess_name})')
         return True
 
     async def _do_refresh_sessions_batch(self, root):
@@ -1676,6 +1729,7 @@ class Engine:
                 ok = await loop.run_in_executor(None, tg_tool._convert_tdata, path)
                 if ok:
                     ok_n += 1
+                    tg_tool.reconcile_converted_json(path)  # 命名按先前
                     self._log(T('t170', i, len(targets), name))
                 else:
                     self._log(f'[刷新] {i}/{len(targets)} {name}: 转换失败(tdata 已失效?)')
