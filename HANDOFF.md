@@ -1,7 +1,7 @@
 # TG 工具箱交接文档（重开会话用）
 
 > 本文档记录当前项目的完整状态、关键技术细节、卡点和下一步，供新会话无缝继续。
-> 最后更新：main/dev = `27fc7dd`
+> 最后更新：main/dev = v1.1.0 正式版（143cddd+）；项目目录已清理（beta 发布说明归档 docs/releases/，tdesktop 参考源码归档 legacy/reference/，build/__pycache__ 与一次性脚本已删）
 
 ---
 
