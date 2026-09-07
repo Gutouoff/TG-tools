@@ -1575,6 +1575,15 @@ async def import_archive(body: dict):
         src, kind = _find_account(tmp)
         if src is None:
             return {'ok': False, 'msg': '压缩包内未找到有效的账号数据'}
+        # 默认文件夹名 = session 文件名(如 22350885611.session → 22350885611);
+        # 仅 tdata 包(无 session)沿用 zip 名
+        if kind == 'session':
+            import glob as _g
+            sess = sorted(_g.glob(os.path.join(src, '*.session')))
+            if sess:
+                stem = os.path.splitext(os.path.basename(sess[0]))[0]
+                if stem:
+                    name = _clean_name(stem)
         target = _unique_target(ROOT, name)
         os.makedirs(target, exist_ok=True)
         for entry in os.listdir(src):
@@ -1594,7 +1603,11 @@ async def import_archive(body: dict):
         exe_dst = os.path.join(target, 'Telegram.exe')
         msg = f'已导入 {os.path.basename(target)}'
         if kind == 'session':
-            msg += '(仅 session,凭据 json 将在首次连接时自动补建)'
+            import glob as _g2
+            has_json = bool([f for f in _g2.glob(os.path.join(target, '*.json'))
+                             if tg_tool._is_account_json(f)])
+            if not has_json:
+                msg += '（仅 session，凭据 json 将在首次连接时自动补建）'
         if os.path.isfile(exe_src) and not os.path.isfile(exe_dst):
             try:
                 shutil.copy2(exe_src, exe_dst)
