@@ -698,6 +698,42 @@
   function openJoinView() {
     setView('join');
   }
+  // 加群频道一体化管理: 本页增删改(即时持久化到 settings.join_links)
+  let joinEditIdx = $state(-1);
+  async function persistJoinEntries() {
+    settings = { ...settings, join_links: joinEntries };
+    try {
+      await saveSettings({ join_links: joinEntries });
+    } catch {
+      addLog('[加群] 链接保存失败(本次改动未持久化)');
+    }
+  }
+  function doJoinAddEntry() {
+    joinEntries = [...joinEntries, { name: '', link: '', type: 'group' }];
+    joinEditIdx = joinEntries.length - 1;
+  }
+  async function doJoinSaveEdit(i: number) {
+    const e = joinEntries[i];
+    if (!e) return;
+    if (!e.link.trim()) {
+      addLog('[加群] 链接不能为空');
+      return;
+    }
+    joinEditIdx = -1;
+    await persistJoinEntries();
+  }
+  function doJoinCancelEdit() {
+    // 新添加但没填链接的条目,取消时直接移除
+    if (joinEditIdx >= 0 && !joinEntries[joinEditIdx]?.link.trim()) {
+      joinEntries = joinEntries.filter((_, k) => k !== joinEditIdx);
+    }
+    joinEditIdx = -1;
+  }
+  async function doJoinDelete(i: number) {
+    joinEntries = joinEntries.filter((_, k) => k !== i);
+    joinEditIdx = -1;
+    await persistJoinEntries();
+  }
 
   // ---------- 会话列表 / 聊天记录 ----------
   async function loadDialogs() {
@@ -1612,7 +1648,6 @@
             消息列表
             {#if chatUnread}<span class="badge">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}
           </button>
-          <button class="chat-entry" onclick={openJoinView}>加群频道…</button>
         </div>
       </div>
     </details>
@@ -1660,6 +1695,7 @@
         <md-outlined-button onclick={() => updateTelegram()}>安装升级客户端</md-outlined-button>
         <md-outlined-button onclick={doRefreshAccountInfo}>刷新账号信息</md-outlined-button>
         <md-outlined-button onclick={doPollAccounts}>账号轮询</md-outlined-button>
+        <md-outlined-button onclick={openJoinView}>加群频道…</md-outlined-button>
         <md-outlined-button onclick={doExportAccounts} disabled={exporting}>{exporting ? '导出中…' : '导出表格'}</md-outlined-button>
         <md-outlined-button class="danger-btn" onclick={doOpenDeleteAccount}>删除账号</md-outlined-button>
       </div>
@@ -1922,29 +1958,55 @@
     {:else if rightView === 'join'}
       <div class="sec-head">
         <h3>加群频道</h3>
-        <span class="head-btns">
-          <button class="back" onclick={() => openSettings('join')}>编辑链接</button>
-          <button class="back" onclick={() => setView('log')}>日志</button>
-        </span>
+        <button class="back" onclick={() => setView('log')}>日志</button>
+      </div>
+      <div class="join-toolbar">
+        <md-outlined-button onclick={doJoinAddEntry}>＋ 添加链接</md-outlined-button>
       </div>
       {#each [['group', '群'], ['channel', '频道']] as [cat, catLabel]}
         <div class="join-cat">{catLabel}</div>
         <ul class="sec-list">
-          {#each joinEntries.filter((e) => e.type === cat) as e, i (i)}
-            <li class="sec-item join-item">
-              <span class="join-item-meta">
-                <b>{e.name || '(未命名)'}</b>
-                <small>{e.link}</small>
-              </span>
-              <button class="back" onclick={() => doJoinOne(e)}>加入</button>
-            </li>
+          {#each joinEntries as e, i (i)}
+            {#if e.type === cat}
+              <li class="sec-item join-item">
+                {#if joinEditIdx === i}
+                  <!-- 行内编辑: 类型+备注+链接,确定/取消 -->
+                  <div class="join-edit">
+                    <div class="join-edit-row">
+                      <select class="set-select join-type" bind:value={e.type}>
+                        <option value="group">群</option>
+                        <option value="channel">频道</option>
+                      </select>
+                      <input class="set-input join-name" bind:value={e.name} placeholder="备注名" />
+                    </div>
+                    <input class="set-input join-link" bind:value={e.link} placeholder="https://t.me/xxx 或 @xxx 或邀请链接" />
+                    <div class="join-edit-btns">
+                      <md-outlined-button onclick={doJoinCancelEdit}>取消</md-outlined-button>
+                      <md-filled-button onclick={() => doJoinSaveEdit(i)}>保存</md-filled-button>
+                    </div>
+                  </div>
+                {:else}
+                  <span class="join-item-meta">
+                    <b>{e.name || '(未命名)'}</b>
+                    <small>{e.link}</small>
+                  </span>
+                  <span class="join-item-ops">
+                    <button class="back" onclick={() => doJoinOne(e)}>加入</button>
+                    <button class="icon-btn" title="编辑" onclick={() => (joinEditIdx = i)}>✎</button>
+                    <button class="icon-btn danger" title="删除" onclick={() => doJoinDelete(i)}>✕</button>
+                  </span>
+                {/if}
+              </li>
+            {/if}
           {/each}
           {#if !joinEntries.some((e) => e.type === cat)}
-            <li class="empty">暂无{catLabel}链接，点右上角「编辑链接」添加</li>
+            <li class="empty">暂无{catLabel}链接，点上方「添加链接」</li>
           {/if}
         </ul>
       {/each}
-      <md-filled-button onclick={doJoinChats}>全部加入（当前账号）</md-filled-button>
+      {#if joinEntries.length}
+        <md-outlined-button class="full-row" onclick={doJoinChats}>全部加入（当前账号）</md-outlined-button>
+      {/if}
     {/if}
   </section>
 </div>
@@ -2294,30 +2356,10 @@
             {/if}
           </div>
         {:else if settingsSection === 'join'}
-          <div class="set-sec-title">加群频道</div>
-          <div class="set-group">
-            <div class="set-row set-row-col">
-              <span class="set-label">要加入的群组/频道链接（可添加备注名，右栏「加群频道」页会显示备注）</span>
-            </div>
-            {#each joinEntries as e, i}
-              <div class="join-edit">
-                <div class="join-edit-row">
-                  <select class="set-select join-type" bind:value={e.type}>
-                    <option value="group">群</option>
-                    <option value="channel">频道</option>
-                  </select>
-                  <input class="set-input join-name" bind:value={e.name} placeholder="备注名" />
-                  <button class="order-btn" title="删除此条" onclick={() => joinEntries.splice(i, 1)}>✕</button>
-                </div>
-                <input class="set-input join-link" bind:value={e.link} placeholder="https://t.me/xxx 或 @xxx 或邀请链接" />
-              </div>
-            {/each}
-            {#if !joinEntries.length}
-              <p class="empty">还没有链接，点下方「添加链接」</p>
-            {/if}
-            <md-outlined-button onclick={() => joinEntries = [...joinEntries, { name: '', link: '', type: 'group' }]}>＋ 添加链接</md-outlined-button>
-          </div>
-          <md-filled-button onclick={doJoinChats}>全部加入（当前账号）</md-filled-button>
+          <div class="set-sec-title">加群频道 · 预选</div>
+          <p class="set-hint">
+            群/频道链接的添加、编辑、加入已移至「其他设置 → 加群频道…」页面，本页仅维护预选数据。
+          </p>
           <div class="set-group-title">预选邮箱（绑定登录邮箱时一键填入）</div>
           <div class="set-group">
             {#each emailPresets as p, i}
@@ -2330,6 +2372,9 @@
               <p class="empty">还没有预选邮箱，点下方「添加邮箱」</p>
             {/if}
             <md-outlined-button onclick={() => emailPresets = [...emailPresets, '']}>＋ 添加邮箱</md-outlined-button>
+          </div>
+          <div class="set-footer-btn">
+            <md-outlined-button onclick={() => { settingsOpen = false; openJoinView(); }}>前往加群频道页面 →</md-outlined-button>
           </div>
         {:else if settingsSection === 'whitelist'}
           <div class="set-sec-title">白名单</div>
@@ -2856,6 +2901,51 @@
     gap: 6px;
     align-items: center;
     margin-bottom: 6px;
+  }
+  /* 加群频道页一体化 */
+  .join-toolbar {
+    display: flex;
+    margin-bottom: 4px;
+  }
+  .join-item-ops {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .join-item-ops .icon-btn {
+    background: none;
+    border: 1px solid var(--md-sys-color-outline);
+    color: var(--md-sys-color-on-surface-variant);
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .join-item-ops .icon-btn:hover {
+    border-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-primary);
+  }
+  .join-item-ops .icon-btn.danger:hover {
+    border-color: var(--md-sys-color-error, #b3261e);
+    color: var(--md-sys-color-error, #b3261e);
+  }
+  .join-edit-btns {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .join-edit {
+    flex: 1;
+    min-width: 0;
+  }
+  .set-footer-btn {
+    margin-top: 14px;
   }
   /* 加群条目: 两行布局(类型+备注+删除 / 链接独占整行),避免单行挤出弹窗 */
   .join-edit {
