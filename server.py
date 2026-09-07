@@ -68,9 +68,21 @@ class _AuthMiddleware:
             await self.app(scope, receive, send)
             return
         path = scope['path']
+        headers = {k.decode('latin-1').lower(): v.decode('latin-1')
+                   for k, v in scope.get('headers', [])}
+        # DNS rebinding 防护: 只信任本机来源(浏览器直连/webview 壳),
+        # 恶意网站把域名解析到 127.0.0.1 时 Host 会是攻击者域名
+        if path.startswith('/api') or path == '/':
+            host = headers.get('host', '')
+            host_name = host.split(':')[0].strip().lower()
+            if host_name not in ('localhost', '127.0.0.1'):
+                resp = json.dumps({'detail': 'forbidden host'}).encode()
+                await send({'type': 'http.response.start', 'status': 403,
+                            'headers': [(b'content-type', b'application/json'),
+                                        (b'content-length', str(len(resp)).encode())]})
+                await send({'type': 'http.response.body', 'body': resp})
+                return
         if path.startswith('/api') and scope['method'] != 'OPTIONS':
-            headers = {k.decode('latin-1').lower(): v.decode('latin-1')
-                       for k, v in scope.get('headers', [])}
             token = headers.get('x-tg-token', '')
             # <img> 标签无法带 header,仅头像图片端点放行 query token
             if not token and path == '/api/avatar-image':
@@ -1837,8 +1849,12 @@ _index_cache = None          # index.html 缓存(避免每次请求读盘)
 
 
 @app.get('/')
-async def index():
+async def index(token: str = ''):
     from fastapi.responses import HTMLResponse
+    # 首页含 token 注入,必须带 query token 才返回(壳和浏览器模式都带 ?token=);
+    # 否则本机任意进程扫端口即可白拿 token 调用全部 API
+    if token != TOKEN:
+        return HTMLResponse('未授权', status_code=401)
     global _index_cache
     if _index_cache is None:
         index_path = os.path.join(DIST, 'index.html')
