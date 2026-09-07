@@ -14,7 +14,9 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -1723,35 +1725,82 @@ async def set_settings(body: dict):
 # ---------- 打包账号(仅 tdata + session + json + 2fa.txt,zip + 剪贴板) ----------
 def _copy_file_to_clipboard(path):
     """复制文件到剪贴板(CF_HDROP),纯 ctypes 无 shell 注入。"""
-    import ctypes
-    from ctypes import wintypes
+
+    def _to_clipboard(p):
+        import ctypes
+        from ctypes import wintypes
+        try:
+            CF_HDROP = 15
+            GMEM_MOVEABLE = 0x0002
+            GMEM_ZEROINIT = 0x0040
+
+            class DROPFILES(ctypes.Structure):
+                _fields_ = [('pFiles', wintypes.DWORD),
+                            ('pt', wintypes.POINT),
+                            ('fNC', wintypes.BOOL),
+                            ('fWide', wintypes.BOOL)]
+
+            df = DROPFILES()
+            df.pFiles = ctypes.sizeof(DROPFILES)
+            df.fWide = True
+            head = ctypes.string_at(ctypes.addressof(df), ctypes.sizeof(DROPFILES))
+            payload = head + p.encode('utf-16-le') + b'\x00\x00'
+
+            kernel32 = ctypes.windll.kernel32
+            user32 = ctypes.windll.user32
+            # 64 位下必须声明 restype/argtypes,否则 HANDLE 被截断成 int:
+            # GlobalAlloc→负数、SetClipboardData 第二参→OverflowError
+            kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+            kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+            kernel32.GlobalLock.restype = ctypes.c_void_p
+            kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+            kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+            user32.SetClipboardData.restype = wintypes.HANDLE
+            user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+            hmem = kernel32.GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, len(payload))
+            if not hmem:
+                return False
+            ptr = kernel32.GlobalLock(hmem)
+            if not ptr:
+                return False
+            ctypes.memmove(ptr, payload, len(payload))
+            kernel32.GlobalUnlock(hmem)
+            if not user32.OpenClipboard(0):
+                return False
+            try:
+                user32.EmptyClipboard()
+                if not user32.SetClipboardData(CF_HDROP, hmem):
+                    return False
+            finally:
+                user32.CloseClipboard()
+            # SetClipboardData 成功后所有权归剪贴板,不能 GlobalFree(hmem)
+            return True
+        except Exception:
+            return False
+
+    # 先复制原路径(用户此刻粘贴拿到的是账号根目录里的文件),
+    # 成功后把 zip 移入临时目录并更新剪贴板指向新路径——
+    # CF_HDROP 存的是文件引用,直接删源文件会让粘贴失败;
+    # 移到 %TEMP% 则账号根目录保持干净,粘贴照常,系统重启自动清理
+    if not _to_clipboard(path):
+        return False
     try:
-        CF_HDROP = 15
-        GMEM_MOVEABLE = 0x0002
-        GMEM_ZEROINIT = 0x0040
-
-        class DROPFILES(ctypes.Structure):
-            _fields_ = [('pFiles', wintypes.DWORD),
-                        ('pt', wintypes.POINT),
-                        ('fNC', wintypes.BOOL),
-                        ('fWide', wintypes.BOOL)]
-
-        df = DROPFILES()
-        df.pFiles = ctypes.sizeof(DROPFILES)
-        df.fWide = True
-        head = ctypes.string_at(ctypes.addressof(df), ctypes.sizeof(DROPFILES))
-        payload = head + path.encode('utf-16-le') + b'\x00\x00'
-
-        kernel32 = ctypes.windll.kernel32
-        user32 = ctypes.windll.user32
-        hmem = kernel32.GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, len(payload))
-        ptr = kernel32.GlobalLock(hmem)
-        ctypes.memmove(ptr, payload, len(payload))
-        kernel32.GlobalUnlock(hmem)
-        user32.OpenClipboard(None)
-        user32.EmptyClipboard()
-        user32.SetClipboardData(CF_HDROP, hmem)
-        user32.CloseClipboard()
+        holder = os.path.join(tempfile.gettempdir(), 'tgpack')
+        os.makedirs(holder, exist_ok=True)
+        # 清掉超过一天的旧包,避免临时目录无限膨胀
+        now = time.time()
+        for old in os.listdir(holder):
+            op = os.path.join(holder, old)
+            try:
+                if os.path.isfile(op) and now - os.path.getmtime(op) > 86400:
+                    os.remove(op)
+            except OSError:
+                pass
+        moved = os.path.join(holder, os.path.basename(path))
+        if os.path.exists(moved):
+            os.remove(moved)
+        shutil.move(path, moved)
+        _to_clipboard(moved)   # 更新剪贴板指向临时文件(失败也无碍,原引用已在)
         return True
     except Exception:
         return False
@@ -1819,7 +1868,7 @@ async def pack_account(body: dict):
         finally:
             shutil.rmtree(staging, ignore_errors=True)
         clip = _copy_file_to_clipboard(zip_path)
-        return {'ok': True, 'msg': f'已加密打包{"并复制到剪贴板" if clip else ""}：{os.path.basename(zip_path)}'}
+        return {'ok': True, 'msg': f'已加密打包并复制到剪贴板：{os.path.basename(zip_path)}' if clip else f'已加密打包（剪贴板复制失败，文件保留在账号根目录）：{os.path.basename(zip_path)}'}
 
     # 无密码: zipfile 明文
     try:
@@ -1841,7 +1890,7 @@ async def pack_account(body: dict):
     except Exception as e:
         return {'ok': False, 'msg': f'打包失败: {str(e)[:200]}'}
     clip = _copy_file_to_clipboard(zip_path)
-    return {'ok': True, 'msg': f'已打包{"并复制到剪贴板" if clip else ""}：{os.path.basename(zip_path)}'}
+    return {'ok': True, 'msg': f'已打包并复制到剪贴板：{os.path.basename(zip_path)}' if clip else f'已打包（剪贴板复制失败，文件保留在账号根目录）：{os.path.basename(zip_path)}'}
 
 
 # ---------- 静态前端 ----------
