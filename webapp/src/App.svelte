@@ -1152,12 +1152,14 @@
   let pressGroup = '';      // mousedown 时的分组(还没确认是拖动)
   let pressX = 0;
   let pressY = 0;
+  let suppressGroupClick = false;   // 拖动结束后短暂吞 click,防止误切分组
 
   function onGroupMouseDown(e: MouseEvent, g: string) {
     if (g === 'all' || g === 'ungrouped' || e.button !== 0) return;
     pressGroup = g;
     pressX = e.clientX;
     pressY = e.clientY;
+    e.preventDefault();   // 阻止按钮原生按下行为(焦点框/文字选择),避免干扰拖动
   }
   function onGroupMouseMove(e: MouseEvent) {
     if (!pressGroup) return;
@@ -1179,9 +1181,13 @@
     if (dragGroup && dragGroupOver) {
       const from = dragGroup;
       const to = dragGroupOver;
+      const wasDragging = true;
       dragGroup = '';
       dragGroupOver = '';
       pressGroup = '';
+      // 拖动结束后短时间内吞掉 click(松手位置按钮会收到 click,误触切换分组)
+      suppressGroupClick = true;
+      setTimeout(() => (suppressGroupClick = false), 250);
       reorderGroupList(from, to);
       return;
     }
@@ -1528,7 +1534,7 @@
           class:dragging={dragGroup === g}
           data-group={g}
           draggable={false}
-          onclick={() => selectGroup(g)}
+          onclick={() => { if (!suppressGroupClick) selectGroup(g); }}
           oncontextmenu={(e) => onGroupContext(e, g)}
           onmousedown={(e) => onGroupMouseDown(e, g)}
         >
