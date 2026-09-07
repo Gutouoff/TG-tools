@@ -1636,6 +1636,15 @@ def _load_settings():
                     merged['proxy_scheme'] = p.get('scheme', 'socks5')
                     merged['proxy_host'] = str(p.get('host', '') or '')
                     merged['proxy_port'] = str(p.get('port', '') or '')
+                # card_order 自动补新增卡片(老 settings 缺「转换」会让新功能卡不显示)
+                order = merged.get('card_order')
+                if isinstance(order, str):
+                    default_order = DEFAULT_SETTINGS['card_order'].split(',')
+                    have = [x.strip() for x in order.split(',') if x.strip()]
+                    for c in default_order:
+                        if c not in have:
+                            have.append(c)
+                    merged['card_order'] = ','.join(have)
                 # 兼容旧 join_links 字符串(每行一个) → 结构化条目
                 jl = merged.get('join_links')
                 if isinstance(jl, str):

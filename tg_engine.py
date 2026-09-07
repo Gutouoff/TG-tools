@@ -322,6 +322,9 @@ class Engine:
         return self._submit(self._do_delete_contacts())
 
     async def _do_delete_contacts(self):
+        if self._task_running:
+            self._state('done', '已有任务在运行')
+            return
         _ensure_telethon()
         if not self._client:
             self._state('done', '未连接账号')
@@ -431,6 +434,9 @@ class Engine:
         return self._submit(self._do_delete_dialogs(choice))
 
     async def _do_delete_dialogs(self, choice):
+        if self._task_running:
+            self._state('done', '已有任务在运行')
+            return
         _ensure_telethon()
         if not self._client:
             self._state('done', '未连接账号')
@@ -1133,6 +1139,9 @@ class Engine:
         if not links:
             self._state('done', '链接列表为空')
             return []
+        if self._task_running:
+            self._state('done', '已有任务在运行')
+            return None
         self._task_running = True
         self._cancel.clear()
         self._state('task_start', '加群/频道')
@@ -1732,6 +1741,9 @@ class Engine:
         if not targets:
             self._state('done', '没有需要刷新的账号(仅处理有 tdata 且测活失败的)')
             return None
+        if self._task_running:
+            self._state('done', '已有任务在运行')
+            return None
         self._task_running = True
         self._cancel.clear()
         self._state('task_start', '刷新session')
@@ -1997,6 +2009,7 @@ class Engine:
                 await self._sleep(1.0)
             dead_n = sum(1 for v in results.values() if v.get('alive') is False)
             self._log(T('t163', ok_n, len(results), dead_n))
+            self._state('done', 'poll_done')   # 结构化标记: 前端据此刷新轮询标识
             self._state('done', f'轮询完成: 存活 {ok_n}/{len(results)}')
         except Exception as e:
             self._log(f'[!] 轮询出错: {type(e).__name__}: {e}')

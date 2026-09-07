@@ -1343,11 +1343,11 @@
         }
       }
       if (e.status === 'done') {
-        addLog('[完成]');
-        // 账号轮询会更新 poll_results.json,完成后立即刷新账号卡片，
-        // 让上次的「死」标识随本次存活结果消失
-        if (String(e.data ?? '').startsWith('轮询完成')) {
+        if (e.data === 'poll_done') {
+          // 结构化标记事件: 只触发刷新,不进日志(真正的完成文案在下一个事件)
           loadAccounts();
+        } else {
+          addLog('[完成]');
         }
       }
       if (e.status === 'error') addLog(`[错误] ${String(e.data ?? '')}`);
