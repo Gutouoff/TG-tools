@@ -1048,9 +1048,19 @@
   // 账号分组
   let groups = $state<Record<string, string[]>>({});
   let curGroup = $state('all');
+  // 分组选择记忆: 启动时恢复 settings.cur_group,切换时静默持久化
+  let restoreGroup = '';
 
   async function loadGroups() {
     groups = await getGroups();
+    if (restoreGroup) {
+      const want = restoreGroup;
+      restoreGroup = '';
+      if (want === 'all' || want === 'ungrouped' || want in groups) {
+        curGroup = want;
+        applyFilter();
+      }
+    }
   }
   function groupFiltered(): Account[] {
     const grouped = new Set<string>();
@@ -1062,6 +1072,7 @@
   function selectGroup(g: string) {
     curGroup = g;
     applyFilter();
+    saveSettings({ cur_group: g }).catch(() => {});
   }
   // 新建分组弹窗(M3,替代原生 prompt)
   let groupModalOpen = $state(false);
@@ -1097,31 +1108,55 @@
     }
   }
 
-  // ---------- 分组标签: 拖动排序 + 右键重命名/删除 ----------
+  // ---------- 分组标签: 指针拖动排序 + 右键重命名/删除 ----------
+  // 不用 HTML5 DnD: button 上 dragstart 在 Chromium 里不稳定,且拖动中重渲染会中断。
+  // 指针方案: mousedown 记录起点,移动超阈值进入拖动态,经过的标签高亮,松手落位。
   let dragGroup = $state('');
   let dragGroupOver = $state('');
-  function onGroupDragStart(e: DragEvent, g: string) {
-    dragGroup = g;
-    e.dataTransfer?.setData('text/plain', g);
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+  let pressGroup = '';      // mousedown 时的分组(还没确认是拖动)
+  let pressX = 0;
+  let pressY = 0;
+
+  function onGroupMouseDown(e: MouseEvent, g: string) {
+    if (g === 'all' || g === 'ungrouped' || e.button !== 0) return;
+    pressGroup = g;
+    pressX = e.clientX;
+    pressY = e.clientY;
   }
-  function onGroupDragOver(e: DragEvent, g: string) {
-    if (!dragGroup || dragGroup === g || g === 'all' || g === 'ungrouped') return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-    dragGroupOver = g;
+  function onGroupMouseMove(e: MouseEvent) {
+    if (!pressGroup) return;
+    if (!dragGroup) {
+      // 超过 5px 判定为拖动(而不是点击)
+      if (Math.abs(e.clientX - pressX) > 5 || Math.abs(e.clientY - pressY) > 5) {
+        dragGroup = pressGroup;
+      } else {
+        return;
+      }
+    }
+    // 命中检测: 鼠标下的分组标签
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const btn = el?.closest?.('button.grp');
+    const g = btn?.getAttribute('data-group') || '';
+    dragGroupOver = (g && g !== 'all' && g !== 'ungrouped' && g !== dragGroup) ? g : '';
   }
-  async function onGroupDrop(e: DragEvent, g: string) {
-    if (!dragGroup) return;  // 账号拖动: 交给 aside 的 onDrop(移入分组)
-    e.preventDefault();
-    e.stopPropagation();
-    const from = dragGroup;
+  function onGroupMouseUp() {
+    if (dragGroup && dragGroupOver) {
+      const from = dragGroup;
+      const to = dragGroupOver;
+      dragGroup = '';
+      dragGroupOver = '';
+      pressGroup = '';
+      reorderGroupList(from, to);
+      return;
+    }
     dragGroup = '';
     dragGroupOver = '';
-    if (from === g || g === 'all' || g === 'ungrouped') return;
+    pressGroup = '';
+  }
+  async function reorderGroupList(from: string, to: string) {
     const keys = Object.keys(groups);
     const fromIdx = keys.indexOf(from);
-    const toIdx = keys.indexOf(g);
+    const toIdx = keys.indexOf(to);
     if (fromIdx < 0 || toIdx < 0) return;
     keys.splice(toIdx, 0, keys.splice(fromIdx, 1)[0]);
     const ordered: Record<string, string[]> = {};
@@ -1227,6 +1262,7 @@
     e.preventDefault();
   }
   function onWinMouseMove(e: MouseEvent) {
+    onGroupMouseMove(e);   // 分组标签指针拖动排序
     if (!dragTarget) return;
     if (dragTarget === 'left') {
       leftW = Math.max(200, Math.min(500, e.clientX));
@@ -1235,6 +1271,7 @@
     }
   }
   function onWinMouseUp() {
+    onGroupMouseUp();      // 分组拖动落位
     dragTarget = null;
   }
 
@@ -1376,6 +1413,13 @@
   });
 
   onMount(async () => {
+    // 先取上次所在分组,再加载分组列表(加载完自动恢复)
+    try {
+      const s = await getSettings();
+      if (s?.cur_group) restoreGroup = String(s.cur_group);
+    } catch {
+      // 忽略: 恢复失败留在「全部」
+    }
     loadGroups();
     loadAccounts();
     loadRecv();
@@ -1437,8 +1481,7 @@
   <button class="topbtn" onclick={loadSettings}>设置</button>
 </header>
 
-<svelte:window onmousemove={onWinMouseMove} onmouseup={onWinMouseUp} />
-<div class="layout">
+<svelte:window onmousemove={onWinMouseMove} onmouseup={onWinMouseUp} /><div class="layout">
   <aside class="left" style="width:{leftW}px" ondragover={onDragOver} ondrop={onDrop} onclick={closeCtx}>
     <div class="groups">
       {#each ['all', 'ungrouped', ...Object.keys(groups)] as g}
@@ -1446,14 +1489,12 @@
           class="grp"
           class:on={curGroup === g}
           class:drag-over={dragGroupOver === g}
-          draggable={g !== 'all' && g !== 'ungrouped'}
+          class:dragging={dragGroup === g}
+          data-group={g}
+          draggable={false}
           onclick={() => selectGroup(g)}
           oncontextmenu={(e) => onGroupContext(e, g)}
-          ondragstart={(e) => onGroupDragStart(e, g)}
-          ondragend={() => { dragGroup = ''; dragGroupOver = ''; }}
-          ondragover={(e) => onGroupDragOver(e, g)}
-          ondragleave={() => { if (dragGroupOver === g) dragGroupOver = ''; }}
-          ondrop={(e) => onGroupDrop(e, g)}
+          onmousedown={(e) => onGroupMouseDown(e, g)}
         >
           {g === 'all' ? '全部' : g === 'ungrouped' ? '未分组' : g}
         </button>
@@ -2433,6 +2474,12 @@
   .grp.drag-over {
     outline: 2px dashed var(--md-sys-color-primary);
     outline-offset: -2px;
+  }
+  .grp.dragging {
+    opacity: 0.45;
+  }
+  .groups {
+    user-select: none;
   }
   .grp:hover:not(.on) {
     background: var(--hover-overlay);

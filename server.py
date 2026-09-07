@@ -1618,6 +1618,7 @@ DEFAULT_SETTINGS = {
     'rename_quick': ['display', 'username', 'phone', 'uid'],  # 重命名弹窗快捷项
     'rename_prefix': '',            # 重命名快捷项自定义前缀
     'email_presets': [],            # 预选邮箱列表(绑定登录邮箱时一键填入)
+    'cur_group': 'all',             # 记忆上次所在分组
 }
 
 
