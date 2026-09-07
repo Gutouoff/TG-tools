@@ -51,6 +51,7 @@
     sendChatMsg,
     launchClient,
     openFolder,
+    getEmail,
     renameAccount,
     pollAccounts,
     convertToTdata,
@@ -575,11 +576,13 @@
       log_level: 'info',
       rename_quick: ['display', 'username', 'phone', 'uid'],
       rename_prefix: '',
+      email_presets: [],
     };
     settingsOpen = true;
     try {
       settings = await getSettings();
       applyJoinEntries(settings.join_links);
+      applyEmailPresets(settings.email_presets);
       applyTheme();
     } catch (e) {
       // 保持默认值
@@ -590,7 +593,7 @@
     loadSettings();
   }
   async function doSaveSettings() {
-    settings = { ...settings, join_links: joinEntries };
+    settings = { ...settings, join_links: joinEntries, email_presets: emailPresets };
     await saveSettings(settings);
     settingsOpen = false;
     addLog('设置已保存');
@@ -883,7 +886,7 @@
     has2fa = r.has_2fa ?? false;
   }
   function showEmail() {
-    setView('email');
+    showEmailView();
   }
   async function doDeletePasskey(id: string) {
     await deletePasskey(id);
@@ -910,13 +913,43 @@
     addLog('设备已注销');
     await loadDevices();
   }
+  // 邮箱登录: 已绑邮箱本地持久化(login_email);预选邮箱一键填入
+  let boundEmail = $state('');
+  let showEmailForm = $state(false);
+  let emailPresets = $state<string[]>([]);
+  function applyEmailPresets(raw: any) {
+    emailPresets = Array.isArray(raw)
+      ? raw.map((x) => String(x ?? '').trim()).filter(Boolean)
+      : [];
+  }
+  async function loadEmail() {
+    if (!current) return;
+    try {
+      const r = await getEmail(current.path);
+      boundEmail = r.email || '';
+    } catch {
+      boundEmail = '';
+    }
+    showEmailForm = !boundEmail;
+  }
+  function showEmailView() {
+    setView('email');
+    loadEmail();
+  }
   async function doSendEmail() {
     const r = await sendEmailCode(emailInput);
     addLog(r.ok ? '验证码已发送' : `发送失败: ${r.msg}`);
   }
   async function doVerifyEmail() {
-    const r = await verifyEmailCode(codeInput);
-    addLog(r.ok ? '邮箱绑定成功' : `验证失败: ${r.msg}`);
+    const r = await verifyEmailCode(codeInput, emailInput);
+    if (r.ok) {
+      addLog(`邮箱绑定成功: ${emailInput}`);
+      boundEmail = emailInput.trim();
+      showEmailForm = false;
+      codeInput = '';
+    } else {
+      addLog(`验证失败: ${r.msg}`);
+    }
   }
   async function doSet2FA() {
     const r = await set2FA(cur2fa, new2fa);
@@ -1767,10 +1800,29 @@
         <h3>邮箱登录</h3>
         <button class="back" onclick={() => setView('log')}>日志</button>
       </div>
-      <input placeholder="邮箱地址" bind:value={emailInput} />
-      <md-outlined-button onclick={doSendEmail}>发送验证码</md-outlined-button>
-      <input placeholder="验证码" bind:value={codeInput} />
-      <md-filled-button onclick={doVerifyEmail}>验证绑定</md-filled-button>
+      {#if boundEmail && !showEmailForm}
+        <div class="bound-box">
+          <div class="bound-label">已绑定邮箱</div>
+          <div class="bound-email">{boundEmail}</div>
+        </div>
+        <md-outlined-button onclick={() => (showEmailForm = true)}>换绑邮箱</md-outlined-button>
+      {:else}
+        {#if boundEmail}
+          <p class="set-hint">当前绑定: {boundEmail},下方填写新邮箱完成换绑</p>
+        {/if}
+        {#if emailPresets.length}
+          <div class="rename-quick">
+            <span class="rename-quick-label">预选邮箱:</span>
+            {#each emailPresets as p}
+              <button class="rule-chip" onclick={() => (emailInput = p)}>{p}</button>
+            {/each}
+          </div>
+        {/if}
+        <input placeholder="邮箱地址" bind:value={emailInput} />
+        <md-outlined-button onclick={doSendEmail}>发送验证码</md-outlined-button>
+        <input placeholder="验证码" bind:value={codeInput} />
+        <md-filled-button onclick={doVerifyEmail}>验证绑定</md-filled-button>
+      {/if}
     {:else if rightView === 'devices'}
       <div class="sec-head">
         <h3>登录设备</h3>
@@ -2225,6 +2277,19 @@
             <md-outlined-button onclick={() => joinEntries = [...joinEntries, { name: '', link: '', type: 'group' }]}>＋ 添加链接</md-outlined-button>
           </div>
           <md-filled-button onclick={doJoinChats}>全部加入（当前账号）</md-filled-button>
+          <div class="set-group-title">预选邮箱（绑定登录邮箱时一键填入）</div>
+          <div class="set-group">
+            {#each emailPresets as p, i}
+              <div class="join-edit-row">
+                <input class="set-input join-link" bind:value={emailPresets[i]} placeholder="邮箱地址" />
+                <button class="order-btn" title="删除此条" onclick={() => emailPresets.splice(i, 1)}>✕</button>
+              </div>
+            {/each}
+            {#if !emailPresets.length}
+              <p class="empty">还没有预选邮箱，点下方「添加邮箱」</p>
+            {/if}
+            <md-outlined-button onclick={() => emailPresets = [...emailPresets, '']}>＋ 添加邮箱</md-outlined-button>
+          </div>
         {:else if settingsSection === 'whitelist'}
           <div class="set-sec-title">白名单</div>
           <p class="set-hint">白名单内的用户/群永久受删除任务保护。</p>
@@ -3503,6 +3568,25 @@
   .rename-quick-label {
     font-size: 12px;
     color: var(--md-sys-color-on-surface-variant);
+  }
+  /* 已绑定邮箱展示 */
+  .bound-box {
+    background: var(--md-sys-color-surface);
+    border: 1px solid var(--divider);
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
+  .bound-label {
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    margin-bottom: 4px;
+  }
+  .bound-email {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--md-sys-color-primary);
+    word-break: break-all;
   }
   .check-row input {
     width: auto;

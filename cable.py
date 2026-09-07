@@ -561,10 +561,20 @@ async def register_via_cable(request: dict, qr_key=None, on_qr=None, on_state=No
     except Exception as e:
         raise RuntimeError(f'蓝牙扫描启动失败(电脑需有蓝牙且开启): {e}')
     try:
-        eid = await asyncio.wait_for(advert_future, timeout=timeout_s)
-    except asyncio.TimeoutError:
-        raise RuntimeError(
-            f'等待手机扫码超时({timeout_s}s)。请确认电脑蓝牙已开启,且手机与电脑蓝牙可互相发现')
+        # 分片等待,每 10s 发一次心跳(on_state wait:已等待秒数),避免长等无反馈
+        deadline = loop.time() + timeout_s
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise RuntimeError(
+                    f'等待手机扫码超时({timeout_s}s)。请确认电脑蓝牙已开启,且手机与电脑蓝牙可互相发现')
+            try:
+                eid = await asyncio.wait_for(
+                    asyncio.shield(advert_future), timeout=min(10.0, remaining))
+                break
+            except asyncio.TimeoutError:
+                if on_state:
+                    on_state(f'wait:{int(timeout_s - remaining)}')
     finally:
         try:
             await scanner.stop()

@@ -184,7 +184,9 @@ export const get2FA = () => getJson('/api/2fa');
 export const set2FA = (current: string, newPwd: string) => postJson('/api/2fa/set', { current, new: newPwd });
 
 export const sendEmailCode = (email: string) => postJson('/api/email/send', { email });
-export const verifyEmailCode = (code: string) => postJson('/api/email/verify', { code });
+export const verifyEmailCode = (code: string, email = '') =>
+  postJson('/api/email/verify', { code, email });
+export const getEmail = (path: string) => postJson('/api/email/get', { path });
 
 export const getDevices = () => getJson('/api/devices');
 export const deleteDevice = (hash: number) => postJson('/api/devices/delete', { hash });

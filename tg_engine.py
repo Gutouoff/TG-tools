@@ -1286,11 +1286,11 @@ class Engine:
                 self._gui_schedule(lambda msg=str(e): on_done(False, msg))
             return None
 
-    def verify_email(self, code, on_done=None):
-        """用验证码完成邮箱绑定。"""
-        return self._submit(self._do_verify_email(code, on_done))
+    def verify_email(self, code, email='', on_done=None):
+        """用验证码完成邮箱绑定。成功后把 email 持久化到账号 json(login_email)。"""
+        return self._submit(self._do_verify_email(code, email, on_done))
 
-    async def _do_verify_email(self, code, on_done=None):
+    async def _do_verify_email(self, code, email='', on_done=None):
         _ensure_telethon()
         if not self._client:
             if on_done:
@@ -1302,6 +1302,24 @@ class Engine:
             res = await self._client(VerifyEmailRequest(
                 purpose=EmailVerifyPurposeLoginChange(),
                 verification=EmailVerificationCode(code=code)))
+            # 绑定成功: Telegram 没有读取已绑邮箱的 API,本地持久化供界面显示
+            if res is not None and email:
+                try:
+                    account_dir = self._account_dir
+                    if account_dir:
+                        js = tg_tool._account_jsons(account_dir)
+                        cfg = {}
+                        if js:
+                            try:
+                                cfg = json.load(open(js[0], encoding='utf-8'))
+                            except Exception:
+                                cfg = {}
+                        cfg['login_email'] = email
+                        path = js[0] if js else os.path.join(account_dir, os.path.basename(account_dir) + '.json')
+                        json.dump(cfg, open(path, 'w', encoding='utf-8'),
+                                  ensure_ascii=False, indent=1)
+                except Exception:
+                    pass
             if on_done:
                 self._gui_schedule(lambda r=res: on_done(True, r))
             return res

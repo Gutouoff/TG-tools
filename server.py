@@ -1205,9 +1205,21 @@ async def init_passkey():
 
         async def _run():
             try:
+                def _on_state(s):
+                    # 心跳状态(wait:已等待秒数)转成进度条,其余原样透传
+                    if s.startswith('wait:'):
+                        try:
+                            elapsed = int(s[5:])
+                        except ValueError:
+                            return
+                        _emit({'type': 'progress', 'done': elapsed,
+                               'total': 300, 'label': '通行密钥: 等待手机扫码(5分钟内有效)'})
+                        return
+                    _emit({'type': 'state', 'status': f'passkey_{s}'})
+
                 result = await cable.register_via_cable(
-                    request, qr_key=qr_key,
-                    on_state=lambda s: _emit({'type': 'state', 'status': f'passkey_{s}'}))
+                    request, qr_key=qr_key, timeout_s=300,
+                    on_state=_on_state)
                 cred_id = cable.b64url(result['credentialId'])
                 attestation = cable.make_attestation_none(result['authData'])
                 ok2, r2 = await _call(eng.register_passkey,
@@ -1272,8 +1284,23 @@ async def send_email(body: dict):
 @app.post('/api/email/verify')
 async def verify_email(body: dict):
     eng = init_engine()
-    ok, data = await _call(eng.verify_email, body.get('code', ''))
+    ok, data = await _call(eng.verify_email, body.get('code', ''), body.get('email', ''))
     return {'ok': ok, 'msg': data}
+
+
+@app.post('/api/email/get')
+async def get_email(body: dict):
+    """读取账号本地记录的已绑定邮箱(绑定成功时持久化在账号 json 的 login_email)。"""
+    path = _ensure_in_root(body.get('path', ''))
+    email = ''
+    try:
+        js = glob.glob(os.path.join(path, '*.json'))
+        js = [f for f in js if tg_tool._is_account_json(f)]
+        if js:
+            email = str(json.load(open(js[0], encoding='utf-8')).get('login_email') or '')
+    except Exception:
+        pass
+    return {'ok': True, 'email': email}
 
 
 @app.get('/api/devices')
@@ -1590,6 +1617,7 @@ DEFAULT_SETTINGS = {
     'log_level': 'info',            # info=常规 / debug=含蓝牙原始广播等诊断日志
     'rename_quick': ['display', 'username', 'phone', 'uid'],  # 重命名弹窗快捷项
     'rename_prefix': '',            # 重命名快捷项自定义前缀
+    'email_presets': [],            # 预选邮箱列表(绑定登录邮箱时一键填入)
 }
 
 
