@@ -517,14 +517,14 @@ async def refresh_avatar(body: dict):
         info = await asyncio.to_thread(_run)
         if info is None:
             # refresh_one 已把原因打进日志(无json/无session/登录失效/连接失败)
-            return {'ok': False, 'msg': '刷新失败(原因见日志)', 'info': {}}
+            return {'ok': False, 'msg': '刷新失败（原因见日志）', 'info': {}}
     # 刷新成功 = 账号必然活着: 若轮询曾标记死号,改回存活让标识消失
     try:
         import time as _t
         p = os.path.join(tg_tool.SCRIPT_DIR, 'poll_results.json')
         res = json.load(open(p, encoding='utf-8')) if os.path.isfile(p) else {}
         if res.get(name, {}).get('alive') is not True:
-            res[name] = {'alive': True, 'msg': '存活(手动刷新账号信息)',
+            res[name] = {'alive': True, 'msg': '存活（手动刷新确认）',
                          'time': _t.strftime('%Y-%m-%d %H:%M')}
             json.dump(res, open(p, 'w', encoding='utf-8'), ensure_ascii=False)
     except Exception:
@@ -543,7 +543,7 @@ async def export_accounts():
         from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
         from openpyxl.utils import get_column_letter
     except ImportError:
-        return {'ok': False, 'msg': '服务器缺少 openpyxl 依赖,无法导出'}
+        return {'ok': False, 'msg': '缺少 openpyxl 依赖，无法导出'}
 
     rows = _scan_accounts()
     eng = init_engine()
@@ -628,7 +628,7 @@ async def export_accounts():
     try:
         wb.save(out_path)
     except PermissionError:
-        return {'ok': False, 'msg': '表格正被 Excel 打开占用,请关闭表格后重试'}
+        return {'ok': False, 'msg': '表格正被占用，请关闭后重试'}
     except Exception as e:
         return {'ok': False, 'msg': f'写入失败: {e}'}
 
@@ -698,7 +698,7 @@ async def switch(body: dict):
     except Exception as e:
         return {'ok': False, 'msg': str(e)}
     if not info:
-        return {'ok': False, 'msg': '该账号不在线,请先连接'}
+        return {'ok': False, 'msg': '账号不在线，请先连接'}
     # 秒切后保持消息接收开启(幂等,已注册的 client 不会重复)
     try:
         s = _load_settings()
@@ -957,7 +957,7 @@ async def launch_client(body: dict):
         if exe:
             break
     if not exe:
-        return {'ok': False, 'msg': '该账号目录下未找到 Telegram.exe,可先用「更新本体」安装便携版'}
+        return {'ok': False, 'msg': '未找到 Telegram.exe，可先用「安装升级客户端」获取'}
     try:
         subprocess.Popen(
             [exe], cwd=os.path.dirname(exe),
@@ -1574,7 +1574,7 @@ async def import_archive(body: dict):
             zf.extractall(tmp)
         src, kind = _find_account(tmp)
         if src is None:
-            return {'ok': False, 'msg': '压缩包里没找到 tdata 或 session+json 账号结构'}
+            return {'ok': False, 'msg': '压缩包内未找到有效的账号数据'}
         target = _unique_target(ROOT, name)
         os.makedirs(target, exist_ok=True)
         for entry in os.listdir(src):

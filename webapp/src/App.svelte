@@ -389,7 +389,7 @@
   // 批量刷新 s+s 数据: 所有有 tdata 且测活失败的离线账号(后台任务)
   async function doRefreshSsBatch() {
     setView('log');
-    addLog('开始批量刷新session(仅处理有 tdata 且测活失败的账号,每号间隔1s)…');
+    addLog('开始批量刷新 session（仅处理有 tdata 且测活失败的账号，每号间隔 1s）');
     const r = await refreshSsBatch();
     if (!r.ok) addLog(`批量刷新启动失败: ${r.msg}`);
   }
@@ -738,7 +738,7 @@
   // ---------- 会话列表 / 聊天记录 ----------
   async function loadDialogs() {
     if (!current || !onlineNames.has(current.name)) {
-      addLog('请先连接账号再查看会话');
+      addLog('请先连接账号');
       return;
     }
     dialogsLoading = true;
@@ -820,7 +820,7 @@
     const u = startChatName.trim();
     if (!u || startingChat) return;
     if (!current || !onlineNames.has(current.name)) {
-      addLog('请先连接账号再发起聊天');
+      addLog('请先连接账号');
       return;
     }
     startingChat = true;
@@ -939,7 +939,7 @@
         return;
       }
       pkQrImg = `data:image/png;base64,${r.img}`;
-      addLog('请用手机扫描二维码，通过蓝牙连接后完成通行密钥注册');
+      addLog('[通行密钥] 请用手机扫描二维码，经蓝牙连接完成注册');
     } catch (e) {
       addLog(`生成异常: ${String(e)}`);
     }
@@ -1035,7 +1035,7 @@
     if (editDay && editMonth) {
       await updateBirthday(Number(editDay), Number(editMonth), editYear ? Number(editYear) : null);
     }
-    addLog('资料已提交更新');
+    addLog('资料更新已提交');
   }
   async function doUploadAvatar(e: Event) {
     const input = e.target as HTMLInputElement;
@@ -1397,7 +1397,7 @@
         addLog(`[通行密钥异常] ${String(e.data ?? '')}`);
         pkQrImg = '';
       }
-      if (e.status === 'passkey_scanning') addLog('[通行密钥] 等待手机扫码…(电脑蓝牙需已开启)');
+      if (e.status === 'passkey_scanning') addLog('[通行密钥] 等待手机扫码（需开启电脑蓝牙）');
       if (e.status && e.status.startsWith('passkey_adv:')) {
         addLog(`[蓝牙] 广播 ${e.status.slice(11)}`);
       }
@@ -1442,7 +1442,7 @@
       }
     }
     if (e.type === 'avatars_done') {
-      addLog('[头像获取完成]');
+      addLog('[头像] 获取完成');
       avatarFailed = new Set();
       loadAccounts();
     }
@@ -1561,7 +1561,7 @@
           <span class="meta">
             <span class="nm">
               {a.display || a.name}
-              {#if (a as any).poll_alive === false}<span class="dead-tag" title={`轮询: ${(a as any).poll_msg || '死号'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''}`}>死</span>{:else if (a as any).poll_alive === null}<span class="unk-tag" title={`轮询: ${(a as any).poll_msg || '状态未知'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''} —— 账号未必已死,请重试/重新登录,勿直接删除`}>?</span>{/if}
+              {#if (a as any).poll_alive === false}<span class="dead-tag" title={`轮询: ${(a as any).poll_msg || '死号'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''}`}>死</span>{:else if (a as any).poll_alive === null}<span class="unk-tag" title={`轮询: ${(a as any).poll_msg || '状态未知'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}`} —— 状态未知，可重试或重新登录`>?</span>{/if}
               {#if a.username}<span class="uname">{a.username}</span>{/if}
             </span>
             <span class="sub">{a.country ? `${a.country} ` : ''}{a.phone ? `+${a.phone}` : a.state}</span>
@@ -1762,7 +1762,7 @@
         <div class="start-chat-row">
           <input
             class="chat-input"
-            placeholder="输入用户名直接发起聊天（@xxx）…"
+            placeholder="用户名（@xxx），回车发起聊天"
             bind:value={startChatName}
             disabled={!current || !onlineNames.has(current.name)}
             onkeydown={(e) => { if (e.key === 'Enter') doStartChat(); }}
@@ -1829,7 +1829,7 @@
         <div class="chat-input-row">
           <input
             class="chat-input"
-            placeholder="输入消息（目前仅支持文本）…"
+            placeholder="输入消息（仅支持文本）"
             bind:value={chatDraft}
             disabled={!onlineNames.has(current?.name || '')}
             onkeydown={(e) => { if (e.key === 'Enter') doSendMsg(); }}
@@ -1885,7 +1885,7 @@
         <md-outlined-button onclick={() => (showEmailForm = true)}>换绑邮箱</md-outlined-button>
       {:else}
         {#if boundEmail}
-          <p class="set-hint">当前绑定: {boundEmail},下方填写新邮箱完成换绑</p>
+          <p class="set-hint">当前绑定：{boundEmail}。填写新邮箱完成换绑。</p>
         {/if}
         {#if emailPresets.length}
           <div class="rename-quick">
@@ -2049,7 +2049,7 @@
         <button class="back set-close rename-x" title="关闭" onclick={() => (groupDelOpen = false)}>✕</button>
       </div>
       <p class="set-hint">
-        确定删除分组「<b>{groupDelTarget}</b>」？组内账号不会被删除，将回到「未分组」。
+        删除分组「<b>{groupDelTarget}</b>」？组内账号不受影响，将归入「未分组」。
       </p>
       <div class="rename-btns">
         <md-outlined-button onclick={() => (groupDelOpen = false)}>取消</md-outlined-button>
@@ -2069,13 +2069,10 @@
         <button class="back set-close rename-x" title="关闭" onclick={() => (t2sOpen = false)}>✕</button>
       </div>
       <p class="set-hint">
-        将用账号 <b>{current.display || current.name}</b> 的 <b>tdata</b> 重新生成
-        session+json，覆盖现有会话数据。
+        使用账号 <b>{current.display || current.name}</b> 的 <b>tdata</b> 重新生成 session+json，覆盖现有会话数据。适用于 session 过期导致测活失败的账号。
       </p>
       <p class="set-hint" style="color: var(--md-sys-color-error)">
-        注意：① 在线账号只会刷新 json 元数据（session 本就有效）；
-        ② 离线账号的旧 session 文件会被删除后从 tdata 重建——tdata 已失效则刷新失败；
-        ③ 适用于「session 过期导致测活失败」的账号。
+        在线账号仅刷新 json 元数据；离线账号将删除旧 session 并从 tdata 重建，tdata 已失效则刷新失败。
       </p>
       <div class="rename-btns">
         <md-outlined-button onclick={() => (t2sOpen = false)}>取消</md-outlined-button>
@@ -2095,21 +2092,19 @@
         <button class="back set-close rename-x" title="关闭" onclick={() => (convOpen = false)}>✕</button>
       </div>
       <p class="set-hint">
-        将把当前账号 <b>{current.display || current.name}</b> 的 session 登录态转换为
-        Telegram Desktop 的 <b>tdata</b>（写入账号文件夹下的 tdata\ 子目录）。
+        将账号 <b>{current.display || current.name}</b> 的 session 登录态转换为 Telegram Desktop 的 <b>tdata</b>，写入账号文件夹下的 tdata\ 子目录。
       </p>
       <p class="set-hint" style="color: var(--md-sys-color-error)">
-        注意：① 转换出的 tdata 仍需配合 Telegram.exe 使用；
-        ② 原 session 保留不变，转换后两种登录态并存。
+        原 session 保留不变，转换后两种登录态并存；tdata 需配合 Telegram.exe 使用。
       </p>
       <label class="del-check">
         <input type="checkbox" bind:checked={convOverwrite} />
-        <span>覆盖已有的 tdata / session（默认不勾选；勾选后目标 tdata\ 非空也会执行）</span>
+        <span>覆盖已有 tdata（默认关闭；开启后目标 tdata\ 非空也会执行）</span>
       </label>
       <div class="set-row" style="margin-top:8px">
         <span class="set-label">2FA 密码</span>
         <input class="set-input" type="password" autocomplete="new-password"
-          bind:value={convTwofa} placeholder="账号开启两步验证时需要；留空则用 json 里保存的密码" />
+          bind:value={convTwofa} placeholder="开启两步验证的账号必填；留空使用 json 中保存的密码" />
       </div>
       <div class="rename-btns">
         <md-outlined-button onclick={() => (convOpen = false)}>取消</md-outlined-button>

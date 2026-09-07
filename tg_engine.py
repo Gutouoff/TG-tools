@@ -1024,7 +1024,7 @@ class Engine:
                 info['avatar'] = path
             else:
                 # 官方语义: 账号未设置头像(或已删除)时返回 None,不算错误
-                self._log(f'[资料] {account}: 该账号未设置头像')
+                self._log(f'[资料] {account}: 账号未设置头像')
         except Exception as e:
             self._log(f'[资料] {account} 头像下载失败: {type(e).__name__}: {e}')
         prof = tg_profile.load_profiles()
@@ -1695,7 +1695,7 @@ class Engine:
             # 在线: session 活着,只刷新 json 元数据
             me = await self._pool[name]['client'].get_me()
             self._write_json_from_me(account_dir, me)
-            self._log(f'[刷新] {name}: 在线账号,已刷新 json 元数据')
+            self._log(f'[刷新] {name}: 在线账号，已刷新 json 元数据')
             return True
         if not os.path.isdir(os.path.join(account_dir, 'tdata')):
             raise RuntimeError('该账号没有 tdata,无法从 tdata 刷新 session')
@@ -1712,7 +1712,7 @@ class Engine:
             raise RuntimeError('tdata → session 转换失败(tdata 可能已失效)')
         # 命名按先前: 新 session/json 改回原名字,me 信息合并进原 json
         sess_name = tg_tool.reconcile_converted_json(account_dir)
-        self._log(f'[刷新] {name}: tdata → session+json 完成(命名保持: {sess_name})')
+        self._log(f'[刷新] {name}: tdata → session+json 完成（文件名保持：{sess_name}）')
         return True
 
     async def _do_refresh_sessions_batch(self, root):
@@ -1766,7 +1766,7 @@ class Engine:
                     tg_tool.reconcile_converted_json(path)  # 命名按先前
                     self._log(T('t170', i, len(targets), name))
                 else:
-                    self._log(f'[刷新] {i}/{len(targets)} {name}: 转换失败(tdata 已失效?)')
+                    self._log(f'[刷新] {i}/{len(targets)} {name}: 转换失败（tdata 可能已失效）')
                 await self._sleep(1.0)
             self._log(T('t172', ok_n, len(targets)))
             self._state('done', f'刷新完成: {ok_n}/{len(targets)}')
@@ -1846,7 +1846,7 @@ class Engine:
             except Exception:
                 pass
             if twofa_pwd:
-                self._log(f'[转换] {name}: 账号开启 2FA,使用{pwd_source}的密码尝试')
+                self._log(f'[转换] {name}: 账号开启 2FA，使用{pwd_source}的密码')
             try:
                 desktop = await TDesktop.FromTelethon(
                     client, flag=op_api.CreateNewSession,
@@ -1981,7 +1981,7 @@ class Engine:
                                 results[name] = {'alive': None,
                                                  'msg': 'session 失效,账号未死,请重新登录(勿删号!)',
                                                  'time': now}
-                                self._log(f'[轮询] {i}/{total} {name}: session 失效,未判定死号(重新登录可恢复)')
+                                self._log(f'[轮询] {i}/{total} {name}: session 失效，重新登录可恢复')
                         finally:
                             try:
                                 await client.disconnect()
