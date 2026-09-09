@@ -1617,6 +1617,16 @@ async def add_account(body: dict):
             else:
                 shutil.copy2(s, d)
         msg = f'已创建账号 {os.path.basename(target)}'
+        # 4b) 仅 session(无凭据 json): 立即自动补建,免去首次连接时再补
+        if kind == 'session':
+            has_json = bool([f for f in _g.glob(os.path.join(target, '*.json'))
+                             if tg_tool._is_account_json(f)])
+            if not has_json:
+                def _heal():
+                    return tg_tool.make_json_from_session(target, sess[0] if sess else
+                                                          _g.glob(os.path.join(target, '*.session'))[0])
+                healed = await asyncio.to_thread(_heal)
+                msg += '，已自动补建凭据 json' if healed else '（凭据 json 补建失败，将在首次连接时重试）'
         # 5) tdata 自动转 session
         converted = False
         if kind == 'tdata' and not _g.glob(os.path.join(target, '*.session')):
@@ -1702,6 +1712,17 @@ async def import_archive(body: dict):
             eng = init_engine()
             fut = eng.convert_tdata(target)
             await asyncio.wait_for(asyncio.wrap_future(fut), 300)
+        if kind == 'session':
+            # 仅 session: 立即自动补建凭据 json(与新建账号一致)
+            import glob as _gh
+            has_json = bool([f for f in _gh.glob(os.path.join(target, '*.json'))
+                             if tg_tool._is_account_json(f)])
+            if not has_json:
+                s1 = sorted(_gh.glob(os.path.join(target, '*.session')))
+                if s1:
+                    def _heal2():
+                        return tg_tool.make_json_from_session(target, s1[0])
+                    await asyncio.to_thread(_heal2)
         # 自动放置客户端: 账号根目录有 Telegram.exe 就复制一份进新账号文件夹,
         # 让「启动客户端」开箱即用
         exe_src = os.path.join(ROOT, 'Telegram.exe')
