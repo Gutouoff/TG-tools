@@ -1537,6 +1537,111 @@ def _unique_target(root, name):
     return f'{cand}_{i}'
 
 
+@app.post('/api/add-account')
+async def add_account(body: dict):
+    """新建账号(顶栏拖放): 接收文件列表 [{name, data(base64)}]。
+    支持 .session/.json/2fa.txt 单文件、tdata 目录打包的 zip、session+json 的 zip。
+    文件夹名 = session 名 > zip 名; zip 自动解压; tdata 自动转 session。"""
+    import base64
+    import io
+    import zipfile
+    import tempfile
+    import shutil
+    files = body.get('files') or []
+    if not files:
+        return {'ok': False, 'msg': '未收到文件'}
+    if sum(len(str(f.get('data') or '')) for f in files) > 1024 * 1024 * 1024:
+        return {'ok': False, 'msg': '数据过大'}
+    tmp = tempfile.mkdtemp(prefix='tgadd_')
+    try:
+        # 1) 落盘所有文件(文件名只去路径分隔符——不能过 _clean_name,
+        # 它会把扩展名的点也清掉: xxx.session → xxx_session)
+        for f in files:
+            fn = str(f.get('name') or '').split('\\')[-1].split('/')[-1].strip()
+            if not fn or fn in ('.', '..'):
+                continue
+            try:
+                raw = base64.b64decode(str(f.get('data') or ''))
+            except Exception:
+                return {'ok': False, 'msg': f'{fn} 数据无效'}
+            with open(os.path.join(tmp, fn), 'wb') as w:
+                w.write(raw)
+        # 2) zip 自动解压(安全校验同 import)
+        zip_stems = []   # zip 原名(去扩展名),作 tdata 包的文件夹名备选
+        for fn in os.listdir(tmp):
+            if not fn.lower().endswith('.zip'):
+                continue
+            zp = os.path.join(tmp, fn)
+            outd = os.path.join(tmp, fn[:-4])
+            try:
+                with zipfile.ZipFile(zp) as zf:
+                    tmp_real = os.path.realpath(tmp)
+                    for info in zf.infolist():
+                        if info.file_size > 1024 * 1024 * 1024:
+                            return {'ok': False, 'msg': '压缩包过大'}
+                        target = os.path.realpath(os.path.join(outd, info.filename))
+                        try:
+                            if os.path.commonpath([target, tmp_real]) != tmp_real:
+                                return {'ok': False, 'msg': '压缩包路径越界'}
+                        except ValueError:
+                            return {'ok': False, 'msg': '压缩包路径越界'}
+                    zf.extractall(outd)
+                os.remove(zp)
+                zip_stems.append(fn[:-4])
+            except zipfile.BadZipFile:
+                return {'ok': False, 'msg': f'{fn} 不是有效的压缩包'}
+        # 3) 定位账号数据(平铺或一级子目录)
+        src, kind = _find_account(tmp)
+        if src is None:
+            return {'ok': False, 'msg': '未识别到账号数据（需要 .session、tdata 或其压缩包）'}
+        # 4) 文件夹名: session 名 > json 名 > zip 名 > '新账号'
+        folder = ''
+        import glob as _g
+        sess = sorted(_g.glob(os.path.join(src, '*.session')))
+        if sess:
+            folder = os.path.splitext(os.path.basename(sess[0]))[0]
+        if not folder:
+            js = [f for f in os.listdir(src) if f.lower().endswith('.json')]
+            if js:
+                folder = os.path.splitext(js[0])[0]
+        if not folder and zip_stems:
+            folder = zip_stems[0]
+        folder = _clean_name(folder) or '新账号'
+        target = _unique_target(ROOT, folder)
+        os.makedirs(target, exist_ok=True)
+        for entry in os.listdir(src):
+            s = os.path.join(src, entry)
+            d = os.path.join(target, entry)
+            if os.path.isdir(s):
+                shutil.copytree(s, d, dirs_exist_ok=True)
+            else:
+                shutil.copy2(s, d)
+        msg = f'已创建账号 {os.path.basename(target)}'
+        # 5) tdata 自动转 session
+        converted = False
+        if kind == 'tdata' and not _g.glob(os.path.join(target, '*.session')):
+            eng = init_engine()
+            fut = eng.convert_tdata(target)
+            try:
+                await asyncio.wait_for(asyncio.wrap_future(fut), 300)
+                converted = True
+            except Exception as e:
+                msg += f'（tdata 转换失败: {str(e)[:80]}）'
+        if converted:
+            msg += '（tdata 已自动转换）'
+        # 6) 自动放置客户端
+        exe_src = os.path.join(ROOT, 'Telegram.exe')
+        if os.path.isfile(exe_src) and not os.path.isfile(os.path.join(target, 'Telegram.exe')):
+            try:
+                shutil.copy2(exe_src, os.path.join(target, 'Telegram.exe'))
+            except OSError:
+                pass
+        _emit({'type': 'log', 'line': f'[新建] {msg}'})
+        return {'ok': True, 'msg': msg, 'path': target}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 @app.post('/api/import')
 async def import_archive(body: dict):
     import base64

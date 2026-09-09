@@ -59,6 +59,7 @@
     refreshSsBatch,
     startChat,
     deleteAccount,
+    addAccount,
     getPing,
     TOKEN,
     type Account,
@@ -427,6 +428,76 @@
       addLog(`删除异常: ${e?.message ?? e}`);
     } finally {
       deleting = false;
+    }
+  }
+
+  // 新建账号(顶栏): 拖入 session/json/tdata/zip 建号
+  let addAccOpen = $state(false);
+  let addAccDragging = $state(false);
+  let addAccFiles = $state<Array<{ name: string; data: string }>>([]);
+  let addAccBusy = $state(false);
+  function doOpenAddAccount() {
+    addAccFiles = [];
+    addAccOpen = true;
+  }
+  function addAccAccept(f: File): boolean {
+    const n = f.name.toLowerCase();
+    return n.endsWith('.session') || n.endsWith('.json') || n.endsWith('.zip')
+      || n === '2fa.txt' || n.startsWith('2fa.txt.');
+  }
+  async function addAccReadFile(f: File): Promise<{ name: string; data: string }> {
+    const buf = await f.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    const CH = 8192;
+    for (let i = 0; i < bytes.length; i += CH) {
+      bin += String.fromCharCode(...bytes.subarray(i, i + CH));
+    }
+    return { name: f.name, data: btoa(bin) };
+  }
+  async function onAddAccDrop(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    addAccDragging = false;
+    const files = Array.from(e.dataTransfer?.files || []);
+    const items = files.filter(addAccAccept);
+    if (!items.length) {
+      addLog('[新建] 未识别到可用文件（需要 .session / .json / .zip / 2fa.txt）');
+      return;
+    }
+    addAccBusy = true;
+    try {
+      const read = await Promise.all(items.map(addAccReadFile));
+      addAccFiles = [...addAccFiles, ...read];
+    } catch (err: any) {
+      addLog(`[新建] 读取文件失败: ${err?.message ?? err}`);
+    } finally {
+      addAccBusy = false;
+    }
+  }
+  function onAddAccDragOver(e: DragEvent) {
+    e.preventDefault();
+    addAccDragging = true;
+  }
+  function addAccRemove(i: number) {
+    addAccFiles = addAccFiles.filter((_, k) => k !== i);
+  }
+  async function doAddAccountConfirm() {
+    if (!addAccFiles.length || addAccBusy) return;
+    addAccBusy = true;
+    try {
+      const r = await addAccount(addAccFiles);
+      if (r.ok) {
+        addLog(`[新建] ${r.msg}`);
+        addAccOpen = false;
+        await loadAccounts();
+      } else {
+        addLog(`[新建] 失败: ${r.msg}`);
+      }
+    } catch (e: any) {
+      addLog(`[新建] 异常: ${e?.message ?? e}`);
+    } finally {
+      addAccBusy = false;
     }
   }
 
@@ -1511,6 +1582,7 @@
 <header class="topbar">
   <span class="title">TG小号工具箱</span>
   <span class="conn" class:on={connected && !connectingLabel}>{connectingLabel ? `● ${connectingLabel}` : connected ? '● 已连接' : '● 未连接'}</span>
+  <button class="topbtn" onclick={doOpenAddAccount}>新建账号</button>
   <button class="topbtn" onclick={doReconnect}>重新连接</button>
   <button class="topbtn" onclick={doLaunchClient}
     oncontextmenu={(e) => { e.preventDefault(); doOpenAccountFolder(); }}
@@ -2042,6 +2114,45 @@
       <div class="rename-btns">
         <md-outlined-button onclick={() => (groupRenameOpen = false)}>取消</md-outlined-button>
         <md-filled-button disabled={!groupRenameInput.trim()} onclick={doGroupRenameConfirm}>确定</md-filled-button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if addAccOpen}
+  <div class="modal-mask" onclick={() => (addAccOpen = false)}>
+    <div class="modal rename-modal addacc-modal" onclick={(e) => e.stopPropagation()}>
+      <div class="rename-head">
+        <span>新建账号</span>
+        <button class="back set-close rename-x" title="关闭" onclick={() => (addAccOpen = false)}>✕</button>
+      </div>
+      <div
+        class="addacc-drop"
+        class:over={addAccDragging}
+        ondragover={onAddAccDragOver}
+        ondragleave={() => (addAccDragging = false)}
+        ondrop={onAddAccDrop}
+      >
+        <div class="addacc-drop-icon">⬇</div>
+        <div>拖入文件创建账号</div>
+        <small>.session / .json / 2fa.txt / .zip（tdata 或 session+json 打包）</small>
+        <small>zip 将自动解压；tdata 将自动转换为 session</small>
+      </div>
+      {#if addAccFiles.length}
+        <ul class="addacc-list">
+          {#each addAccFiles as f, i}
+            <li class="sec-item">
+              <span>{f.name}</span>
+              <button class="icon-btn" title="移除" onclick={() => addAccRemove(i)}>✕</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      <div class="rename-btns">
+        <md-outlined-button onclick={() => (addAccOpen = false)}>取消</md-outlined-button>
+        <md-filled-button disabled={!addAccFiles.length || addAccBusy} onclick={doAddAccountConfirm}>
+          {addAccBusy ? '创建中…' : '创建账号'}
+        </md-filled-button>
       </div>
     </div>
   </div>
@@ -2944,6 +3055,54 @@
   .join-edit {
     flex: 1;
     min-width: 0;
+  }
+  /* 新建账号拖放弹窗 */
+  .addacc-drop {
+    border: 2px dashed var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 26px 16px;
+    text-align: center;
+    color: var(--md-sys-color-on-surface-variant);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .addacc-drop.over {
+    border-color: var(--md-sys-color-primary);
+    background: var(--hover-overlay);
+  }
+  .addacc-drop-icon {
+    font-size: 22px;
+    color: var(--md-sys-color-primary);
+  }
+  .addacc-drop small {
+    font-size: 11px;
+    opacity: 0.8;
+  }
+  .addacc-list {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    max-height: 160px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .addacc-list .icon-btn {
+    background: none;
+    border: 1px solid var(--md-sys-color-outline);
+    color: var(--md-sys-color-on-surface-variant);
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
   }
   .set-footer-btn {
     margin-top: 14px;

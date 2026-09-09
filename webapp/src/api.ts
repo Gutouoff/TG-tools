@@ -298,6 +298,15 @@ export async function refreshSession(path: string) {
 
 export const refreshSsBatch = () => postJson('/api/refresh-ss-batch');
 
+export async function addAccount(files: Array<{ name: string; data: string }>) {
+  const r = await apiFetch('/api/add-account', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ files }),
+  });
+  return r.json() as Promise<{ ok: boolean; msg?: string; path?: string }>;
+}
+
 export async function startChat(account: string, username: string) {
   const r = await apiFetch('/api/start-chat', {
     method: 'POST',

@@ -779,12 +779,15 @@ class Engine:
             self._state('switched', entry['info'])
             return entry['info']
 
-    def online_accounts(self):
+    def online_accounts(self, on_done=None):
         """返回当前在线账号的 info 列表。"""
-        return self._submit(self._do_online_accounts())
+        return self._submit(self._do_online_accounts(on_done))
 
-    async def _do_online_accounts(self):
-        return [v['info'] for v in self._pool.values()]
+    async def _do_online_accounts(self, on_done=None):
+        res = [v['info'] for v in self._pool.values()]
+        if on_done:
+            self._gui_schedule(lambda r=res: on_done(True, r))
+        return res
 
     # ---------- 聊天: 消息接收 / 加群频道 ----------
 
