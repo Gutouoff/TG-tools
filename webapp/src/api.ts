@@ -327,6 +327,24 @@ export async function qrLoginPoll(session: string) {
 
 export const qrLoginCancel = (session: string) => postJson('/api/qrlogin/cancel', { session });
 
+export async function phoneLoginStart(phone: string) {
+  const r = await apiFetch('/api/phonelogin/start', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ phone }),
+  });
+  return r.json() as Promise<{ ok: boolean; msg?: string; session?: string }>;
+}
+
+export async function phoneLoginSubmit(session: string, code: string, password = '') {
+  const r = await apiFetch('/api/phonelogin/submit', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ session, code, password }),
+  });
+  return r.json() as Promise<{ ok: boolean; status?: string; msg?: string; user?: { name: string; display: string; phone: string } }>;
+}
+
 export async function startChat(account: string, username: string) {
   const r = await apiFetch('/api/start-chat', {
     method: 'POST',

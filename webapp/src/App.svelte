@@ -63,6 +63,8 @@
     qrLoginStart,
     qrLoginPoll,
     qrLoginCancel,
+    phoneLoginStart,
+    phoneLoginSubmit,
     getPing,
     TOKEN,
     type Account,
@@ -451,6 +453,7 @@
   function doOpenAddAccount() {
     addAccFiles = [];
     addAccTab = 'files';
+    phoneReset();
     addAccOpen = true;
   }
   async function doStartQrLogin() {
@@ -507,11 +510,89 @@
         qrLoginCancel(qrSession).catch(() => {});
       }
     }
+    if (phoneSession) {
+      qrLoginCancel(phoneSession).catch(() => {});   // 同一个取消清理
+    }
     qrSession = '';
     qrImg = '';
     qrStatus = '';
     qrErr = '';
+    phoneReset();
     addAccOpen = false;
+  }
+
+  // 手机号登录: phone(输号码) → code(输验证码) → password(2FA) → 成功
+  let phoneStage = $state<'phone' | 'code' | 'password'>('phone');
+  let phoneInput = $state('');
+  let phoneCode = $state('');
+  let phonePwd = $state('');
+  let phoneSession = $state('');
+  let phoneErr = $state('');
+  let phoneBusy = $state(false);
+
+  async function doPhoneLoginStart() {
+    const p = phoneInput.trim().replace(/\s/g, '');
+    if (!p || phoneBusy) return;
+    phoneBusy = true;
+    phoneErr = '';
+    try {
+      const r = await phoneLoginStart(p);
+      // Svelte 5: await 后赋值需 flushSync 驱动条件渲染(项目已知坑)
+      if (r.ok && r.session) {
+        flushSync(() => {
+          phoneSession = r.session;
+          phoneStage = 'code';
+        });
+      } else {
+        flushSync(() => {
+          phoneErr = r.msg || '验证码发送失败';
+        });
+      }
+    } catch (e: any) {
+      flushSync(() => {
+        phoneErr = e?.message ?? String(e);
+      });
+    } finally {
+      phoneBusy = false;
+    }
+  }
+  async function doPhoneLoginSubmit() {
+    if (phoneBusy) return;
+    phoneBusy = true;
+    phoneErr = '';
+    try {
+      const r = await phoneLoginSubmit(phoneSession, phoneCode.trim(), phonePwd);
+      if (r.status === 'need_password') {
+        flushSync(() => {
+          phoneStage = 'password';
+        });
+      } else if (r.status === 'success' && r.user) {
+        addLog(`[手机登录] 登录成功: ${r.user.display}(+${r.user.phone}),已创建账号 ${r.user.name}`);
+        flushSync(() => {
+          phoneSession = '';
+          addAccOpen = false;
+        });
+        await loadAccounts();
+      } else {
+        flushSync(() => {
+          phoneErr = r.msg || '登录失败';
+        });
+      }
+    } catch (e: any) {
+      flushSync(() => {
+        phoneErr = e?.message ?? String(e);
+      });
+    } finally {
+      phoneBusy = false;
+    }
+  }
+  function phoneReset() {
+    if (phoneSession) qrLoginCancel(phoneSession).catch(() => {});
+    phoneSession = '';
+    phoneStage = 'phone';
+    phoneCode = '';
+    phonePwd = '';
+    phoneErr = '';
   }
 
   function addAccAccept(f: File): boolean {
@@ -2203,6 +2284,7 @@
       <div class="mode-seg addacc-tabs">
         <button class="mode-item" class:on={addAccTab === 'files'} onclick={() => (addAccTab = 'files')}>拖入文件</button>
         <button class="mode-item" class:on={addAccTab === 'qr'} onclick={() => doStartQrLogin()}>扫码登录</button>
+        <button class="mode-item" class:on={addAccTab === 'phone'} onclick={() => (addAccTab = 'phone')}>手机号登录</button>
       </div>
       {#if addAccTab === 'files'}
         <div
@@ -2251,6 +2333,49 @@
         </div>
         <div class="rename-btns">
           <md-outlined-button onclick={() => closeAddAcc(true)}>取消登录</md-outlined-button>
+        </div>
+      {:else if addAccTab === 'phone'}
+        <div class="phonelogin-box">
+          {#if phoneStage === 'phone'}
+            <div class="set-row set-row-col">
+              <span class="set-label">手机号码（含国家区号，如 6281234567890）</span>
+              <input class="set-input" inputmode="numeric" placeholder="6281234567890"
+                bind:value={phoneInput} onkeydown={(e) => { if (e.key === 'Enter') doPhoneLoginStart(); }} />
+            </div>
+            {#if phoneErr}<p class="set-hint" style="color: var(--md-sys-color-error)">{phoneErr}</p>{/if}
+            <div class="rename-btns">
+              <md-filled-button disabled={!phoneInput.trim() || phoneBusy} onclick={doPhoneLoginStart}>
+                {phoneBusy ? '发送中…' : '发送验证码'}
+              </md-filled-button>
+            </div>
+          {:else if phoneStage === 'code'}
+            <p class="set-hint">验证码已发送至 +{phoneInput}，请查收短信/TG 官方消息</p>
+            <div class="set-row set-row-col">
+              <span class="set-label">验证码</span>
+              <input class="set-input" inputmode="numeric" placeholder="登录验证码"
+                bind:value={phoneCode} onkeydown={(e) => { if (e.key === 'Enter') doPhoneLoginSubmit(); }} />
+            </div>
+            {#if phoneErr}<p class="set-hint" style="color: var(--md-sys-color-error)">{phoneErr}</p>{/if}
+            <div class="rename-btns">
+              <md-outlined-button onclick={() => phoneReset()}>重填手机号</md-outlined-button>
+              <md-filled-button disabled={!phoneCode.trim() || phoneBusy} onclick={doPhoneLoginSubmit}>
+                {phoneBusy ? '验证中…' : '登录'}
+              </md-filled-button>
+            </div>
+          {:else if phoneStage === 'password'}
+            <p class="set-hint">该账号开启了两步验证，请输入 2FA 密码</p>
+            <div class="set-row set-row-col">
+              <span class="set-label">两步验证密码</span>
+              <input class="set-input" type="password" autocomplete="new-password" placeholder="2FA 密码"
+                bind:value={phonePwd} onkeydown={(e) => { if (e.key === 'Enter') doPhoneLoginSubmit(); }} />
+            </div>
+            {#if phoneErr}<p class="set-hint" style="color: var(--md-sys-color-error)">{phoneErr}</p>{/if}
+            <div class="rename-btns">
+              <md-filled-button disabled={!phonePwd || phoneBusy} onclick={doPhoneLoginSubmit}>
+                {phoneBusy ? '验证中…' : '登录'}
+              </md-filled-button>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>

@@ -1749,6 +1749,117 @@ class Engine:
         """取消扫码登录,清理临时 session。"""
         return self._submit(self._do_qr_login_cancel(stem))
 
+    # ---------- 手机号登录(新建账号) ----------
+
+    def phone_login_start(self, phone, root=''):
+        """发送验证码。返回 {session}(临时会话句柄)。"""
+        return self._submit(self._do_phone_login_start(phone, root))
+
+    async def _do_phone_login_start(self, phone, root=''):
+        _ensure_telethon()
+        import secrets as _secrets
+        phone = str(phone or '').strip().lstrip('+')
+        if not phone or not phone.replace(' ', '').isdigit():
+            raise RuntimeError('请输入有效的手机号码')
+        self._qr_root_dir = root or getattr(self, '_qr_root_dir', '') or os.path.dirname(tg_tool.SCRIPT_DIR)
+        scratch = os.path.join(tg_tool.SCRIPT_DIR, '.qrlogin')
+        os.makedirs(scratch, exist_ok=True)
+        stem = os.path.join(scratch, 'ph_' + _secrets.token_hex(6))
+        from telethon import TelegramClient
+        client = TelegramClient(stem, 2040, 'b18441a1ff607e10a989891a5462e627',
+                                device_model='PC', system_version='Windows',
+                                app_version='6.6.4 x64')
+        await client.connect()
+        try:
+            sent = await client.send_code_request(phone)
+        except Exception as e:
+            await client.disconnect()
+            raise RuntimeError(f'验证码发送失败: {str(e)[:120]}')
+        self._qr_sessions[stem] = {'client': client, 'qr': None,
+                                   'name': f'手机登录_{phone[-4:]}',
+                                   'phone': phone,
+                                   'code_hash': sent.phone_code_hash}
+        self._log(f'[手机登录] 验证码已发送至 +{phone}')
+        return {'session': stem}
+
+    def phone_login_submit(self, stem, code, password=''):
+        """提交验证码(或 2FA 密码)。返回 {status, user?}。
+        status: need_password / success / error"""
+        return self._submit(self._do_phone_login_submit(stem, code, password))
+
+    async def _do_phone_login_submit(self, stem, code, password):
+        from telethon import errors as tl_errors
+        ent = self._qr_sessions.get(stem)
+        if not ent:
+            raise RuntimeError('登录会话不存在或已结束')
+        client = ent['client']
+        phone = ent.get('phone', '')
+        code_hash = ent.get('code_hash', '')
+        try:
+            if password:
+                me = await client.sign_in(password=password)
+            else:
+                me = await client.sign_in(phone=phone, code=code,
+                                          phone_code_hash=code_hash)
+        except tl_errors.SessionPasswordNeededError:
+            return {'status': 'need_password'}
+        except Exception as e:
+            # 验证码错误等: 会话保留,允许用户重试
+            raise RuntimeError(str(e)[:150])
+        info = await self._qr_login_finalize_phone(stem, me, phone)
+        return {'status': 'success', 'user': info}
+
+    async def _qr_login_finalize_phone(self, stem, me, phone):
+        """手机登录成功落盘(与扫码共用命名规则,但文件夹固定用手机号)。"""
+        ent = self._qr_sessions.pop(stem)
+        client = ent['client']
+        try:
+            folder = tg_tool._clean_name(str(phone or f'uid{me.id}'))
+            target = os.path.join(self._qr_root(), folder)
+            i = 2
+            while os.path.exists(target):
+                target = os.path.join(self._qr_root(), f'{folder}_{i}')
+                i += 1
+            os.makedirs(target, exist_ok=True)
+            await client.disconnect()
+            for ext in ('.session', '.session-journal'):
+                src = stem + ext
+                if os.path.isfile(src):
+                    os.replace(src, os.path.join(target, folder + ext))
+            cfg = {
+                'phone': str(phone or ''),
+                'session_file': folder + '.session',
+                'app_id': 2040,
+                'app_hash': 'b18441a1ff607e10a989891a5462e627',
+                'device': 'PC', 'sdk': 'Windows', 'app_version': '6.6.4 x64',
+                'user_id': str(me.id),
+                'first_name': me.first_name or '',
+                'last_name': me.last_name or '',
+                'username': getattr(me, 'username', '') or '',
+            }
+            json.dump(cfg, open(os.path.join(target, folder + '.json'), 'w',
+                                encoding='utf-8'), ensure_ascii=False, indent=1)
+            exe_src = os.path.join(self._qr_root(), 'Telegram.exe')
+            if os.path.isfile(exe_src) and not os.path.isfile(os.path.join(target, 'Telegram.exe')):
+                try:
+                    import shutil as _sh
+                    _sh.copy2(exe_src, os.path.join(target, 'Telegram.exe'))
+                except OSError:
+                    pass
+            disp = (f'{me.first_name or ""} {me.last_name or ""}').strip() or folder
+            self._log(f'[手机登录] 登录成功: {disp}(+{phone}),已创建账号 {folder}')
+            return {'name': folder, 'path': target, 'phone': str(phone),
+                    'uid': str(me.id), 'display': disp}
+        finally:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+    def phone_login_cancel(self, stem):
+        """取消手机号登录。"""
+        return self._submit(self._do_qr_login_cancel(stem))
+
     async def _do_qr_login_cancel(self, stem):
         ent = self._qr_sessions.pop(stem, None)
         if ent:

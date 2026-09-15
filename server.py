@@ -1310,6 +1310,36 @@ async def qrlogin_cancel(body: dict):
     return {'ok': True}
 
 
+@app.post('/api/phonelogin/start')
+async def phonelogin_start(body: dict):
+    """手机号登录第一步: 发送验证码。"""
+    eng = init_engine()
+    phone = str(body.get('phone') or '')
+    fut = eng.phone_login_start(phone, ROOT)
+    try:
+        r = await asyncio.wait_for(asyncio.wrap_future(fut), 60)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': True, 'session': r['session']}
+
+
+@app.post('/api/phonelogin/submit')
+async def phonelogin_submit(body: dict):
+    """手机号登录第二步: 提交验证码或 2FA 密码。"""
+    stem = str(body.get('session') or '')
+    code = str(body.get('code') or '')
+    password = str(body.get('password') or '')
+    if not stem:
+        return {'ok': False, 'msg': '参数缺失'}
+    eng = init_engine()
+    fut = eng.phone_login_submit(stem, code, password)
+    try:
+        r = await asyncio.wait_for(asyncio.wrap_future(fut), 60)
+    except Exception as e:
+        return {'ok': True, 'status': 'error', 'msg': str(e)[:150]}
+    return {'ok': True, **_jsonable(r)}
+
+
 @app.post('/api/passkeys/register')
 async def register_passkey(body: dict):
     import base64
