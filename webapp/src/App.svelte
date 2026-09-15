@@ -60,6 +60,9 @@
     startChat,
     deleteAccount,
     addAccount,
+    qrLoginStart,
+    qrLoginPoll,
+    qrLoginCancel,
     getPing,
     TOKEN,
     type Account,
@@ -431,15 +434,86 @@
     }
   }
 
-  // 新建账号(顶栏): 拖入 session/json/tdata/zip 建号
+  // 新建账号(顶栏): 拖入 session/json/tdata/zip 建号;扫码登录标签页
   let addAccOpen = $state(false);
+  let addAccTab = $state<'files' | 'qr'>('files');
   let addAccDragging = $state(false);
   let addAccFiles = $state<Array<{ name: string; data: string }>>([]);
   let addAccBusy = $state(false);
+  // 扫码登录
+  let qrImg = $state('');
+  let qrSession = $state('');
+  let qrStatus = $state('');      // '' / loading / waiting / expired / error / success
+  let qrRemain = $state(0);
+  let qrErr = $state('');
+  let qrTimer: ReturnType<typeof setTimeout> | undefined;
+
   function doOpenAddAccount() {
     addAccFiles = [];
+    addAccTab = 'files';
     addAccOpen = true;
   }
+  async function doStartQrLogin() {
+    addAccTab = 'qr';
+    if (qrSession) return;   // 已在登录中,不重复生成
+    qrStatus = 'loading';
+    qrErr = '';
+    qrImg = '';
+    try {
+      const r = await qrLoginStart('');
+      if (r.ok && r.img) {
+        qrImg = r.img;
+        qrSession = r.session || '';
+        qrStatus = 'waiting';
+        qrPollLoop();
+      } else {
+        qrStatus = 'error';
+        qrErr = r.msg || '二维码生成失败';
+      }
+    } catch (e: any) {
+      qrStatus = 'error';
+      qrErr = e?.message ?? String(e);
+    }
+  }
+  async function qrPollLoop() {
+    if (!qrSession || !addAccOpen || addAccTab !== 'qr') return;
+    try {
+      const r = await qrLoginPoll(qrSession);
+      if (r.status === 'waiting') {
+        qrStatus = 'waiting';
+        qrRemain = (r as any).remain ?? 0;
+        qrTimer = setTimeout(qrPollLoop, 1500);
+      } else if (r.status === 'success' && r.user) {
+        qrStatus = 'success';
+        addLog(`[扫码] 登录成功: ${r.user.display}(+${r.user.phone}),已创建账号 ${r.user.name}`);
+        qrSession = '';
+        addAccOpen = false;
+        await loadAccounts();
+      } else if (r.status === 'expired') {
+        qrStatus = 'expired';
+        qrSession = '';
+      } else {
+        qrStatus = 'error';
+        qrErr = r.msg || '登录失败';
+      }
+    } catch {
+      qrTimer = setTimeout(qrPollLoop, 3000);   // 网络抖动继续轮询
+    }
+  }
+  async function closeAddAcc(cancelQr = false) {
+    clearTimeout(qrTimer);
+    if (qrSession) {
+      if (cancelQr || qrStatus !== 'success') {
+        qrLoginCancel(qrSession).catch(() => {});
+      }
+    }
+    qrSession = '';
+    qrImg = '';
+    qrStatus = '';
+    qrErr = '';
+    addAccOpen = false;
+  }
+
   function addAccAccept(f: File): boolean {
     const n = f.name.toLowerCase();
     return n.endsWith('.session') || n.endsWith('.json') || n.endsWith('.zip')
@@ -2120,40 +2194,65 @@
 {/if}
 
 {#if addAccOpen}
-  <div class="modal-mask" onclick={() => (addAccOpen = false)}>
+  <div class="modal-mask" onclick={() => closeAddAcc()}>
     <div class="modal rename-modal addacc-modal" onclick={(e) => e.stopPropagation()}>
       <div class="rename-head">
         <span>新建账号</span>
-        <button class="back set-close rename-x" title="关闭" onclick={() => (addAccOpen = false)}>✕</button>
+        <button class="back set-close rename-x" title="关闭" onclick={() => closeAddAcc()}>✕</button>
       </div>
-      <div
-        class="addacc-drop"
-        class:over={addAccDragging}
-        ondragover={onAddAccDragOver}
-        ondragleave={() => (addAccDragging = false)}
-        ondrop={onAddAccDrop}
-      >
-        <div class="addacc-drop-icon">⬇</div>
-        <div>拖入文件创建账号</div>
-        <small>.session / .json / 2fa.txt / .zip（tdata 或 session+json 打包）</small>
-        <small>zip 将自动解压；tdata 将自动转换为 session</small>
+      <div class="mode-seg addacc-tabs">
+        <button class="mode-item" class:on={addAccTab === 'files'} onclick={() => (addAccTab = 'files')}>拖入文件</button>
+        <button class="mode-item" class:on={addAccTab === 'qr'} onclick={() => doStartQrLogin()}>扫码登录</button>
       </div>
-      {#if addAccFiles.length}
-        <ul class="addacc-list">
-          {#each addAccFiles as f, i}
-            <li class="sec-item">
-              <span>{f.name}</span>
-              <button class="icon-btn" title="移除" onclick={() => addAccRemove(i)}>✕</button>
-            </li>
-          {/each}
-        </ul>
+      {#if addAccTab === 'files'}
+        <div
+          class="addacc-drop"
+          class:over={addAccDragging}
+          ondragover={onAddAccDragOver}
+          ondragleave={() => (addAccDragging = false)}
+          ondrop={onAddAccDrop}
+        >
+          <div class="addacc-drop-icon">⬇</div>
+          <div>拖入文件创建账号</div>
+          <small>.session / .json / 2fa.txt / .zip（tdata 或 session+json 打包）</small>
+          <small>zip 将自动解压；tdata 将自动转换为 session</small>
+        </div>
+        {#if addAccFiles.length}
+          <ul class="addacc-list">
+            {#each addAccFiles as f, i}
+              <li class="sec-item">
+                <span>{f.name}</span>
+                <button class="icon-btn" title="移除" onclick={() => addAccRemove(i)}>✕</button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        <div class="rename-btns">
+          <md-outlined-button onclick={() => closeAddAcc()}>取消</md-outlined-button>
+          <md-filled-button disabled={!addAccFiles.length || addAccBusy} onclick={doAddAccountConfirm}>
+            {addAccBusy ? '创建中…' : '创建账号'}
+          </md-filled-button>
+        </div>
+      {:else}
+        <div class="qrlogin-box">
+          {#if qrImg}
+            <img class="qr-img" src={`data:image/png;base64,${qrImg}`} alt="登录二维码" />
+            <p class="qr-tip">手机 Telegram → 设置 → 设备 → <b>链接桌面设备</b>，扫描此二维码</p>
+            <p class="qr-tip qr-status">
+              {#if qrStatus === 'waiting'}等待扫码确认…（{qrRemain}s 后过期）{/if}
+              {#if qrStatus === 'expired'}二维码已过期，请关闭后重试{/if}
+              {#if qrStatus === 'error'}{qrErr}{/if}
+            </p>
+          {:else if qrStatus === 'loading'}
+            <p class="empty">正在生成二维码…</p>
+          {:else}
+            <p class="empty">{qrErr || '点击「扫码登录」标签页生成二维码'}</p>
+          {/if}
+        </div>
+        <div class="rename-btns">
+          <md-outlined-button onclick={() => closeAddAcc(true)}>取消登录</md-outlined-button>
+        </div>
       {/if}
-      <div class="rename-btns">
-        <md-outlined-button onclick={() => (addAccOpen = false)}>取消</md-outlined-button>
-        <md-filled-button disabled={!addAccFiles.length || addAccBusy} onclick={doAddAccountConfirm}>
-          {addAccBusy ? '创建中…' : '创建账号'}
-        </md-filled-button>
-      </div>
     </div>
   </div>
 {/if}
@@ -3057,6 +3156,19 @@
     min-width: 0;
   }
   /* 新建账号拖放弹窗 */
+  .addacc-tabs {
+    margin-bottom: 10px;
+  }
+  .qrlogin-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 0 4px;
+  }
+  .qr-status {
+    color: var(--md-sys-color-primary);
+  }
   .addacc-drop {
     border: 2px dashed var(--md-sys-color-outline);
     border-radius: var(--md-sys-shape-corner-medium);

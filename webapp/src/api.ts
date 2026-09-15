@@ -307,6 +307,26 @@ export async function addAccount(files: Array<{ name: string; data: string }>) {
   return r.json() as Promise<{ ok: boolean; msg?: string; path?: string }>;
 }
 
+export async function qrLoginStart(name: string) {
+  const r = await apiFetch('/api/qrlogin/start', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ name }),
+  });
+  return r.json() as Promise<{ ok: boolean; msg?: string; url?: string; session?: string; img?: string }>;
+}
+
+export async function qrLoginPoll(session: string) {
+  const r = await apiFetch('/api/qrlogin/poll', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ session }),
+  });
+  return r.json() as Promise<{ ok: boolean; status?: string; msg?: string; user?: { name: string; display: string; phone: string } }>;
+}
+
+export const qrLoginCancel = (session: string) => postJson('/api/qrlogin/cancel', { session });
+
 export async function startChat(account: string, username: string) {
   const r = await apiFetch('/api/start-chat', {
     method: 'POST',

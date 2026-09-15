@@ -127,6 +127,8 @@ class Engine:
         self._account_dir = None
         # 连接池: 账号名 -> {'client','me','info'};支持多账号同时在线,秒切
         self._pool = {}
+        # 扫码登录会话表: 临时 session 路径 -> {client, qr, name, started}
+        self._qr_sessions = {}
         self._recv_on = False       # 消息接收开关
         self._recv_rules = {'exclude_channels': True, 'exclude_groups': False,
                             'exclude_bots': False}
@@ -1642,6 +1644,128 @@ class Engine:
             self._log('[停止] 已请求停止,当前动作完成后中止…')
             return True
         return False
+
+    # ---------- 扫码登录(新建账号) ----------
+
+    def qr_login_start(self, account_name='', root=''):
+        """启动扫码登录: 临时 client 生成 tg://login 二维码。root=账号根目录(成功后落盘)。"""
+        return self._submit(self._do_qr_login_start(account_name, root))
+
+    async def _do_qr_login_start(self, account_name, root=''):
+        _ensure_telethon()
+        import secrets as _secrets
+        name = (account_name or '').strip() or ('扫码登录_' + time.strftime('%H%M%S'))
+        self._qr_root_dir = root or getattr(self, '_qr_root_dir', '') or os.path.dirname(tg_tool.SCRIPT_DIR)
+        # 临时 session(未登录成功的先放 SCRATCH 目录,成功后移入正式账号目录)
+        scratch = os.path.join(tg_tool.SCRIPT_DIR, '.qrlogin')
+        os.makedirs(scratch, exist_ok=True)
+        stem = os.path.join(scratch, 'qr_' + _secrets.token_hex(6))
+        from telethon import TelegramClient
+        client = TelegramClient(stem, 2040, 'b18441a1ff607e10a989891a5462e627',
+                                device_model='PC', system_version='Windows',
+                                app_version='6.6.4 x64')
+        await client.connect()
+        qr = await client.qr_login()
+        # 收进会话表: 后续 poll/complete 用 session 路径找回
+        self._qr_sessions[stem] = {'client': client, 'qr': qr, 'name': name,
+                                   'started': time.time()}
+        self._log(f'[扫码] 已生成登录二维码({name}),等待手机 Telegram 扫码…')
+        return {'url': qr.url, 'session': stem,
+                'expires_in': int((qr.expires - __import__('datetime').datetime.now(tz=__import__('datetime').timezone.utc)).total_seconds())}
+
+    def qr_login_poll(self, stem):
+        """轮询扫码状态并推进登录(wait 内部驱动)。返回 {status, user?}。
+        status: waiting(继续轮询) / success / expired / error"""
+        return self._submit(self._do_qr_login_poll(stem))
+
+    async def _do_qr_login_poll(self, stem):
+        ent = self._qr_sessions.get(stem)
+        if not ent:
+            raise RuntimeError('扫码会话不存在或已结束')
+        client, qr = ent['client'], ent['qr']
+        try:
+            me = await asyncio.wait_for(qr.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            import datetime as _dt
+            remain = (qr.expires - _dt.datetime.now(tz=_dt.timezone.utc)).total_seconds()
+            if remain <= 0:
+                return {'status': 'expired'}
+            return {'status': 'waiting', 'remain': int(remain)}
+        # 成功: 落盘为正式账号
+        info = await self._qr_login_finalize(stem, me)
+        return {'status': 'success', 'user': info}
+
+    async def _qr_login_finalize(self, stem, me):
+        ent = self._qr_sessions.pop(stem)
+        client, name = ent['client'], ent['name']
+        try:
+            folder = str(getattr(me, 'phone', '') or f'uid{me.id}')
+            folder = tg_tool._clean_name(folder)
+            target = os.path.join(self._qr_root(), folder)
+            i = 2
+            while os.path.exists(target):
+                target = os.path.join(self._qr_root(), f'{folder}_{i}')
+                i += 1
+            os.makedirs(target, exist_ok=True)
+            # 关闭 client 落盘 session,再移到账号目录
+            await client.disconnect()
+            for ext in ('.session', '.session-journal'):
+                src = stem + ext
+                if os.path.isfile(src):
+                    dst = os.path.join(target, folder + ext)
+                    os.replace(src, dst)
+            cfg = {
+                'phone': str(getattr(me, 'phone', '') or ''),
+                'session_file': folder + '.session',
+                'app_id': 2040,
+                'app_hash': 'b18441a1ff607e10a989891a5462e627',
+                'device': 'PC', 'sdk': 'Windows', 'app_version': '6.6.4 x64',
+                'user_id': str(me.id),
+                'first_name': me.first_name or '',
+                'last_name': me.last_name or '',
+                'username': getattr(me, 'username', '') or '',
+            }
+            json.dump(cfg, open(os.path.join(target, folder + '.json'), 'w',
+                                encoding='utf-8'), ensure_ascii=False, indent=1)
+            # 自动放置客户端
+            exe_src = os.path.join(self._qr_root(), 'Telegram.exe')
+            if os.path.isfile(exe_src) and not os.path.isfile(os.path.join(target, 'Telegram.exe')):
+                try:
+                    import shutil as _sh
+                    _sh.copy2(exe_src, os.path.join(target, 'Telegram.exe'))
+                except OSError:
+                    pass
+            disp = (f'{me.first_name or ""} {me.last_name or ""}').strip() or folder
+            self._log(f'[扫码] 登录成功: {disp}(+{cfg["phone"]}),已创建账号 {folder}')
+            return {'name': folder, 'path': target, 'phone': cfg['phone'],
+                    'uid': str(me.id), 'display': disp}
+        finally:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+    def qr_login_cancel(self, stem):
+        """取消扫码登录,清理临时 session。"""
+        return self._submit(self._do_qr_login_cancel(stem))
+
+    async def _do_qr_login_cancel(self, stem):
+        ent = self._qr_sessions.pop(stem, None)
+        if ent:
+            try:
+                await ent['client'].disconnect()
+            except Exception:
+                pass
+        for ext in ('.session', '.session-journal'):
+            try:
+                os.remove(stem + ext)
+            except OSError:
+                pass
+        self._log('[扫码] 已取消')
+        return True
+
+    def _qr_root(self):
+        return getattr(self, '_qr_root_dir', '') or os.path.dirname(tg_tool.SCRIPT_DIR)
 
     # ---------- 格式转换 ----------
 

@@ -1256,6 +1256,60 @@ async def init_passkey():
         return {'ok': False, 'msg': str(e)}
 
 
+# ---------- 扫码登录(新建账号) ----------
+
+def _qr_png_b64(text: str) -> str:
+    import base64
+    import qrcode as _q
+    q = _q.QRCode(border=2)
+    q.add_data(text)
+    q.make(fit=True)
+    return base64.b64encode(qr_matrix_to_png(q.get_matrix())).decode('ascii')
+
+
+@app.post('/api/qrlogin/start')
+async def qrlogin_start(body: dict):
+    """生成扫码登录二维码(手机 Telegram → 设置 → 设备 → 链接桌面设备)。"""
+    eng = init_engine()
+    name = str(body.get('name') or '')
+    fut = eng.qr_login_start(name, ROOT)
+    try:
+        r = await asyncio.wait_for(asyncio.wrap_future(fut), 30)
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    return {'ok': True, 'url': r['url'], 'session': r['session'],
+            'expires_in': r['expires_in'], 'img': _qr_png_b64(r['url'])}
+
+
+@app.post('/api/qrlogin/poll')
+async def qrlogin_poll(body: dict):
+    """轮询扫码状态。status: waiting/success/expired/error。"""
+    stem = str(body.get('session') or '')
+    if not stem:
+        return {'ok': False, 'msg': '参数缺失'}
+    eng = init_engine()
+    fut = eng.qr_login_poll(stem)
+    try:
+        r = await asyncio.wait_for(asyncio.wrap_future(fut), 30)
+    except Exception as e:
+        return {'ok': True, 'status': 'error', 'msg': str(e)[:150]}
+    return {'ok': True, **_jsonable(r)}
+
+
+@app.post('/api/qrlogin/cancel')
+async def qrlogin_cancel(body: dict):
+    stem = str(body.get('session') or '')
+    if not stem:
+        return {'ok': False, 'msg': '参数缺失'}
+    eng = init_engine()
+    fut = eng.qr_login_cancel(stem)
+    try:
+        await asyncio.wait_for(asyncio.wrap_future(fut), 15)
+    except Exception:
+        pass
+    return {'ok': True}
+
+
 @app.post('/api/passkeys/register')
 async def register_passkey(body: dict):
     import base64
