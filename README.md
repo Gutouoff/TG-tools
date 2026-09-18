@@ -14,6 +14,7 @@
 - **账号安全页**：两步验证（2FA）设置、通行密钥（passkey）注册/删除（蓝牙 caBLE 扫码）、登录邮箱验证、管理已登录设备
 - **资料编辑**：批量/单个修改姓名、简介、用户名、生日、头像
 - **打包账号**：把账号（tdata + session + 凭据 + 2fa.txt）打成 **AES-256 加密 zip**，强制设置密码，杜绝明文外发
+- **Bot 收件箱**：本地运行一个 TG bot，把账号文件（.session / 凭据 .json / tdata 或 session 的 zip / 2fa.txt）从任意设备转发给它即可自动识别归档进账号列表；加密账号包把密码写在转发说明里；仅允许列表内的用户可推送
 - **其他**：Telegram Desktop 本体在线更新、tdata→session 转换导入、代理（system/manual，SOCKS5）、浅色/深色主题、界面中文全部外置可改
 
 ## 快速开始
@@ -52,6 +53,7 @@
 ├── tg_tool.py           # 核心业务: 白名单、速度档、tdata 转换、代理、CLI 入口
 ├── cable.py             # passkey caBLE 完整实现(二维码生成/BLE 扫描/Noise 握手/CTAP)
 ├── tg_profile.py        # 资料/头像缓存 worker(profiles.json + avatars/)
+├── tg_bot.py            # Bot 收件箱: 独立线程/loop 的 TG bot,识别转发的账号文件并归档
 ├── tl_patch.py          # Telethon 1.44 的新 message 构造体注册(官方更新 layer 后自动失效)
 ├── tdata2session.py     # opentele-ng tdata 转换
 ├── webapp/              # Svelte 5 前端源码(App.svelte + api.ts + app.css)
@@ -62,6 +64,7 @@
 ## 安全与隐私设计
 
 - **数据不出本机**：所有操作走本地账号目录与本地服务；程序自带 token 鉴权，未持 token 的请求一律 401
+- **Bot 收件箱白名单**：bot token 只存在本地 settings.json；仅「允许的用户 ID」列表内的人推送的文件才会被接收，其他人发消息只会收到自己的 ID（便于把自己加进列表）
 - **删除默认白名单**：内置默认保护名单（本人账号/群/Saved Messages），白名单外才会删除；名单可在界面增删
 - **打包强制加密**：账号包必须设置密码（AES-256），不生成明文账号包
 - **日志打码**：界面日志对手机号做打码处理

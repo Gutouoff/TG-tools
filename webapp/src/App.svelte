@@ -58,6 +58,9 @@
     refreshSession,
     refreshSsBatch,
     startChat,
+    getBotStatus,
+    startBot,
+    stopBot,
     deleteAccount,
     addAccount,
     qrLoginStart,
@@ -791,7 +794,11 @@
   // 设置
   let settings = $state<Record<string, any>>({});
   let settingsOpen = $state(false);
-  let settingsSection = $state<'general' | 'appearance' | 'proxy' | 'join' | 'whitelist' | 'about'>('general');
+  let settingsSection = $state<'general' | 'appearance' | 'proxy' | 'join' | 'whitelist' | 'about' | 'bot'>('general');
+  // Bot 收件箱
+  let botStatus = $state({ running: false, username: '', id: 0, error: '', allowed_ids: [] as number[], bot_on: false, has_token: false });
+  let botAllowedInput = $state('');
+  let botBusy = $state(false);
   let themeMode = $derived((settings.theme_mode as string) || 'light');
   async function loadSettings() {
     settings = {
@@ -803,12 +810,15 @@
       rename_quick: ['display', 'username', 'phone', 'uid'],
       rename_prefix: '',
       email_presets: [],
+      bot_token: '', bot_allowed_ids: [], bot_on: false,
     };
     settingsOpen = true;
     try {
       settings = await getSettings();
       applyJoinEntries(settings.join_links);
       applyEmailPresets(settings.email_presets);
+      botAllowedInput = ((settings.bot_allowed_ids as number[]) || []).join(', ');
+      refreshBotStatus();
       applyTheme();
     } catch (e) {
       // 保持默认值
@@ -818,12 +828,55 @@
     settingsSection = section;
     loadSettings();
   }
+  function parseBotIds(s: string): number[] {
+    return (s.match(/\d+/g) || []).map((x) => Number(x));
+  }
+  async function refreshBotStatus() {
+    try {
+      botStatus = await getBotStatus();
+    } catch {
+      // 忽略: 状态拉取失败保持旧值
+    }
+  }
   async function doSaveSettings() {
-    settings = { ...settings, join_links: joinEntries, email_presets: emailPresets };
+    settings = { ...settings, join_links: joinEntries, email_presets: emailPresets, bot_allowed_ids: parseBotIds(botAllowedInput) };
     await saveSettings(settings);
     settingsOpen = false;
     addLog('设置已保存');
     applyTheme();
+  }
+  // Bot 收件箱: 启动前先把当前表单落盘(token/允许列表),再拉起 bot
+  async function doStartBot() {
+    if (botBusy) return;
+    botBusy = true;
+    try {
+      settings = { ...settings, join_links: joinEntries, email_presets: emailPresets, bot_allowed_ids: parseBotIds(botAllowedInput) };
+      await saveSettings(settings);
+      const r = await startBot();
+      addLog(r.ok ? `[Bot] ${r.msg}` : `[Bot] 启动失败: ${r.msg || '未知错误'}`);
+      if (r.status) botStatus = r.status;
+      else await refreshBotStatus();
+    } catch (e: any) {
+      addLog(`[Bot] 启动失败: ${e?.msg ?? e}`);
+      await refreshBotStatus();
+    } finally {
+      botBusy = false;
+    }
+  }
+  async function doStopBot() {
+    if (botBusy) return;
+    botBusy = true;
+    try {
+      const r = await stopBot();
+      addLog(`[Bot] ${r.msg || '已停止'}`);
+      if (r.status) botStatus = r.status;
+      else await refreshBotStatus();
+    } catch (e: any) {
+      addLog(`[Bot] 停止失败: ${e?.msg ?? e}`);
+      await refreshBotStatus();
+    } finally {
+      botBusy = false;
+    }
   }
   let exporting = $state(false);
   async function doExportAccounts() {
@@ -1619,6 +1672,9 @@
         }
       }
       if (e.status === 'error') addLog(`[错误] ${String(e.data ?? '')}`);
+      // Bot 收件箱: 状态变更刷新设置页显示;归档成功刷新账号列表
+      if (e.status === 'bot' && e.data) botStatus = { ...botStatus, ...(e.data as any) };
+      if (e.status === 'bot_imported') loadAccounts();
       if (e.status === 'passkey_done') {
         const d = e.data as any;
         addLog(d?.ok ? '[通行密钥注册成功]' : `[注册失败] ${d?.msg ?? ''}`);
@@ -2563,6 +2619,7 @@
         <button class="set-nav-item" class:on={settingsSection === 'proxy'} onclick={() => (settingsSection = 'proxy')}><span class="set-nav-icon">🌐</span>代理</button>
         <button class="set-nav-item" class:on={settingsSection === 'join'} onclick={() => (settingsSection = 'join')}><span class="set-nav-icon">📨</span>加群频道</button>
         <button class="set-nav-item" class:on={settingsSection === 'whitelist'} onclick={() => { settingsSection = 'whitelist'; loadWhitelist(); }}><span class="set-nav-icon">🛡️</span>白名单</button>
+        <button class="set-nav-item" class:on={settingsSection === 'bot'} onclick={() => { settingsSection = 'bot'; refreshBotStatus(); }}><span class="set-nav-icon">🤖</span>Bot收件箱</button>
         <button class="set-nav-item" class:on={settingsSection === 'about'} onclick={() => (settingsSection = 'about')}><span class="set-nav-icon">ℹ️</span>关于</button>
       </div>
       <div class="set-content">
@@ -2739,6 +2796,45 @@
               {/each}
             </ul>
           </div>
+        {:else if settingsSection === 'bot'}
+          <div class="set-sec-title">Bot 收件箱</div>
+          <p class="set-hint">
+            本地运行一个 TG Bot 接收器：把账号文件（.session / 凭据 .json / zip 包 / 2fa.txt）从任意设备转发给它，自动识别并归档进账号列表。先在 @BotFather 免费创建 bot 拿到 token。
+          </p>
+          <div class="set-group">
+            <div class="set-row">
+              <span class="set-label">运行状态</span>
+              <span>
+                {botStatus.running ? `✅ 运行中 @${botStatus.username || botStatus.id}` : '⏹ 未运行'}
+                {#if botStatus.error && !botStatus.running}<span class="bot-err">（{botStatus.error}）</span>{/if}
+              </span>
+            </div>
+            <div class="set-row">
+              <span class="set-label">Bot Token</span>
+              <input class="set-input" type="password" autocomplete="new-password" bind:value={settings.bot_token} placeholder="123456789:AAE…（改动后需重新启动）" />
+            </div>
+            <div class="set-row set-row-col">
+              <span class="set-label">允许的用户 ID（逗号分隔，只接收这些人的文件）</span>
+              <input class="set-input" bind:value={botAllowedInput} placeholder="例如 123456789, 987654321" />
+            </div>
+            <div class="set-row">
+              <span class="set-label">启动程序时自动运行</span>
+              <label class="check-item">
+                <input type="checkbox" bind:checked={settings.bot_on} />
+                <span>开启</span>
+              </label>
+            </div>
+          </div>
+          <div class="set-footer-btn">
+            {#if botStatus.running}
+              <md-outlined-button disabled={botBusy} onclick={doStopBot}>{botBusy ? '处理中…' : '停止 Bot'}</md-outlined-button>
+            {:else}
+              <md-filled-button disabled={botBusy} onclick={doStartBot}>{botBusy ? '启动中…' : '保存并启动 Bot'}</md-filled-button>
+            {/if}
+          </div>
+          <p class="set-hint">
+            使用：在任意设备上把账号文件转发给你的 bot（可多选一起发，同一批自动合并成一个账号；每个 zip 单独成一个账号）。加密账号包把密码写在转发的文字说明里，或提前填好「通用 → 默认压缩密码」。不知道自己的用户 ID？先启动 bot，给它发任意消息，它会回复你的 ID；允许列表保存后即时生效，不用重启 bot。
+          </p>
         {:else if settingsSection === 'about'}
           <div class="set-sec-title">关于</div>
           <div class="about-list">
@@ -3375,6 +3471,10 @@
     font-size: 12px;
     color: var(--md-sys-color-on-surface-variant);
     margin: 4px 0 10px;
+  }
+  .bot-err {
+    font-size: 12px;
+    color: var(--md-sys-color-error, #b3261e);
   }
   .about-row {
     display: flex;

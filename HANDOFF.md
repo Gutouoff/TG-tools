@@ -1,7 +1,7 @@
 # TG 工具箱交接文档（重开会话用）
 
 > 本文档记录当前项目的完整状态、关键技术细节、卡点和下一步，供新会话无缝继续。
-> 最后更新：main/dev = v1.1.0 正式版（143cddd+）；项目目录已清理（beta 发布说明归档 docs/releases/，tdesktop 参考源码归档 legacy/reference/，build/__pycache__ 与一次性脚本已删）
+> 最后更新：dev = v1.3.0-beta.1（**Bot 收件箱**新功能，见「六c」）；此前 main/dev = v1.1.0 正式版（143cddd+，v1.2.0 新建账号已发）
 
 ---
 
@@ -60,6 +60,7 @@ git checkout main; git merge --ff-only dev; git push origin main; git checkout d
 | `tg_profile.py` | 资料/头像缓存 worker（`AVATAR_DIR`、`refresh_one`、`avatar_path` 返回 .jpg）|
 | `tg_tool.py` | 核心业务 + 白名单 + 界面文本 + 代理 |
 | `cable.py` | **caBLE（passkey 蓝牙）完整实现**（本会话新增，重点）|
+| `tg_bot.py` | **Bot 收件箱**（v1.3.0-beta.1 新增）：本地 TG bot，识别转发的账号文件并归档 |
 | `webapp/src/App.svelte` | 主 UI（~1515 行）：账号卡、功能卡片、设置弹窗、passkey 页 |
 | `webapp/src/api.ts` | API 封装 + TOKEN + connectWS |
 | `webapp/src/app.css` | Material 3 主题（Teal 青绿）+ 深色模式 |
@@ -85,6 +86,17 @@ git checkout main; git merge --ff-only dev; git push origin main; git checkout d
 - 新接口：`POST /api/switch` {name}、`GET /api/online`、`POST /api/disconnect` 可带 {name}；`/api/connect` 响应多带 `online` 列表。
 - 前端：头像橘点=连接池在线;双击在线账号=秒切;账号右键菜单有「断开连接（保持其他在线）」;页面刷新后 `GET /api/online` 恢复徽标;WS 新增 `switched`/带账号名的 `disconnected` 事件处理。
 - 注意：所有任务仍只作用于「当前账号」（self._client）,批量 fan-out 到多账号是后续方向。
+
+## 六c、Bot 收件箱（v1.3.0-beta.1 新增）
+
+- **形态**：`tg_bot.py` 的 `BotInbox`——独立线程 + 独立 asyncio loop（与引擎同款的 client 单循环纪律），Telethon `MemorySession` + `client.start(bot_token=...)`，代理沿用 `tg_tool.resolve_proxy()`，bot 客户端用 Telegram Desktop 公开凭据（2040/b18441…，与 tdata 转换一致）。
+- **配置**：settings.json 新增 `bot_token` / `bot_allowed_ids`（int 列表，_load_settings 归一化）/ `bot_on`（启动自启，在 server lifespan 里拉起）。token 与 pack_password 同级明文存本地。
+- **安全**：仅 `bot_allowed_ids` 内的用户可推送；列表外用户发消息只回他的 ID（1 小时冷却防刷屏），便于 onboarding。**坑**：Telethon NewMessage 收发都触发，handler 必须排 `msg.out`，否则 bot 对自己的回复再回复（自我循环）。
+- **合并逻辑**：同一用户 4s 安静窗口内的连续转发合并成一批；每批里**每个 zip 单独成一个账号**，散文件（session/json/2fa.txt）合并成一个账号；支持类型白名单 .session/.session-journal/.json/.zip/.txt，单文件上限 512MB。
+- **归档共用**：server.py 把原 `/api/add-account` 的步骤 2-6 抽成 `async _ingest_account_dir(tmp, passwords)`（拖放导入与 bot 共用），并新增 `_extract_zip`：**zipfile 打不开的包按 7z AES 加密包处理**，候选密码 = 转发说明文字 + settings.pack_password，需系统装 7-Zip。
+- **接口**：`GET /api/bot`、`POST /api/bot/start`（wait_ready 45s 内回连接结果）、`POST /api/bot/stop`；保存 settings 时 `bot_allowed_ids` 热更新不用重启；WS 事件 `state:bot`（状态变更）与 `state:bot_imported`（前端据此刷新账号列表）。
+- **前端**：设置弹窗新增「🤖 Bot收件箱」页（token/允许 ID/自启/启停按钮/状态）。
+- **测试**：归档逻辑单测（散文件/重名 _2/仅 session 自愈打桩/tdata zip/加密 zip 无 7z/zip slip/无关文件）+ API 冒烟（401、bot 状态、未配 token 拒启动、settings bot 键读写）全过；真 bot 联调需用户提供 token 实测。
 
 ## 七、passkey caBLE（重点，未完全走通）
 

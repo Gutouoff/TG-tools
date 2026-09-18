@@ -27,6 +27,7 @@ CLI（tg_tool.py）仍可用；Tkinter GUI（tg_ui.py）已归档至 `legacy/`�
 | `tg_engine.py` | 引擎：线程+asyncio 循环、**多账号连接池(_pool)/秒切**、任务、温和取消、进度回调 | 所有 on_log/on_progress/on_state 回调默认在引擎线程执行,UI 侧必须 root.after 投递;任务只作用于"当前账号" |
 | `legacy/tg_ui.py` | Tkinter 界面（**已归档冻结**，v1.0.0 起移入 legacy/） | 不再维护;引擎新特性不同步;确需运行见 legacy/README.md |
 | `tg_profile.py` | 资料缓存 worker | DEAD 集合=已知死号直接跳过;PHONE_CODE_MAP 区号→国家 |
+| `tg_bot.py` | Bot 收件箱: 本地 TG bot 识别转发的账号文件并归档 | 独立线程+独立 loop(同 client 单循环纪律);仅 settings.bot_allowed_ids 内的用户可推送;归档与拖放导入共用 server._ingest_account_dir;NewMessage 必须排除 msg.out(防自我回复循环) |
 | `tl_patch.py` | Telethon 1.44 新 message 构造体 3ae56482 注册 | Telethon 官方更新 layer 后此补丁自动被覆盖,无需维护 |
 | `tdata2session.py` | opentele-ng tdata 转换 | 独立脚本,也被 tg_tool import |
 | `HANDOFF.md` | 交接文档（活文档,并行会话维护） | 提交时随手更新;其自述版本号易与 HEAD 漂移 |

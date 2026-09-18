@@ -26,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 import tg_tool
 import tg_engine
 import tg_profile
+import tg_bot
 import cable
 
 if getattr(sys, 'frozen', False):
@@ -48,7 +49,19 @@ else:
 async def lifespan(app):
     global _loop
     _loop = asyncio.get_event_loop()
+    # 勾了「启动时自动运行」且有 token: 启动 Bot 收件箱(后台线程,不阻塞服务)
+    try:
+        s = _load_settings()
+        if s.get('bot_on') and str(s.get('bot_token') or '').strip():
+            _restart_bot()
+    except Exception:
+        pass
     yield
+    try:
+        if _bot:
+            _bot.stop()
+    except Exception:
+        pass
 
 
 app = FastAPI(title='TG工具箱', docs_url=None, redoc_url=None, lifespan=lifespan)
@@ -137,6 +150,7 @@ app.add_middleware(_AuthMiddleware)
 # ---------- 引擎单例 + 回调桥接 ----------
 _loop = None
 _engine = None
+_engine_lock = threading.Lock()   # bot 线程与请求线程都可能惰性初始化引擎
 
 
 def _emit(data: dict):
@@ -164,17 +178,18 @@ def init_engine():
     # tg_tool.log 的行(资料刷新失败原因等)也广播到 Web 日志页
     if tg_tool.UI_LOG_HOOK is None:
         tg_tool.UI_LOG_HOOK = lambda msg: _emit({'type': 'log', 'line': msg})
-    if _engine is None:
-        _engine = tg_engine.Engine(
-            on_log=lambda msg: _emit({'type': 'log', 'line': msg}),
-            on_progress=lambda done, total, label: _emit(
-                {'type': 'progress', 'done': done, 'total': total, 'label': label}),
-            on_state=lambda st, data: _emit(
-                {'type': 'state', 'status': st, 'data': _jsonable(data)}),
-            on_message=lambda data: _emit(
-                {'type': 'state', 'status': 'recv_message', 'data': _jsonable(data)}),
-        )
-        _engine.start()
+    with _engine_lock:
+        if _engine is None:
+            _engine = tg_engine.Engine(
+                on_log=lambda msg: _emit({'type': 'log', 'line': msg}),
+                on_progress=lambda done, total, label: _emit(
+                    {'type': 'progress', 'done': done, 'total': total, 'label': label}),
+                on_state=lambda st, data: _emit(
+                    {'type': 'state', 'status': st, 'data': _jsonable(data)}),
+                on_message=lambda data: _emit(
+                    {'type': 'state', 'status': 'recv_message', 'data': _jsonable(data)}),
+            )
+            _engine.start()
     return _engine
 
 
@@ -1621,14 +1636,147 @@ def _unique_target(root, name):
     return f'{cand}_{i}'
 
 
+def _extract_zip(zp, outd, tmp, passwords=()):
+    """解压 zip 到 outd(遍历校验路径越界)。普通 zip 走 zipfile;
+    加密账号包(7z AES,zipfile 打不开)尝试 7z + 候选密码。返回 (ok, errmsg)。"""
+    import zipfile
+    try:
+        with zipfile.ZipFile(zp) as zf:
+            tmp_real = os.path.realpath(tmp)
+            for info in zf.infolist():
+                if info.file_size > 1024 * 1024 * 1024:
+                    return False, '压缩包过大'
+                target = os.path.realpath(os.path.join(outd, info.filename))
+                try:
+                    if os.path.commonpath([target, tmp_real]) != tmp_real:
+                        return False, '压缩包路径越界'
+                except ValueError:
+                    return False, '压缩包路径越界'
+            zf.extractall(outd)
+        return True, ''
+    except zipfile.BadZipFile:
+        pass   # 非普通 zip: 可能是 7z AES 加密账号包
+    fn = os.path.basename(zp)
+    cands = []
+    for p in passwords:
+        p = str(p or '').strip()
+        if p and p not in cands:
+            cands.append(p)
+    if not cands:
+        return False, f'{fn} 不是有效的压缩包（若是加密账号包，请在转发说明/默认压缩密码里提供密码）'
+    seven = shutil.which('7z') or shutil.which('7za')
+    if not seven:
+        return False, f'{fn} 是加密压缩包，但未找到 7-Zip，无法解压'
+    for pw in cands:
+        try:
+            proc = subprocess.run([seven, 'x', '-y', f'-p{pw}', f'-o{outd}', zp],
+                                  capture_output=True, timeout=300)
+        except Exception as e:
+            return False, f'{fn} 解压失败: {type(e).__name__}: {str(e)[:120]}'
+        if proc.returncode == 0:
+            out_real = os.path.realpath(outd)
+            for r2, _dirs, fs in os.walk(outd):
+                for f in fs:
+                    t2 = os.path.realpath(os.path.join(r2, f))
+                    try:
+                        if os.path.commonpath([t2, out_real]) != out_real:
+                            return False, '压缩包路径越界'
+                    except ValueError:
+                        return False, '压缩包路径越界'
+            return True, ''
+    return False, f'{fn} 解压失败：密码不正确或文件已损坏'
+
+
+async def _ingest_account_dir(tmp, passwords=None):
+    """把 tmp 目录里的账号文件识别并归档到 ROOT(拖放导入与 Bot 收件箱共用)。
+    步骤: zip 自动解压(含加密包) → 定位账号数据 → 命名建文件夹 → 落盘 →
+    仅 session 自动补建凭据 json → tdata 自动转 session → 自动放置客户端。
+    返回 {'ok', 'msg', 'name', 'path'}。"""
+    import glob as _g
+    # 2) zip 自动解压(安全校验同 import;加密包用候选密码: 转发说明文字 + 默认压缩密码)
+    pw = [str(p or '').strip() for p in (passwords or []) if str(p or '').strip()]
+    try:
+        spw = str(_load_settings().get('pack_password') or '')
+        if spw and spw not in pw:
+            pw.append(spw)
+    except Exception:
+        pass
+    zip_stems = []   # zip 原名(去扩展名),作 tdata 包的文件夹名备选
+    for fn in sorted(os.listdir(tmp)):
+        if not fn.lower().endswith('.zip'):
+            continue
+        zp = os.path.join(tmp, fn)
+        outd = os.path.join(tmp, fn[:-4])
+        ok, emsg = _extract_zip(zp, outd, tmp, pw)
+        if not ok:
+            return {'ok': False, 'msg': emsg}
+        os.remove(zp)
+        zip_stems.append(fn[:-4])
+    # 3) 定位账号数据(平铺或一级子目录)
+    src, kind = _find_account(tmp)
+    if src is None:
+        return {'ok': False, 'msg': '未识别到账号数据（需要 .session、tdata 或其压缩包）'}
+    # 4) 文件夹名: session 名 > json 名 > zip 名 > '新账号'
+    folder = ''
+    sess = sorted(_g.glob(os.path.join(src, '*.session')))
+    if sess:
+        folder = os.path.splitext(os.path.basename(sess[0]))[0]
+    if not folder:
+        js = [f for f in os.listdir(src) if f.lower().endswith('.json')]
+        if js:
+            folder = os.path.splitext(js[0])[0]
+    if not folder and zip_stems:
+        folder = zip_stems[0]
+    folder = _clean_name(folder) or '新账号'
+    target = _unique_target(ROOT, folder)
+    os.makedirs(target, exist_ok=True)
+    for entry in os.listdir(src):
+        s = os.path.join(src, entry)
+        d = os.path.join(target, entry)
+        if os.path.isdir(s):
+            shutil.copytree(s, d, dirs_exist_ok=True)
+        else:
+            shutil.copy2(s, d)
+    name = os.path.basename(target)
+    msg = f'已创建账号 {name}'
+    # 4b) 仅 session(无凭据 json): 立即自动补建,免去首次连接时再补
+    if kind == 'session':
+        has_json = bool([f for f in _g.glob(os.path.join(target, '*.json'))
+                         if tg_tool._is_account_json(f)])
+        if not has_json:
+            def _heal():
+                return tg_tool.make_json_from_session(target, sess[0] if sess else
+                                                      _g.glob(os.path.join(target, '*.session'))[0])
+            healed = await asyncio.to_thread(_heal)
+            msg += '，已自动补建凭据 json' if healed else '（凭据 json 补建失败，将在首次连接时重试）'
+    # 5) tdata 自动转 session
+    converted = False
+    if kind == 'tdata' and not _g.glob(os.path.join(target, '*.session')):
+        eng = init_engine()
+        fut = eng.convert_tdata(target)
+        try:
+            await asyncio.wait_for(asyncio.wrap_future(fut), 300)
+            converted = True
+        except Exception as e:
+            msg += f'（tdata 转换失败: {str(e)[:80]}）'
+    if converted:
+        msg += '（tdata 已自动转换）'
+    # 6) 自动放置客户端
+    exe_src = os.path.join(ROOT, 'Telegram.exe')
+    if os.path.isfile(exe_src) and not os.path.isfile(os.path.join(target, 'Telegram.exe')):
+        try:
+            shutil.copy2(exe_src, os.path.join(target, 'Telegram.exe'))
+        except OSError:
+            pass
+    return {'ok': True, 'msg': msg, 'name': name, 'path': target}
+
+
 @app.post('/api/add-account')
 async def add_account(body: dict):
     """新建账号(顶栏拖放): 接收文件列表 [{name, data(base64)}]。
     支持 .session/.json/2fa.txt 单文件、tdata 目录打包的 zip、session+json 的 zip。
     文件夹名 = session 名 > zip 名; zip 自动解压; tdata 自动转 session。"""
     import base64
-    import io
-    import zipfile
     import tempfile
     import shutil
     files = body.get('files') or []
@@ -1650,88 +1798,12 @@ async def add_account(body: dict):
                 return {'ok': False, 'msg': f'{fn} 数据无效'}
             with open(os.path.join(tmp, fn), 'wb') as w:
                 w.write(raw)
-        # 2) zip 自动解压(安全校验同 import)
-        zip_stems = []   # zip 原名(去扩展名),作 tdata 包的文件夹名备选
-        for fn in os.listdir(tmp):
-            if not fn.lower().endswith('.zip'):
-                continue
-            zp = os.path.join(tmp, fn)
-            outd = os.path.join(tmp, fn[:-4])
-            try:
-                with zipfile.ZipFile(zp) as zf:
-                    tmp_real = os.path.realpath(tmp)
-                    for info in zf.infolist():
-                        if info.file_size > 1024 * 1024 * 1024:
-                            return {'ok': False, 'msg': '压缩包过大'}
-                        target = os.path.realpath(os.path.join(outd, info.filename))
-                        try:
-                            if os.path.commonpath([target, tmp_real]) != tmp_real:
-                                return {'ok': False, 'msg': '压缩包路径越界'}
-                        except ValueError:
-                            return {'ok': False, 'msg': '压缩包路径越界'}
-                    zf.extractall(outd)
-                os.remove(zp)
-                zip_stems.append(fn[:-4])
-            except zipfile.BadZipFile:
-                return {'ok': False, 'msg': f'{fn} 不是有效的压缩包'}
-        # 3) 定位账号数据(平铺或一级子目录)
-        src, kind = _find_account(tmp)
-        if src is None:
-            return {'ok': False, 'msg': '未识别到账号数据（需要 .session、tdata 或其压缩包）'}
-        # 4) 文件夹名: session 名 > json 名 > zip 名 > '新账号'
-        folder = ''
-        import glob as _g
-        sess = sorted(_g.glob(os.path.join(src, '*.session')))
-        if sess:
-            folder = os.path.splitext(os.path.basename(sess[0]))[0]
-        if not folder:
-            js = [f for f in os.listdir(src) if f.lower().endswith('.json')]
-            if js:
-                folder = os.path.splitext(js[0])[0]
-        if not folder and zip_stems:
-            folder = zip_stems[0]
-        folder = _clean_name(folder) or '新账号'
-        target = _unique_target(ROOT, folder)
-        os.makedirs(target, exist_ok=True)
-        for entry in os.listdir(src):
-            s = os.path.join(src, entry)
-            d = os.path.join(target, entry)
-            if os.path.isdir(s):
-                shutil.copytree(s, d, dirs_exist_ok=True)
-            else:
-                shutil.copy2(s, d)
-        msg = f'已创建账号 {os.path.basename(target)}'
-        # 4b) 仅 session(无凭据 json): 立即自动补建,免去首次连接时再补
-        if kind == 'session':
-            has_json = bool([f for f in _g.glob(os.path.join(target, '*.json'))
-                             if tg_tool._is_account_json(f)])
-            if not has_json:
-                def _heal():
-                    return tg_tool.make_json_from_session(target, sess[0] if sess else
-                                                          _g.glob(os.path.join(target, '*.session'))[0])
-                healed = await asyncio.to_thread(_heal)
-                msg += '，已自动补建凭据 json' if healed else '（凭据 json 补建失败，将在首次连接时重试）'
-        # 5) tdata 自动转 session
-        converted = False
-        if kind == 'tdata' and not _g.glob(os.path.join(target, '*.session')):
-            eng = init_engine()
-            fut = eng.convert_tdata(target)
-            try:
-                await asyncio.wait_for(asyncio.wrap_future(fut), 300)
-                converted = True
-            except Exception as e:
-                msg += f'（tdata 转换失败: {str(e)[:80]}）'
-        if converted:
-            msg += '（tdata 已自动转换）'
-        # 6) 自动放置客户端
-        exe_src = os.path.join(ROOT, 'Telegram.exe')
-        if os.path.isfile(exe_src) and not os.path.isfile(os.path.join(target, 'Telegram.exe')):
-            try:
-                shutil.copy2(exe_src, os.path.join(target, 'Telegram.exe'))
-            except OSError:
-                pass
-        _emit({'type': 'log', 'line': f'[新建] {msg}'})
-        return {'ok': True, 'msg': msg, 'path': target}
+        # 2-6) 解压→定位→命名→落盘→补json→转tdata→放客户端(与 Bot 收件箱共用)
+        r = await _ingest_account_dir(tmp)
+        if not r.get('ok'):
+            return {'ok': False, 'msg': r.get('msg', '导入失败')}
+        _emit({'type': 'log', 'line': f"[新建] {r['msg']}"})
+        return {'ok': True, 'msg': r['msg'], 'path': r.get('path')}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1829,6 +1901,92 @@ async def import_archive(body: dict):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ---------- Bot 收件箱(本地 TG bot,自动识别转发的账号文件并归档) ----------
+_bot = None
+_bot_lock = threading.Lock()
+
+
+def _bot_public_status():
+    st = _bot.status() if _bot else {}
+    s = _load_settings()
+    return {'ok': True,
+            'running': bool(st.get('running')),
+            'username': st.get('username', ''),
+            'id': st.get('id', 0),
+            'error': st.get('error', ''),
+            'allowed_ids': [int(x) for x in (s.get('bot_allowed_ids') or [])],
+            'bot_on': bool(s.get('bot_on')),
+            'has_token': bool(str(s.get('bot_token') or '').strip())}
+
+
+async def _bot_ingest(dir_path, passwords):
+    """BotInbox 的归档回调: dir_path 里是 bot 已下载好的文件。"""
+    r = await _ingest_account_dir(dir_path, passwords=passwords)
+    if r.get('ok'):
+        _emit({'type': 'state', 'status': 'bot_imported',
+               'data': {'name': r.get('name', ''), 'msg': r.get('msg', '')}})
+    return r
+
+
+def _restart_bot():
+    """按 settings 重启 Bot 收件箱(先停旧实例)。返回新 BotInbox。"""
+    global _bot
+    s = _load_settings()
+    token = str(s.get('bot_token') or '').strip()
+    allowed = [int(x) for x in (s.get('bot_allowed_ids') or [])]
+    with _bot_lock:
+        old = _bot
+        _bot = None
+    if old:
+        try:
+            old.stop()
+        except Exception:
+            pass
+    inbox = tg_bot.BotInbox(
+        token, allowed, _bot_ingest,
+        log_cb=lambda m: _emit({'type': 'log', 'line': m}),
+        event_cb=lambda: _emit({'type': 'state', 'status': 'bot',
+                                'data': _bot_public_status()}))
+    with _bot_lock:
+        _bot = inbox
+    inbox.start()
+    return inbox
+
+
+@app.get('/api/bot')
+async def bot_status():
+    return _bot_public_status()
+
+
+@app.post('/api/bot/start')
+async def bot_start():
+    s = _load_settings()
+    if not str(s.get('bot_token') or '').strip():
+        return {'ok': False, 'msg': '请先在设置里填写 Bot Token（@BotFather 免费创建）',
+                'status': _bot_public_status()}
+    inbox = _restart_bot()
+    ok = await asyncio.to_thread(inbox.wait_ready, 45)
+    st = _bot_public_status()
+    if not ok:
+        return {'ok': False,
+                'msg': f"启动失败: {st.get('error') or '连接超时（检查 token / 网络 / 代理）'}",
+                'status': st}
+    return {'ok': True, 'msg': f"Bot 已启动：@{st.get('username') or st.get('id')}",
+            'status': st}
+
+
+@app.post('/api/bot/stop')
+async def bot_stop():
+    global _bot
+    with _bot_lock:
+        old = _bot
+        _bot = None
+    if old:
+        await asyncio.to_thread(old.stop)
+    _emit({'type': 'state', 'status': 'bot', 'data': _bot_public_status()})
+    return {'ok': True, 'msg': 'Bot 已停止', 'status': _bot_public_status()}
+
+
 # ---------- 设置 ----------
 SETTINGS_FILE = os.path.join(tg_tool.SCRIPT_DIR, 'settings.json')
 
@@ -1856,6 +2014,9 @@ DEFAULT_SETTINGS = {
     'rename_prefix': '',            # 重命名快捷项自定义前缀
     'email_presets': [],            # 预选邮箱列表(绑定登录邮箱时一键填入)
     'cur_group': 'all',             # 记忆上次所在分组
+    'bot_token': '',                # Bot 收件箱 token(@BotFather 创建)
+    'bot_allowed_ids': [],          # 允许向 bot 推账号文件的用户 ID(其他人一律拒收)
+    'bot_on': False,                # 启动程序时自动运行 Bot 收件箱
 }
 
 
@@ -1896,6 +2057,18 @@ def _load_settings():
                          'link': str(e.get('link', '') or ''),
                          'type': 'channel' if e.get('type') == 'channel' else 'group'}
                         for e in jl if isinstance(e, dict)]
+                # bot_allowed_ids 统一成 int 列表
+                bids = merged.get('bot_allowed_ids')
+                if not isinstance(bids, list):
+                    merged['bot_allowed_ids'] = []
+                else:
+                    _bids = []
+                    for x in bids:
+                        try:
+                            _bids.append(int(x))
+                        except (TypeError, ValueError):
+                            pass
+                    merged['bot_allowed_ids'] = _bids
                 return merged
     except Exception:
         pass
@@ -1940,6 +2113,12 @@ async def set_settings(body: dict):
     # 代理配置变更后重新加载(供后续连接使用)
     try:
         tg_tool.load_proxy_cfg()
+    except Exception:
+        pass
+    # bot 运行中改了允许列表: 热更新,不用重启 bot
+    try:
+        if _bot and _bot.running and 'bot_allowed_ids' in body:
+            _bot.set_allowed([int(x) for x in (s.get('bot_allowed_ids') or [])])
     except Exception:
         pass
     return s

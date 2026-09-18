@@ -247,6 +247,17 @@ export const getSettings = () => getJson('/api/settings');
 export const saveSettings = (s: object) => postJson('/api/settings', s);
 export const getMe = () => getJson('/api/me');
 
+// ---------- Bot 收件箱 ----------
+export interface BotStatus {
+  ok: boolean; running: boolean; username: string; id: number; error: string;
+  allowed_ids: number[]; bot_on: boolean; has_token: boolean;
+}
+export const getBotStatus = (): Promise<BotStatus> => getJson('/api/bot');
+export const startBot = (): Promise<{ ok: boolean; msg?: string; status?: BotStatus }> =>
+  postJson('/api/bot/start');
+export const stopBot = (): Promise<{ ok: boolean; msg?: string; status?: BotStatus }> =>
+  postJson('/api/bot/stop');
+
 // ---------- 启动客户端 / 发送消息 ----------
 export async function launchClient(path: string) {
   const r = await apiFetch('/api/launch-client', {
