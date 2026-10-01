@@ -1,7 +1,7 @@
 # TG 工具箱交接文档（重开会话用）
 
 > 本文档记录项目完整状态、关键机制、卡点与下一步，供新会话无缝继续。
-> 最后更新：**2026-10-01，v1.2.1（发布提交 c40b053，tag v1.2.1）**。本文档基于全仓库复查整篇重写，替代 v1.1.0 时期旧版。
+> 最后更新：**2026-10-01，v1.2.2（发布提交 9b31358，tag v1.2.2）**。本文档基于全仓库复查整篇重写，替代 v1.1.0 时期旧版。
 
 ---
 
@@ -20,10 +20,11 @@ Telegram 小号批量维护工具箱（删联系人/删对话/退群/加群/拉�
 
 | 项 | 值 |
 |---|---|
-| 版本 | **v1.2.1**（`tg_tool.py:43` `APP_VERSION`，唯一权威；`/api/ping` 与前端顶栏读它） |
-| 分支 | dev = main（v1.2.1 发布提交 c40b053，其后仅文档更新）；本地分支 `new-ui` = a5f97f8（「LocalSend 风 Teal 主题」旧提交，落后 102 提交，纯残留可删） |
-| tag | v1.2.1 已打并推送，GitHub Release 带资产 TG-tools_v1.2.1.zip（≈30MB） |
-| 发布线 | v1.1.0-beta.1→9 → v1.1.0 → v1.1.1 → v1.2.0 → v1.2.1；notes 归档 `docs/releases/` |
+| 版本 | **v1.2.2**（`tg_tool.py:43` `APP_VERSION`，唯一权威；`/api/ping` 与前端顶栏读它） |
+| 分支 | dev = main（v1.2.2 发布提交 9b31358，其后仅文档更新）；本地分支 `new-ui` = a5f97f8（「LocalSend 风 Teal 主题」旧提交，落后 102 提交，纯残留可删） |
+| tag | v1.2.2 已打并推送，GitHub Release 带资产 TG-tools_v1.2.2.zip（≈30MB） |
+| 发布线 | v1.1.0-beta.1→9 → v1.1.0 → v1.1.1 → v1.2.0 → v1.2.1 → v1.2.2；notes 归档 `docs/releases/` |
+| v1.2.2 内容 | 改名遇「文件夹被占用」不再直接报错：记入待执行 `rename_pending.json`，列表显示「待改名」徽标，后台每 10 秒重试，客户端关闭后自动改名；右键可立即执行/取消 |
 | v1.2.1 内容 | 修复拖入 zip 导入失败（包内账号数据多套一层文件夹时识别不到）+ 同含 session/tdata 的包被误判成 tdata（会多转出一条登录态） |
 | v1.2.0 内容 | 新建账号三方式（拖包导入/扫码登录/手机号登录）+ 导入增强 + 加群频道页一体化 + 打包结果进剪贴板 + 安全加固（首页强制 token、Host 白名单）+ 一批修复 |
 | 未完卡点 | ① passkey caBLE 等用户复测（见第七节）② 多设备 App 化待启动 M0（见第八节） |
@@ -102,7 +103,8 @@ git checkout main; git merge --ff-only dev; git push origin main; git checkout d
 ### 6.3 账号数据模型
 - 一个账号 = ROOT 下一个文件夹：`{名}.session` + `{名}.json`（凭据：phone/session_file/app_id/app_hash/device/sdk/app_version/user_id/first_name/last_name/username）+ 可选 `Telegram.exe` + tdata/。
 - 目录名只是**本地别名**；json 里的 `user_id`（uid）已落盘且 profiles.json 也缓存——跨设备/跨列表的唯一标识用它。
-- profiles.json（username/phone/uid/dc/avatar/first/last）+ avatars/ 由 tg_profile worker 维护；运行时还有 settings.json、whitelist.json、groups.json（全部 gitignored）。
+- profiles.json（username/phone/uid/dc/avatar/first/last）+ avatars/ 由 tg_profile worker 维护；运行时还有 settings.json、whitelist.json、groups.json、rename_pending.json（全部 gitignored）。
+- **改名遇占用会排队**（v1.2.2）：`/api/rename-account` 撞上 WinError 5/32/33（客户端占着文件夹）时不报错，写进 `rename_pending.json` 待执行；`lifespan` 起的 `_pending_rename_worker` 每 10 秒调 `_pending_run_once` 试一次，成功广播 `state:rename_applied`，前端刷新列表与「待改名」徽标；`GET /api/rename-pending`、`POST /api/rename-pending/run|cancel` 对应「立即执行/取消」。**待执行条目最长留 3 天**。
 - **绝不提交账号数据**：session/tdata/json/profiles/avatars/logs/backups/whitelist 全被 .gitignore 挡住；新增运行时产物同步更新 .gitignore。
 
 ### 6.4 新建账号三流程（v1.2.0 核心新增）
