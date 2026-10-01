@@ -1583,28 +1583,44 @@ async def convert_tdata(body: dict):
 
 # ---------- 拖放导入账号 ----------
 def _account_kind(d):
+    # 先判 session: 同时留着 tdata 的账号(包内常见)按 session 处理——
+    # 若判成 tdata 会被再转一次,多生成一个 session/json 且等于新建一条登录态
+    if glob.glob(os.path.join(d, '*.session')):
+        # 仅 session(无凭据 json)也算账号: json 在首次连接时自愈补建
+        return 'session'
     if os.path.isdir(os.path.join(d, 'tdata')):
         return 'tdata'
-    sess = glob.glob(os.path.join(d, '*.session'))
-    js = [f for f in glob.glob(os.path.join(d, '*.json')) if tg_tool._is_account_json(f)]
-    if sess and js:
-        return 'session'
-    if sess:
-        # 仅 session: json 在首次连接时自愈补建(make_json_from_session)
-        return 'session'
     return None
 
 
+# 账号目录扫描层数: 0=解压目录本身, 1=一层子目录…,
+# zip 里常多套外层文件夹(如 xxx.zip/账号名/tdata),故允许往下找几层
+_ACCOUNT_SCAN_DEPTH = 3
+_SCAN_SKIP_DIRS = {'__MACOSX', '__pycache__', 'node_modules'}
+
+
 def _find_account(d):
-    r = _account_kind(d)
-    if r:
-        return d, r
-    for sub in sorted(os.listdir(d)):
-        subd = os.path.join(d, sub)
-        if os.path.isdir(subd):
-            r = _account_kind(subd)
+    """定位账号数据目录(逐层找,同层按名称排序取第一个)。"""
+    level = [d]
+    for _ in range(_ACCOUNT_SCAN_DEPTH + 1):
+        nxt = []
+        for cur in level:
+            r = _account_kind(cur)
             if r:
-                return subd, r
+                return cur, r
+            try:
+                subs = sorted(os.listdir(cur))
+            except OSError:
+                continue
+            for sub in subs:
+                if sub in _SCAN_SKIP_DIRS:
+                    continue
+                subd = os.path.join(cur, sub)
+                if os.path.isdir(subd):
+                    nxt.append(subd)
+        level = nxt
+        if not level:
+            break
     return None, None
 
 
@@ -1792,7 +1808,7 @@ async def import_archive(body: dict):
                 shutil.copytree(s, d, dirs_exist_ok=True)
             else:
                 shutil.copy2(s, d)
-        if kind == 'tdata':
+        if kind == 'tdata' and not glob.glob(os.path.join(target, '*.session')):
             eng = init_engine()
             fut = eng.convert_tdata(target)
             await asyncio.wait_for(asyncio.wrap_future(fut), 300)
