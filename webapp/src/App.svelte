@@ -53,6 +53,10 @@
     openFolder,
     getEmail,
     renameAccount,
+    getRenamePending,
+    runRenamePending,
+    cancelRenamePending,
+    type RenamePending,
     pollAccounts,
     convertToTdata,
     refreshSession,
@@ -198,6 +202,41 @@
       accounts = acc;
       applyFilter();
     });
+  }
+
+  // 待执行改名(文件夹被占用时排队,占用解除后后端自动改名): old → new
+  let renamePending = $state<Record<string, string>>({});
+  async function loadRenamePending() {
+    try {
+      const r = await getRenamePending();
+      const items: RenamePending[] = r.items || [];
+      flushSync(() => {
+        renamePending = Object.fromEntries(
+          items.filter((i) => i.old && i.new).map((i) => [i.old, i.new]));
+      });
+    } catch {
+      // 拉取失败不影响主流程
+    }
+  }
+  async function doRunRenamePending() {
+    try {
+      const r = await runRenamePending();
+      const left = (r.items || []).length;
+      addLog(left ? `待执行改名:还有 ${left} 个文件夹被占用` : '待执行改名:已全部完成');
+      await loadRenamePending();
+      await loadAccounts();
+    } catch (e: any) {
+      addLog(`执行待改名异常: ${e?.message ?? e}`);
+    }
+  }
+  async function doCancelRenamePending(oldName: string) {
+    try {
+      await cancelRenamePending(oldName);
+      addLog(`已取消待改名: ${oldName}`);
+      await loadRenamePending();
+    } catch (e: any) {
+      addLog(`取消待改名异常: ${e?.message ?? e}`);
+    }
   }
 
   async function onConnect(a: Account, reconnect = false) {
@@ -709,7 +748,13 @@
     renaming = true;
     try {
       const r = await renameAccount(renameTarget.path, newName);
-      if (r.ok) {
+      if (r.ok && r.pending) {
+        // 文件夹被占用: 已加入待执行,客户端关闭后自动改名
+        addLog(`已加入待执行: ${renameTarget.name} → ${newName}（该账号客户端关闭后自动改名）`);
+        renameOpen = false;
+        await loadRenamePending();
+        await loadAccounts();
+      } else if (r.ok) {
         addLog(`已重命名: ${renameTarget.name} → ${newName}`);
         renameOpen = false;
         if (current?.name === renameTarget.name) current = null;
@@ -1598,6 +1643,14 @@
         }
       }
       if (e.status === 'connect_fail') connected = false;
+      if (e.status === 'rename_applied') {
+        // 后台把「待执行改名」落地了: 刷新待执行徽标与账号列表
+        const d = e.data as any;
+        if (d?.old) markOnline(String(d.old), false);
+        if (current?.name === d?.old) current = accounts.find((x) => x.name === d?.new) ?? null;
+        loadRenamePending();
+        loadAccounts();
+      }
       if (e.status === 'disconnected') {
         // data 为账号名: 只断该账号;为 null: 当前账号断开
         const nm = typeof e.data === 'string' ? e.data : current?.name;
@@ -1690,6 +1743,7 @@
     }
     loadGroups();
     loadAccounts();
+    loadRenamePending();
     loadRecv();
     try {
       const p = await getPing();
@@ -1799,6 +1853,12 @@
             </span>
             <span class="sub">{a.country ? `${a.country} ` : ''}{a.phone ? `+${a.phone}` : a.state}</span>
           </span>
+          {#if renamePending[a.name]}
+            <span
+              class="pend-tag"
+              title={`待执行改名 → ${renamePending[a.name]}（该账号客户端关闭后自动改名；右键可立即执行或取消）`}
+            >待改名</span>
+          {/if}
           {#if a.state === 'tdata'}
             <button class="conv" onclick={(e) => { e.stopPropagation(); doConvertTdata(a); }}>转换</button>
           {/if}
@@ -1830,6 +1890,10 @@
         <button class="ctx-disconnect" onclick={() => { disconnectOne(ctxMenu.name); closeCtx(); }}>断开连接（保持其他在线）</button>
       {/if}
       <button onclick={() => { const a = accounts.find((x) => x.name === ctxMenu!.name); if (a) openRename(a); closeCtx(); }}>重命名文件夹…</button>
+      {#if renamePending[ctxMenu.name]}
+        <button onclick={() => { doRunRenamePending(); closeCtx(); }}>立即执行待改名 → {renamePending[ctxMenu.name]}</button>
+        <button onclick={() => { doCancelRenamePending(ctxMenu!.name); closeCtx(); }}>取消待改名</button>
+      {/if}
     </div>
   {/if}
 
@@ -3018,6 +3082,15 @@
     border-radius: 4px;
     padding: 0 4px;
     margin-left: 4px;
+    cursor: default;
+  }
+  .pend-tag {
+    font-size: 11px;
+    color: var(--md-sys-color-on-primary);
+    background: var(--md-sys-color-primary, #009688);
+    border-radius: var(--md-sys-shape-corner-small);
+    padding: 2px 6px;
+    flex-shrink: 0;
     cursor: default;
   }
   .sub {

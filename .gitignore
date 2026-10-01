@@ -14,6 +14,7 @@ nicknames.json
 settings.json
 whitelist.json
 groups.json
+rename_pending.json
 backups/
 logs/
 avatars/

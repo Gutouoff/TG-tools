@@ -272,7 +272,39 @@ export async function renameAccount(path: string, newName: string) {
     headers: jsonHeaders(),
     body: JSON.stringify({ path, new_name: newName }),
   });
-  return r.json() as Promise<{ ok: boolean; msg?: string; new_path?: string }>;
+  return r.json() as Promise<{ ok: boolean; msg?: string; new_path?: string; pending?: boolean }>;
+}
+
+// 待执行改名: 文件夹被占用时排队的改名,占用解除后由后端自动执行
+export interface RenamePending {
+  old: string;
+  new: string;
+  at?: string;
+  err?: string;
+  tries?: number;
+}
+
+export async function getRenamePending() {
+  const r = await apiFetch('/api/rename-pending');
+  return r.json() as Promise<{ ok: boolean; items: RenamePending[] }>;
+}
+
+export async function runRenamePending() {
+  const r = await apiFetch('/api/rename-pending/run', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: '{}',
+  });
+  return r.json() as Promise<{ ok: boolean; items: RenamePending[] }>;
+}
+
+export async function cancelRenamePending(oldName: string) {
+  const r = await apiFetch('/api/rename-pending/cancel', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ old: oldName }),
+  });
+  return r.json() as Promise<{ ok: boolean; items: RenamePending[] }>;
 }
 
 export const pollAccounts = (group?: string) =>

@@ -48,7 +48,12 @@ else:
 async def lifespan(app):
     global _loop
     _loop = asyncio.get_event_loop()
-    yield
+    # 后台: 待执行改名(文件夹被占用时排队,占用解除后自动改)
+    task = asyncio.create_task(_pending_rename_worker())
+    try:
+        yield
+    finally:
+        task.cancel()
 
 
 app = FastAPI(title='TG工具箱', docs_url=None, redoc_url=None, lifespan=lifespan)
@@ -983,9 +988,147 @@ async def open_folder(body: dict):
     return {'ok': True}
 
 
+# ---------- 账号文件夹改名 ----------
+# 文件夹被占用(客户端在跑/句柄没释放)时 os.rename 会失败。此时不再直接报错,
+# 而是把这次改名记进「待执行」,由后台任务每 10 秒试一次,占用解除后自动改名。
+RENAME_PENDING_FILE = os.path.join(tg_tool.SCRIPT_DIR, 'rename_pending.json')
+_rename_lock = threading.Lock()
+_RENAME_KEEP_SECONDS = 3 * 24 * 3600   # 待执行条目最长保留 3 天
+
+
+def _pending_load():
+    """读待执行改名列表(文件缺失/损坏一律当空表,不抛异常)。"""
+    try:
+        with open(RENAME_PENDING_FILE, encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [d for d in data if isinstance(d, dict) and d.get('old') and d.get('new')]
+
+
+def _pending_save(items):
+    try:
+        with open(RENAME_PENDING_FILE, 'w', encoding='utf-8') as f:
+            json.dump(items, f, ensure_ascii=False, indent=1)
+    except OSError as e:
+        _emit({'type': 'log', 'line': f'[账号] 待执行改名写入失败: {e}'})
+
+
+def _looks_busy(e):
+    """判断改名失败是不是「文件夹被占用」。
+    Windows: 32=共享冲突, 33=区域锁定, 5=拒绝访问(目录里有文件被打开时常是它)。"""
+    if getattr(e, 'winerror', None) in (5, 32, 33):
+        return True
+    s = str(e).lower()
+    return ('being used by another process' in s or '另一个程序' in s
+            or 'access is denied' in s or '拒绝访问' in s)
+
+
+def _do_rename(path, old_name, new_name):
+    """执行文件夹改名 + 分组/资料缓存/头像同步。返回 (True, None) 或 (False, 异常)。"""
+    try:
+        os.rename(path, os.path.join(os.path.dirname(path), new_name))
+    except OSError as e:
+        return False, e
+    # 分组/资料缓存/头像文件同步改名(失败不阻塞,缓存下次刷新会自愈)
+    try:
+        if os.path.isfile(GROUPS_FILE):
+            g = json.load(open(GROUPS_FILE, encoding='utf-8'))
+            changed = False
+            for k, lst in g.items():
+                if isinstance(lst, list) and old_name in lst:
+                    g[k] = [new_name if x == old_name else x for x in lst]
+                    changed = True
+            if changed:
+                json.dump(g, open(GROUPS_FILE, 'w', encoding='utf-8'), ensure_ascii=False)
+    except Exception:
+        pass
+    try:
+        prof = tg_profile.load_profiles()
+        if old_name in prof:
+            prof[new_name] = prof.pop(old_name)
+            tg_profile.save_profiles(prof)
+        old_av = tg_profile.avatar_path(old_name)
+        if os.path.isfile(old_av):
+            os.replace(old_av, tg_profile.avatar_path(new_name))
+    except Exception:
+        pass
+    return True, None
+
+
+def _pending_run_once():
+    """试跑一遍待执行改名(占用解除即生效)。后台任务与「立即执行」都走这里。"""
+    items = _pending_load()
+    if not items:
+        return
+    left = []
+    dirty = False
+    now = time.time()
+    for it in items:
+        old, new = str(it['old']), str(it['new'])
+        src = os.path.join(ROOT, old)
+        dst = os.path.join(ROOT, new)
+        if not os.path.isdir(src):
+            # 已经改好了(或账号被删了): 目标存在就当完成,移除条目
+            _emit({'type': 'log', 'line': f'[账号] 待执行改名已结束({old} 不存在),已移除'})
+            dirty = True
+            continue
+        if os.path.exists(dst):
+            # 目标名被占: 留给用户处理,继续等
+            it['tries'] = int(it.get('tries') or 0) + 1
+            left.append(it)
+            dirty = True
+            continue
+        # 账号被本工具连着时先断开: session 文件占用同样会挡改名
+        eng = _engine
+        if eng is not None:
+            try:
+                online = [str((x or {}).get('name') or '')
+                          for x in (eng.online_accounts().result(timeout=10) or [])]
+                if old in online:
+                    eng.disconnect(old).result(timeout=30)
+            except Exception:
+                pass
+        ok, err = _do_rename(src, old, new)
+        dirty = True
+        if ok:
+            _emit({'type': 'log', 'line': f'[账号] 占用已解除,文件夹已改名: {old} → {new}'})
+            _emit({'type': 'state', 'status': 'rename_applied',
+                   'data': {'old': old, 'new': new}})
+            continue
+        it['tries'] = int(it.get('tries') or 0) + 1
+        it['err'] = str(err)[:120]
+        if now - float(it.get('ts') or now) > _RENAME_KEEP_SECONDS:
+            _emit({'type': 'log',
+                   'line': f'[账号] 待执行改名超过 3 天仍未成功,已放弃: {old} → {new}'})
+            continue
+        left.append(it)
+    if dirty:
+        with _rename_lock:
+            _pending_save(left)
+
+
+async def _pending_rename_worker():
+    """后台: 每 10 秒试一次待执行改名(没有待执行条目时什么都不做)。"""
+    await asyncio.sleep(8)
+    while True:
+        try:
+            if _pending_load():
+                await asyncio.to_thread(_pending_run_once)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+        await asyncio.sleep(10)
+
+
 @app.post('/api/rename-account')
 async def rename_account(body: dict):
-    """重命名账号文件夹(在线账号会先自动断开:session 文件占用会锁住改名)。"""
+    """重命名账号文件夹。
+    在线账号先自动断开(session 文件占用会锁住改名);若仍被占用(如客户端在跑),
+    不报错而是记入「待执行」,占用解除后由后台任务自动改名。"""
     import re
     path = _ensure_in_root(body.get('path', ''))
     new_name = str(body.get('new_name', '') or '').strip()
@@ -1010,36 +1153,45 @@ async def rename_account(body: dict):
         await asyncio.wait_for(asyncio.wrap_future(fut), 30)
     except Exception:
         pass
-    try:
-        os.rename(path, os.path.join(os.path.dirname(path), new_name))
-    except OSError as e:
-        return {'ok': False, 'msg': f'重命名失败: {e}(若刚用过「启动客户端」,请先关闭该客户端)'}
-    # 分组/资料缓存/头像文件同步改名(失败不阻塞,缓存下次刷新会自愈)
-    try:
-        if os.path.isfile(GROUPS_FILE):
-            g = json.load(open(GROUPS_FILE, encoding='utf-8'))
-            changed = False
-            for k, lst in g.items():
-                if isinstance(lst, list) and old_name in lst:
-                    g[k] = [new_name if x == old else x for x in lst]
-                    changed = True
-            if changed:
-                json.dump(g, open(GROUPS_FILE, 'w', encoding='utf-8'), ensure_ascii=False)
-    except Exception:
-        pass
-    try:
-        prof = tg_profile.load_profiles()
-        if old_name in prof:
-            prof[new_name] = prof.pop(old_name)
-            tg_profile.save_profiles(prof)
-        old_av = tg_profile.avatar_path(old_name)
-        if os.path.isfile(old_av):
-            os.replace(old_av, tg_profile.avatar_path(new_name))
-    except Exception:
-        pass
-    new_path = os.path.join(os.path.dirname(path), new_name)
-    _emit({'type': 'log', 'line': f'[账号] 文件夹已重命名: {old_name} → {new_name}'})
-    return {'ok': True, 'new_path': new_path, 'msg': new_name}
+    ok, err = _do_rename(path, old_name, new_name)
+    if ok:
+        _emit({'type': 'log', 'line': f'[账号] 文件夹已重命名: {old_name} → {new_name}'})
+        return {'ok': True, 'new_path': os.path.join(os.path.dirname(path), new_name),
+                'msg': new_name}
+    if not _looks_busy(err):
+        return {'ok': False, 'msg': f'重命名失败: {err}'}
+    # 被占用: 排队等占用解除(客户端关掉后自动改名)
+    with _rename_lock:
+        items = [it for it in _pending_load() if it['old'] != old_name]
+        items.append({'old': old_name, 'new': new_name,
+                      'at': time.strftime('%Y-%m-%d %H:%M:%S'),
+                      'ts': time.time(), 'err': str(err)[:120], 'tries': 0})
+        _pending_save(items)
+    msg = f'{old_name} → {new_name}(文件夹被占用,已加入待执行,该账号客户端关闭后自动改名)'
+    _emit({'type': 'log', 'line': f'[账号] {msg}'})
+    return {'ok': True, 'pending': True, 'msg': msg, 'old_path': path}
+
+
+@app.get('/api/rename-pending')
+async def rename_pending_list():
+    return {'ok': True, 'items': _pending_load()}
+
+
+@app.post('/api/rename-pending/run')
+async def rename_pending_run(body: dict):
+    """立即重试一遍待执行改名(不等后台周期)。"""
+    await asyncio.to_thread(_pending_run_once)
+    return {'ok': True, 'items': _pending_load()}
+
+
+@app.post('/api/rename-pending/cancel')
+async def rename_pending_cancel(body: dict):
+    old = str(body.get('old') or '')
+    with _rename_lock:
+        items = [it for it in _pending_load() if it['old'] != old]
+        _pending_save(items)
+    _emit({'type': 'log', 'line': f'[账号] 已取消待执行改名: {old}'})
+    return {'ok': True, 'items': items}
 
 
 @app.post('/api/delete-account')
