@@ -26,7 +26,17 @@ from fastapi.staticfiles import StaticFiles
 import tg_tool
 import tg_engine
 import tg_profile
-import cable
+
+
+def _load_cable():
+    """按需加载 caBLE passkey 模块，允许移动端裁剪该桌面能力。"""
+    try:
+        import cable as _cable
+    except ImportError as exc:
+        raise RuntimeError(
+            'caBLE/passkey 模块不可用；当前运行环境未安装其可选依赖'
+        ) from exc
+    return _cable
 
 if getattr(sys, 'frozen', False):
     BASE = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
@@ -1350,6 +1360,10 @@ def qr_matrix_to_png(matrix):
 async def init_passkey():
     import asyncio
     import time as _time
+    try:
+        cable = _load_cable()
+    except RuntimeError as exc:
+        return {'ok': False, 'msg': str(exc)}
     eng = init_engine()
     ok, data = await _call(eng.init_passkey_registration)
     if not ok:
