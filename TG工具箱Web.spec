@@ -40,7 +40,11 @@ a = Analysis(
     excludes=['tkinter', 'ttkbootstrap', 'PyQt5', 'PyQt5.QtCore', 'PyQt5.QtGui',
               'PyQt5.QtWidgets', 'PyQt5.QtNetwork', 'sip',
               'watchfiles',   # uvicorn 仅 reload 模式使用,运行时不需要
-              'PIL'],         # 二维码用纯 zlib PNG 编码,不需要 Pillow(省约 13MB)
+              'PIL',          # 二维码用纯 zlib PNG 编码,不需要 Pillow(省约 13MB)
+              # openpyxl 的 compat.numbers 会尝试 import numpy(有则用,无则退回 float);
+              # 开发机装过 numpy 时 PyInstaller 会把整个 numpy+OpenBLAS 打进来(约 25MB),
+              # 本项目不用 numpy,显式排除
+              'numpy', 'pandas', 'scipy', 'matplotlib'],
     noarchive=False,
 )
 

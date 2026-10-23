@@ -592,7 +592,7 @@ async def export_accounts():
     ws = wb.active
     ws.title = '账号信息'
     headers = ['用户名', 'ID', 'username', '手机号码', '邮箱', '通行密钥', '2FA', '注册时间', '国家', '状态', '导出时间']
-    header_fill = PatternFill('solid', fgColor='009688')
+    header_fill = PatternFill('solid', fgColor='356AE6')
     header_font = Font(name='微软雅黑', size=11, bold=True, color='FFFFFF')
     center = Alignment(horizontal='center', vertical='center', wrap_text=True)
     thin = Border(*(Side(style='thin', color='DCE9E5'),) * 4)
@@ -2017,10 +2017,10 @@ SETTINGS_FILE = os.path.join(tg_tool.SCRIPT_DIR, 'settings.json')
 DEFAULT_SETTINGS = {
     'pack_naming': '{name}_账号包',
     'pack_password': '',
-    'theme_seed': '#009688',
-    'theme_bg': '#F7FAF9',
-    'theme_dark': '#FFFFFF',
-    'theme_topbar': '#00796B',
+    'theme_seed': '#356AE6',
+    'theme_bg': '#F9FAFC',
+    'theme_dark': '#EDF0F5',
+    'theme_topbar': '#FFFFFF',
     'theme_mode': 'light',
     'proxy_mode': 'none',
     'proxy_scheme': 'socks5',

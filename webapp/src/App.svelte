@@ -120,7 +120,7 @@
     return [...new Set([...valid, ...DEFAULT_CARD_ORDER])];
   }
   // 预设色彩主题(Chrome 风格圆盘)
-  const PRESET_COLORS = ['#009688', '#229ED9', '#2A6D7D', '#3F51B5', '#9C27B0', '#EC407A', '#E53935', '#F2994A', '#66BB6A', '#00BCD4', '#795548', '#607D8B'];
+  const PRESET_COLORS = ['#356AE6', '#229ED9', '#2A6D7D', '#3F51B5', '#9C27B0', '#EC407A', '#E53935', '#F2994A', '#66BB6A', '#00BCD4', '#795548', '#607D8B'];
   function isPreset(): boolean {
     return PRESET_COLORS.some((c) => c.toLowerCase() === ((settings.theme_seed as string) || '').toLowerCase());
   }
@@ -2898,7 +2898,7 @@
     align-items: center;
     height: 64px;
     padding: 0 24px;
-    background: var(--topbar-color, #00796B);
+    background: var(--topbar-color, #FFFFFF);
     color: #FFFFFF;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
     position: relative;
@@ -3157,7 +3157,7 @@
   .pend-tag {
     font-size: 11px;
     color: var(--md-sys-color-on-primary);
-    background: var(--md-sys-color-primary, #009688);
+    background: var(--md-sys-color-primary, #356AE6);
     border-radius: var(--md-sys-shape-corner-small);
     padding: 2px 6px;
     flex-shrink: 0;
