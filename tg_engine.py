@@ -18,6 +18,7 @@ import asyncio
 import json
 import os
 import random
+import re
 import threading
 import time
 
@@ -934,29 +935,47 @@ class Engine:
         entry = self._pool.get(account)
         if not entry:
             raise RuntimeError(f'账号 {account} 不在线')
-        u = (username or '').strip().lstrip('@')
-        if not u:
-            raise RuntimeError('请输入用户名')
+        raw = (username or '').strip()
+        if not raw:
+            raise RuntimeError('请输入用户名或 ID')
+        # 自动识别: @username / t.me 链接 / 纯数字 ID(含 -100 开头的频道 ID)
+        link = re.match(
+            r'^(?:https?://)?(?:t\.me|telegram\.me)/(?:s/)?([^/?#\s]+)/?$',
+            raw, re.I,
+        )
+        if link:
+            raw = link.group(1)
+        raw = raw.lstrip('@').strip()
+        if not raw:
+            raise RuntimeError('请输入用户名或 ID')
+        target = int(raw) if re.fullmatch(r'-?\d+', raw) else raw
         client = entry['client']
         from telethon import utils as tl_utils
         from telethon.tl.types import User as TlUser, Chat as TlChat, Channel as TlChannel
-        ent = await client.get_entity(u)
-        peer = await client.get_input_entity(u)
+        try:
+            ent = await client.get_entity(target)
+            peer = await client.get_input_entity(ent)
+        except Exception as exc:
+            if isinstance(target, int):
+                raise RuntimeError(
+                    f'未找到 ID {target} 对应的会话：该 ID 需要此账号此前见过（在会话或联系人里），否则请改用 @用户名'
+                ) from exc
+            raise RuntimeError(f'未找到用户 @{raw}') from exc
         marked_id = tl_utils.get_peer_id(peer)
         if isinstance(ent, TlUser):
             dtype = 'bot' if getattr(ent, 'bot', False) else 'private'
             disp = (((getattr(ent, 'first_name', '') or '') + ' '
                      + (getattr(ent, 'last_name', '') or '')).strip()
-                    or getattr(ent, 'username', None) or u)
+                    or getattr(ent, 'username', None) or raw)
         elif isinstance(ent, TlChat) or (isinstance(ent, TlChannel) and getattr(ent, 'megagroup', False)):
             dtype = 'group'
-            disp = getattr(ent, 'title', None) or u
+            disp = getattr(ent, 'title', None) or raw
         else:
             dtype = 'channel'
-            disp = getattr(ent, 'title', None) or u
+            disp = getattr(ent, 'title', None) or raw
         return {
             'id': marked_id,
-            'name': disp or u,
+            'name': disp or raw,
             'type': dtype,
             'unread': 0,
             'pinned': False,

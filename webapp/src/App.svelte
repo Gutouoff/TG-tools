@@ -1100,11 +1100,22 @@
       sending = false;
     }
   }
-  // 按用户名直接发起聊天(解析实体后打开会话)
+  // 直接发起聊天: 自动识别 @用户名 / 纯数字 ID / t.me 链接
   let startChatName = $state('');
   let startingChat = $state(false);
+  function detectChatTarget(raw: string) {
+    let v = (raw || '').trim();
+    if (!v) return { kind: '', value: '', label: '' };
+    const link = v.match(/^(?:https?:\/\/)?(?:t(?:elegram)?\.me|telegram\.me)\/(?:s\/)?([^/?#\s]+)\/?$/i);
+    if (link) v = link[1];
+    v = v.replace(/^@/, '');
+    if (!v) return { kind: '', value: '', label: '' };
+    if (/^-?\d+$/.test(v)) return { kind: 'id', value: v, label: v };
+    return { kind: 'username', value: v, label: `@${v}` };
+  }
+  let startChatTarget = $derived(detectChatTarget(startChatName));
   async function doStartChat() {
-    const u = startChatName.trim();
+    const u = startChatTarget.value;
     if (!u || startingChat) return;
     if (!current || !onlineNames.has(current.name)) {
       addLog('请先连接账号');
@@ -1946,7 +1957,7 @@
         <div class="chat-switch-row">
           <span class="chat-switch-label">
             <span class="status-dot" class:on={recvOn}></span>
-            接收新消息
+            <span class="chat-switch-text">接收新消息</span>
             <em class="chat-state">{recvOn ? '监听中' : '已停止'}</em>
           </span>
           <button
@@ -1963,7 +1974,7 @@
           </button>
         </div>
         <div class="chat-entries">
-          <button class="chat-entry" onclick={() => setView('chat')}>
+          <button class="chat-entry" onclick={() => { curDialog = null; setView('chat'); }}>
             消息列表
             {#if chatUnread}<span class="badge">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}
           </button>
@@ -2060,7 +2071,8 @@
         <div class="chat-switch-row">
           <span class="chat-switch-label">
             <span class="status-dot" class:on={recvOn}></span>
-            接收新消息
+            <span class="chat-switch-text">接收新消息</span>
+            <em class="chat-state">{recvOn ? '监听中' : '已停止'}</em>
           </span>
           <button
             class="toggle"
@@ -2084,15 +2096,22 @@
         <div class="start-chat-row">
           <input
             class="chat-input"
-            placeholder="用户名（@xxx），回车发起聊天"
+            placeholder="@用户名、数字 ID 或 t.me 链接，回车发起聊天"
             bind:value={startChatName}
             disabled={!current || !onlineNames.has(current.name)}
             onkeydown={(e) => { if (e.key === 'Enter') doStartChat(); }}
           />
-          <button class="send-btn" disabled={!startChatName.trim() || startingChat} onclick={doStartChat}>
+          <button class="send-btn" disabled={!startChatTarget.value || startingChat || !current || !onlineNames.has(current.name)} onclick={doStartChat}>
             {startingChat ? '查找中…' : '聊天'}
           </button>
         </div>
+        {#if startChatTarget.label}
+          <div class="start-chat-hint" aria-live="polite">
+            已识别
+            <span class="kind-badge">{startChatTarget.kind === 'id' ? 'ID' : '用户名'}</span>
+            <span class="hint-value">{startChatTarget.label}</span>
+          </div>
+        {/if}
         {#if !current}
           <p class="empty">请先选择账号</p>
         {:else if !onlineNames.has(current.name)}
@@ -4328,13 +4347,26 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: 13px;
     color: var(--md-sys-color-on-surface);
   }
+  .chat-switch-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .chat-state {
-    font-style: normal;
-    font-size: 12px;
+    flex-shrink: 0;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-on-surface-variant);
+    font-style: normal;
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: nowrap;
   }
   .status-dot {
     width: 8px;
@@ -4379,7 +4411,7 @@
   }
   .chat-entries {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 8px;
   }
   .chat-entry {
@@ -5912,6 +5944,30 @@
     margin: 0;
   }
 
+  .start-chat-hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 12px;
+  }
+
+  .kind-badge {
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .hint-value {
+    color: var(--md-sys-color-on-surface);
+    font-family: 'Consolas', monospace;
+    word-break: break-all;
+  }
+
   .chat-input {
     height: 48px;
     min-height: 48px;
@@ -6081,6 +6137,16 @@
 
   .toggle:disabled .toggle-thumb {
     background: var(--md-sys-color-outline-variant);
+  }
+
+  /* 账号未连接时开关禁用，但状态仍要保持"开"的样子，避免和「监听中」自相矛盾 */
+  .toggle:disabled.on {
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary);
+  }
+
+  .toggle:disabled.on .toggle-thumb {
+    background: var(--md-sys-color-on-primary);
   }
 
   .recv-rules-label {

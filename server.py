@@ -881,7 +881,7 @@ async def refresh_ss_batch():
 
 @app.post('/api/start-chat')
 async def start_chat(body: dict):
-    """按用户名解析会话对象,供前端直接发起聊天。"""
+    """按用户名 / 数字 ID / t.me 链接解析会话对象,供前端直接发起聊天。"""
     account = str(body.get('account') or '')
     username = str(body.get('username') or '').strip()
     if not account or not username:
