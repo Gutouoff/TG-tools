@@ -841,7 +841,7 @@
   async function loadSettings() {
     settings = {
       pack_naming: '{name}_账号包', pack_password: '',
-      theme_seed: '#009688', theme_bg: '#F7FAF9', theme_dark: '#FFFFFF', theme_topbar: '#00796B', theme_mode: 'light', card_order: '基本信息,聊天,安全,删除,其他设置',
+      theme_seed: '#356AE6', theme_bg: '#F9FAFC', theme_dark: '#EDF0F5', theme_topbar: '#FFFFFF', theme_mode: 'light', card_order: '基本信息,聊天,安全,删除,其他设置',
       proxy_mode: 'none', proxy_scheme: 'socks5', proxy_host: '', proxy_port: '',
       join_links: [],
       log_level: 'info',
@@ -862,6 +862,17 @@
   function openSettings(section: typeof settingsSection) {
     settingsSection = section;
     loadSettings();
+  }
+  const settingsMeta: Record<string, { title: string; description: string; icon: string; group: string }> = {
+    general: { title: '通用', description: '调整工具箱的默认行为和文件处理方式。', icon: '⚙', group: '配置' },
+    appearance: { title: '外观', description: '选择界面模式、颜色主题和功能区排列。', icon: '◐', group: '配置' },
+    proxy: { title: '代理', description: '配置 Telegram 连接所使用的网络代理。', icon: '⇄', group: '配置' },
+    join: { title: '加群频道', description: '维护登录时可以快速填入的邮箱和常用入口。', icon: '↗', group: '工具' },
+    whitelist: { title: '白名单', description: '保护指定用户和群，避免被清理任务误操作。', icon: '✓', group: '保护' },
+    about: { title: '关于', description: '查看当前版本和项目相关信息。', icon: 'i', group: '帮助' }
+  };
+  function settingsInfo() {
+    return settingsMeta[settingsSection] || settingsMeta.general;
   }
   async function doSaveSettings() {
     settings = { ...settings, join_links: joinEntries, email_presets: emailPresets };
@@ -904,10 +915,15 @@
       root.removeProperty('--topbar-color');
       return;
     }
-    const seed = (settings.theme_seed as string) || '#009688';
-    const bg = (settings.theme_bg as string) || '#F7FAF9';
-    const dark = (settings.theme_dark as string) || '#FFFFFF';
-    const topbar = (settings.theme_topbar as string) || '#00796B';
+    const seedValue = (settings.theme_seed as string) || '#356AE6';
+    const bgValue = (settings.theme_bg as string) || '#F9FAFC';
+    const darkValue = (settings.theme_dark as string) || '#EDF0F5';
+    const topbarValue = (settings.theme_topbar as string) || '#FFFFFF';
+    // 旧版默认青绿色只在内存中迁移，避免旧设置把新主题覆盖掉。
+    const seed = seedValue.toUpperCase() === '#009688' ? '#356AE6' : seedValue;
+    const bg = bgValue.toUpperCase() === '#F7FAF9' ? '#F9FAFC' : bgValue;
+    const dark = darkValue.toUpperCase() === '#FFFFFF' ? '#EDF0F5' : darkValue;
+    const topbar = topbarValue.toUpperCase() === '#00796B' ? '#FFFFFF' : topbarValue;
     const root = document.documentElement.style;
     root.setProperty('--md-sys-color-primary', seed);
     root.setProperty('--md-sys-color-surface', bg);
@@ -1117,16 +1133,20 @@
     } catch {}
   }
   async function applyRecv(on: boolean, rules?: Record<string, boolean>) {
+    const previousOn = recvOn;
+    const previousRules = { ...recvRules };
     recvOn = on;
     if (rules) recvRules = { ...recvRules, ...rules };
     try {
       const r = await setRecv(recvOn, recvRules);
       recvOn = r.on;
       recvRules = { ...recvRules, ...r.rules };
+      addLog(recvOn ? '[消息接收] 已开启' : '[消息接收] 已关闭');
     } catch (e: any) {
+      recvOn = previousOn;
+      recvRules = previousRules;
       addLog(`[消息接收] 设置失败: ${e?.message ?? e}`);
     }
-    addLog(recvOn ? '[消息接收] 已开启' : '[消息接收] 已关闭');
   }
   function onRecvRuleChange(key: string) {
     applyRecv(recvOn, { ...recvRules, [key]: !recvRules[key] });
@@ -1933,8 +1953,10 @@
             class="toggle"
             class:on={recvOn}
             role="switch"
+            aria-label="接收新消息"
             aria-checked={recvOn}
-            title={recvOn ? '停止接收' : '开始接收'}
+            disabled={!current || !onlineNames.has(current.name)}
+            title={!current || !onlineNames.has(current.name) ? '请先连接账号' : recvOn ? '停止接收' : '开始接收'}
             onclick={() => applyRecv(!recvOn)}
           >
             <span class="toggle-thumb"></span>
@@ -2032,7 +2054,7 @@
           <h3>会话{#if chatUnread} <span class="badge">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}</h3>
           <span class="head-btns">
             <button class="back" onclick={() => setView('log')}>日志</button>
-            <button class="back" onclick={loadDialogs}>{dialogsLoading ? '加载中…' : '⟳ 刷新'}</button>
+            <button class="back refresh-btn" disabled={dialogsLoading} aria-busy={dialogsLoading} aria-label="刷新会话列表" onclick={loadDialogs}>{dialogsLoading ? '加载中…' : '⟳ 刷新'}</button>
           </span>
         </div>
         <div class="chat-switch-row">
@@ -2044,17 +2066,20 @@
             class="toggle"
             class:on={recvOn}
             role="switch"
+            aria-label="接收新消息"
             aria-checked={recvOn}
-            title={recvOn ? '停止接收' : '开始接收'}
+            disabled={!current || !onlineNames.has(current.name)}
+            title={!current || !onlineNames.has(current.name) ? '请先连接账号' : recvOn ? '停止接收' : '开始接收'}
             onclick={() => applyRecv(!recvOn)}
           >
             <span class="toggle-thumb"></span>
           </button>
         </div>
+        <div class="recv-rules-label">自动接收排除项</div>
         <div class="recv-rules">
-          <button class="rule-chip" class:on={recvRules.exclude_channels} onclick={() => onRecvRuleChange('exclude_channels')}>{recvRules.exclude_channels ? '✓ ' : ''}排除频道</button>
-          <button class="rule-chip" class:on={recvRules.exclude_groups} onclick={() => onRecvRuleChange('exclude_groups')}>{recvRules.exclude_groups ? '✓ ' : ''}排除群组</button>
-          <button class="rule-chip" class:on={recvRules.exclude_bots} onclick={() => onRecvRuleChange('exclude_bots')}>{recvRules.exclude_bots ? '✓ ' : ''}排除机器人</button>
+          <button class="rule-chip" class:on={recvRules.exclude_channels} aria-pressed={recvRules.exclude_channels} disabled={!current || !onlineNames.has(current.name)} onclick={() => onRecvRuleChange('exclude_channels')}>{recvRules.exclude_channels ? '✓ ' : ''}排除频道</button>
+          <button class="rule-chip" class:on={recvRules.exclude_groups} aria-pressed={recvRules.exclude_groups} disabled={!current || !onlineNames.has(current.name)} onclick={() => onRecvRuleChange('exclude_groups')}>{recvRules.exclude_groups ? '✓ ' : ''}排除群组</button>
+          <button class="rule-chip" class:on={recvRules.exclude_bots} aria-pressed={recvRules.exclude_bots} disabled={!current || !onlineNames.has(current.name)} onclick={() => onRecvRuleChange('exclude_bots')}>{recvRules.exclude_bots ? '✓ ' : ''}排除机器人</button>
         </div>
         <div class="start-chat-row">
           <input
@@ -2077,7 +2102,14 @@
         {/if}
         <ul class="dlg-list">
           {#each dialogs as d (d.id)}
-            <li class="dlg" onclick={() => openDialog(d)}>
+            <li
+              class="dlg"
+              role="button"
+              tabindex="0"
+              aria-label={`打开会话 ${d.name}`}
+              onclick={() => openDialog(d)}
+              onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDialog(d); } }}
+            >
               <span class="dlg-ava" style="background:{avatarColor(d.name)}">{(d.name || '?')[0]}</span>
               <div class="dlg-body">
                 <div class="dlg-row1">
@@ -2115,12 +2147,12 @@
             </li>
           {/each}
           {#if historyError}
-            <p class="empty" style="color: var(--md-sys-color-error)">
+            <li class="empty chat-empty-state" style="color: var(--md-sys-color-error)">
               历史消息加载失败：{historyError}
               <button class="back" onclick={() => loadHistory(true)}>[重试]</button>
-            </p>
+            </li>
           {:else if !historyMsgs.length}
-            <p class="empty">{historyLoading ? '正在加载…' : '暂无消息'}</p>
+            <li class="empty chat-empty-state">{historyLoading ? '正在加载…' : '暂无消息'}</li>
           {/if}
         </ul>
         <div class="chat-input-row">
@@ -2620,16 +2652,33 @@
 {#if settingsOpen}
   <div class="modal-mask" onclick={() => (settingsOpen = false)}>
     <div class="modal settings-modal" onclick={(e) => e.stopPropagation()}>
-      <div class="set-nav">
-        <div class="set-title">设置</div>
-        <button class="set-nav-item" class:on={settingsSection === 'general'} onclick={() => (settingsSection = 'general')}><span class="set-nav-icon">⚙️</span>通用</button>
-        <button class="set-nav-item" class:on={settingsSection === 'appearance'} onclick={() => (settingsSection = 'appearance')}><span class="set-nav-icon">🎨</span>外观</button>
-        <button class="set-nav-item" class:on={settingsSection === 'proxy'} onclick={() => (settingsSection = 'proxy')}><span class="set-nav-icon">🌐</span>代理</button>
-        <button class="set-nav-item" class:on={settingsSection === 'join'} onclick={() => (settingsSection = 'join')}><span class="set-nav-icon">📨</span>加群频道</button>
-        <button class="set-nav-item" class:on={settingsSection === 'whitelist'} onclick={() => { settingsSection = 'whitelist'; loadWhitelist(); }}><span class="set-nav-icon">🛡️</span>白名单</button>
-        <button class="set-nav-item" class:on={settingsSection === 'about'} onclick={() => (settingsSection = 'about')}><span class="set-nav-icon">ℹ️</span>关于</button>
-      </div>
-      <div class="set-content">
+      <nav class="set-nav" aria-label="设置导航">
+        <div class="set-nav-brand">
+          <div class="set-nav-brand-mark">TG</div>
+          <div><strong>工具箱设置</strong><span>偏好与连接</span></div>
+        </div>
+        <div class="set-nav-label">配置</div>
+        <button class="set-nav-item" class:on={settingsSection === 'general'} onclick={() => (settingsSection = 'general')}><span class="set-nav-icon">⚙</span><span>通用</span></button>
+        <button class="set-nav-item" class:on={settingsSection === 'appearance'} onclick={() => (settingsSection = 'appearance')}><span class="set-nav-icon">◐</span><span>外观</span></button>
+        <button class="set-nav-item" class:on={settingsSection === 'proxy'} onclick={() => (settingsSection = 'proxy')}><span class="set-nav-icon">⇄</span><span>代理</span></button>
+        <div class="set-nav-label">工具</div>
+        <button class="set-nav-item" class:on={settingsSection === 'join'} onclick={() => (settingsSection = 'join')}><span class="set-nav-icon">↗</span><span>加群频道</span></button>
+        <div class="set-nav-label">保护</div>
+        <button class="set-nav-item" class:on={settingsSection === 'whitelist'} onclick={() => { settingsSection = 'whitelist'; loadWhitelist(); }}><span class="set-nav-icon">✓</span><span>白名单</span></button>
+        <div class="set-nav-spacer"></div>
+        <div class="set-nav-label">帮助</div>
+        <button class="set-nav-item" class:on={settingsSection === 'about'} onclick={() => (settingsSection = 'about')}><span class="set-nav-icon">i</span><span>关于</span></button>
+      </nav>
+      <main class="set-content">
+        <div class="set-heading">
+          <div class="set-heading-icon">{settingsInfo().icon}</div>
+          <div class="set-heading-copy">
+            <div class="set-breadcrumb">设置 / {settingsInfo().group}</div>
+            <h1>{settingsInfo().title}</h1>
+            <p>{settingsInfo().description}</p>
+          </div>
+        </div>
+        <div class="set-content-body">
         {#if settingsSection === 'general'}
           <div class="set-sec-title">通用</div>
           <div class="set-group">
@@ -2756,26 +2805,46 @@
             {/if}
           </div>
         {:else if settingsSection === 'join'}
-          <div class="set-sec-title">加群频道 · 预选</div>
-          <p class="set-hint">
-            群/频道链接的添加、编辑、加入已移至「其他设置 → 加群频道…」页面，本页仅维护预选数据。
-          </p>
-          <div class="set-group-title">预选邮箱（绑定登录邮箱时一键填入）</div>
-          <div class="set-group">
-            {#each emailPresets as p, i}
-              <div class="join-edit-row">
-                <input class="set-input join-link" bind:value={emailPresets[i]} placeholder="邮箱地址" />
-                <button class="order-btn" title="删除此条" onclick={() => emailPresets.splice(i, 1)}>✕</button>
+          <section class="settings-card join-email-card">
+            <div class="settings-card-head">
+              <div class="settings-card-icon">@</div>
+              <div>
+                <h2>预选邮箱</h2>
+                <p>登录时可以一键填入，减少重复输入。</p>
               </div>
-            {/each}
-            {#if !emailPresets.length}
-              <p class="empty">还没有预选邮箱，点下方「添加邮箱」</p>
-            {/if}
-            <md-outlined-button onclick={() => emailPresets = [...emailPresets, '']}>＋ 添加邮箱</md-outlined-button>
-          </div>
-          <div class="set-footer-btn">
-            <md-outlined-button onclick={() => { settingsOpen = false; openJoinView(); }}>前往加群频道页面 →</md-outlined-button>
-          </div>
+              <span class="settings-card-count">{emailPresets.length} 个</span>
+            </div>
+            <div class="settings-card-body">
+              {#each emailPresets as p, i}
+                <div class="join-edit-row email-row">
+                  <span class="row-index">{String(i + 1).padStart(2, '0')}</span>
+                  <input class="set-input join-link" bind:value={emailPresets[i]} placeholder="输入邮箱地址" />
+                  <button class="order-btn row-delete" title="删除此条" aria-label="删除此条" onclick={() => emailPresets.splice(i, 1)}>×</button>
+                </div>
+              {/each}
+              {#if !emailPresets.length}
+                <div class="settings-empty">
+                  <div class="settings-empty-icon">@</div>
+                  <strong>还没有预选邮箱</strong>
+                  <span>添加后，登录邮箱时可以快速填入。</span>
+                </div>
+              {/if}
+              <md-outlined-button class="add-setting-btn" onclick={() => emailPresets = [...emailPresets, '']}>＋ 添加邮箱</md-outlined-button>
+            </div>
+          </section>
+          <section class="settings-card join-link-card">
+            <div class="settings-card-head">
+              <div class="settings-card-icon">↗</div>
+              <div>
+                <h2>加群频道</h2>
+                <p>管理常用群组和频道链接，登录后可快速执行加入。</p>
+              </div>
+            </div>
+            <div class="settings-card-action">
+              <span>前往完整的加群频道管理页面</span>
+              <md-outlined-button onclick={() => { settingsOpen = false; openJoinView(); }}>打开管理页面 <span aria-hidden="true">→</span></md-outlined-button>
+            </div>
+          </section>
         {:else if settingsSection === 'whitelist'}
           <div class="set-sec-title">白名单</div>
           <p class="set-hint">白名单内的用户/群永久受删除任务保护。</p>
@@ -2813,10 +2882,11 @@
         {:else}
           <div class="set-sec-title">通用</div>
         {/if}
+        </div>
         <div class="set-footer">
           <md-filled-button onclick={doSaveSettings}>保存设置</md-filled-button>
         </div>
-      </div>
+      </main>
       <button class="back set-close" title="关闭" onclick={() => (settingsOpen = false)}>✕</button>
     </div>
   </div>
@@ -3279,7 +3349,7 @@
     border: none;
     border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-primary);
-    color: #fff;
+    color: var(--md-sys-color-on-primary);
     font-size: 14px;
     cursor: pointer;
   }
@@ -4556,5 +4626,1577 @@
     resize: vertical;
     box-sizing: border-box;
     margin-bottom: 8px;
+  }
+  /* ---------- M3 视觉重做：统一密度、层级和状态层 ---------- */
+  .topbar {
+    height: 56px;
+    padding: 0 18px;
+    background: var(--topbar-color, var(--md-sys-color-primary));
+    box-shadow: 0 1px 0 rgba(29, 27, 32, 0.12), 0 3px 12px rgba(29, 27, 32, 0.12);
+  }
+
+  .title {
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: 0;
+  }
+
+  .conn {
+    margin-right: 6px;
+    font-size: 12px;
+    letter-spacing: 0.1px;
+  }
+
+  .conn.on {
+    color: #C8E6C9;
+  }
+
+  .layout {
+    gap: 10px;
+    padding: 14px;
+    height: calc(100% - 56px);
+    background: var(--md-sys-color-surface);
+  }
+
+  .splitter {
+    width: 4px;
+    border-radius: 999px;
+  }
+
+  .splitter:hover,
+  .splitter:active {
+    background: var(--md-sys-color-primary-container);
+  }
+
+  .left,
+  .mid,
+  .right {
+    padding: 14px;
+    background: var(--md-sys-color-surface-container-low);
+    border: 1px solid var(--divider);
+    border-radius: var(--md-sys-shape-corner-large);
+    box-shadow: 0 1px 2px rgba(29, 27, 32, 0.05);
+  }
+
+  .right {
+    padding: 16px;
+  }
+
+  .search {
+    height: 42px;
+    padding: 9px 14px;
+    margin-bottom: 10px;
+    border-color: var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-high);
+  }
+
+  .search::placeholder,
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.82;
+  }
+
+  .groups {
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  .grp {
+    min-height: 32px;
+    padding: 5px 12px;
+    border-color: var(--md-sys-color-outline-variant);
+    border-radius: 999px;
+    background: transparent;
+    font-size: 12px;
+  }
+
+  .grp:hover:not(.on) {
+    border-color: var(--md-sys-color-primary);
+    background: var(--hover-overlay);
+  }
+
+  .grp.on {
+    border-color: var(--md-sys-color-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+  }
+
+  .conv,
+  .back,
+  .danger,
+  .edit-btn,
+  .order-btn,
+  .load-older,
+  .join-item-ops .icon-btn,
+  .addacc-list .icon-btn {
+    border-radius: var(--md-sys-shape-corner-small);
+  }
+
+  .ctx {
+    padding: 6px;
+    background: var(--md-sys-color-surface-container-high);
+    border-color: var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    box-shadow: 0 8px 24px rgba(29, 27, 32, 0.18), 0 2px 8px rgba(29, 27, 32, 0.12);
+  }
+
+  .ctx button {
+    min-height: 36px;
+    padding: 8px 10px;
+    border-radius: var(--md-sys-shape-corner-small);
+  }
+
+  .ctx button:hover {
+    background: var(--md-sys-color-primary-container);
+  }
+
+  .list,
+  .dlg-list {
+    margin-top: 2px;
+  }
+
+  .item {
+    min-height: 64px;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+
+  .item:hover {
+    background: var(--md-sys-color-surface-container-high);
+  }
+
+  .item.cur {
+    background: var(--md-sys-color-primary-container);
+    border-color: color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
+  }
+
+  .avatar {
+    width: 44px;
+    height: 44px;
+    font-size: 16px;
+  }
+
+  .avatar.big {
+    width: 60px;
+    height: 60px;
+    font-size: 22px;
+  }
+
+  .online-dot {
+    border-color: var(--md-sys-color-surface-container-low);
+  }
+
+  .card {
+    margin-bottom: 10px;
+    background: var(--md-sys-color-surface-container-lowest);
+    border-color: var(--divider);
+    border-radius: var(--md-sys-shape-corner-large);
+    box-shadow: 0 1px 2px rgba(29, 27, 32, 0.03);
+  }
+
+  .card summary {
+    min-height: 52px;
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+
+  .card summary:hover {
+    background: var(--hover-overlay);
+  }
+
+  .card summary::before {
+    color: var(--md-sys-color-primary);
+    margin-right: 10px;
+  }
+
+  .prog-bar {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--md-sys-color-surface-container-highest);
+  }
+
+  .prog-fill {
+    border-radius: 999px;
+  }
+
+  .chat-input,
+  .join-links,
+  .rename-input,
+  input,
+  .form select,
+  .form textarea,
+  .set-input,
+  .set-select {
+    border-color: var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-high);
+  }
+
+  input,
+  .form select,
+  .form textarea {
+    min-height: 42px;
+  }
+
+  .chat-input:focus,
+  .rename-input:focus,
+  input:focus,
+  select:focus,
+  textarea:focus,
+  .search:focus,
+  .set-input:focus,
+  .set-select:focus {
+    border-color: var(--md-sys-color-primary);
+    box-shadow: var(--focus-ring);
+  }
+
+  .send-btn {
+    min-height: 42px;
+    border-radius: var(--md-sys-shape-corner-large);
+    box-shadow: 0 1px 2px rgba(29, 27, 32, 0.14);
+  }
+
+  .topbtn {
+    min-height: 34px;
+    padding: 5px 12px;
+    margin-left: 6px;
+    border-color: rgba(255, 255, 255, 0.38);
+    border-radius: 999px;
+    font-size: 12px;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  }
+
+  .topbtn:hover {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.72);
+  }
+
+  .topbtn:active,
+  .send-btn:active,
+  .conv:active,
+  .danger:active {
+    transform: translateY(1px);
+  }
+
+  .edit-btn {
+    padding: 6px 12px;
+    border-color: var(--md-sys-color-outline);
+  }
+
+  .modal-mask {
+    background: rgba(29, 27, 32, 0.42);
+    backdrop-filter: blur(2px);
+  }
+
+  .modal {
+    padding: 20px 22px;
+    border: 1px solid var(--divider);
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    box-shadow: 0 16px 40px rgba(29, 27, 32, 0.2), 0 4px 12px rgba(29, 27, 32, 0.14);
+  }
+
+  .settings-modal {
+    border-radius: var(--md-sys-shape-corner-extra-large);
+  }
+
+  .set-nav {
+    width: 184px;
+    padding: 16px 10px;
+    background: var(--md-sys-color-surface-container-low);
+    border-right-color: var(--divider);
+  }
+
+  .set-title {
+    margin: 0 10px 14px;
+    font-size: 17px;
+  }
+
+  .set-nav-item {
+    height: 44px;
+    padding: 0 14px;
+    border-radius: var(--md-sys-shape-corner-large);
+  }
+
+  .set-nav-item.on {
+    background: var(--md-sys-color-secondary-container);
+  }
+
+  .set-content {
+    padding: 22px 24px;
+    background: var(--md-sys-color-surface);
+  }
+
+  .set-sec-title {
+    margin-bottom: 16px;
+    font-size: 20px;
+    letter-spacing: -0.15px;
+  }
+
+  .set-group {
+    background: var(--md-sys-color-surface-container-low);
+    border-color: var(--divider);
+    border-radius: var(--md-sys-shape-corner-large);
+  }
+
+  .set-row {
+    min-height: 52px;
+    padding: 12px 16px;
+  }
+
+  .set-input,
+  .set-select {
+    min-height: 40px;
+    padding: 8px 12px;
+    border-radius: var(--md-sys-shape-corner-small);
+  }
+
+  .mode-seg,
+  .speed-seg {
+    border-color: var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-high);
+  }
+
+  .mode-seg {
+    padding: 3px;
+    gap: 3px;
+  }
+
+  .mode-item {
+    padding: 8px 0;
+    border-radius: var(--md-sys-shape-corner-small);
+  }
+
+  .mode-item.on,
+  .seg.on {
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+  }
+
+  .swatch {
+    width: 52px;
+    height: 52px;
+  }
+
+  .set-close {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+  }
+
+  .chat-switch-row,
+  .bound-box,
+  .qr-uri {
+    background: var(--md-sys-color-surface-container-low);
+    border-color: var(--divider);
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+
+  .chat-entry,
+  .rule-chip {
+    border-color: var(--md-sys-color-outline-variant);
+    border-radius: 999px;
+  }
+
+  .chat-entry:hover,
+  .rule-chip:hover:not(.on) {
+    background: var(--hover-overlay);
+  }
+
+  .dlg {
+    padding: 9px 10px;
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+
+  .dlg:hover {
+    background: var(--md-sys-color-surface-container-high);
+  }
+
+  .bbl {
+    border-radius: 18px;
+    box-shadow: 0 1px 1px rgba(29, 27, 32, 0.06);
+  }
+
+  .bbl-row:not(.out) .bbl {
+    border-bottom-left-radius: 6px;
+  }
+
+  .bbl-row.out .bbl {
+    border-bottom-right-radius: 6px;
+  }
+
+  .empty,
+  .chat-empty {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  md-filled-button,
+  md-outlined-button {
+    --md-filled-button-container-shape: var(--md-sys-shape-corner-large);
+    --md-outlined-button-container-shape: var(--md-sys-shape-corner-large);
+  }
+
+  md-filled-button:hover,
+  md-outlined-button:hover {
+    filter: brightness(0.97);
+  }
+
+  @media (max-width: 900px) {
+    .layout {
+      padding: 8px;
+      gap: 6px;
+    }
+
+    .left,
+    .mid,
+    .right {
+      padding: 10px;
+    }
+
+    .topbar {
+      padding: 0 10px;
+    }
+
+    .topbtn {
+      padding-inline: 8px;
+    }
+  }
+  /* ---------- LocalSend 风格微调：轻背景、白卡片、蓝色强调 ---------- */
+  .topbar {
+    height: 60px;
+    padding: 0 20px;
+    background: var(--topbar-color, #FFFFFF);
+    color: var(--topbar-foreground, var(--md-sys-color-on-surface));
+    border-bottom: 1px solid var(--divider);
+    box-shadow: none;
+  }
+
+  .title {
+    color: var(--md-sys-color-on-surface);
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.1px;
+  }
+
+  .conn {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .conn.on {
+    color: var(--status-success);
+  }
+
+  .layout {
+    gap: 12px;
+    padding: 16px;
+    height: calc(100% - 60px);
+    background: var(--md-sys-color-surface);
+  }
+
+  .left,
+  .mid,
+  .right {
+    padding: 14px;
+    background: var(--md-sys-color-surface-container-lowest);
+    border: 1px solid var(--divider);
+    border-radius: 14px;
+    box-shadow: 0 1px 3px rgba(26, 27, 32, 0.04);
+  }
+
+  .right {
+    padding: 18px;
+  }
+
+  .search {
+    height: 42px;
+    padding: 9px 14px;
+    margin-bottom: 12px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: var(--md-sys-color-surface-container);
+  }
+
+  .search:focus {
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-surface-container-lowest);
+    box-shadow: var(--focus-ring);
+  }
+
+  .groups {
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .grp {
+    min-height: 32px;
+    padding: 5px 12px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .grp:hover:not(.on) {
+    border-color: var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface);
+  }
+
+  .grp.on {
+    border-color: var(--md-sys-color-primary-container);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+  }
+
+  .list,
+  .dlg-list {
+    gap: 3px;
+  }
+
+  .item {
+    min-height: 60px;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+  }
+
+  .item:hover {
+    background: var(--md-sys-color-surface-container);
+  }
+
+  .item.cur {
+    background: var(--md-sys-color-primary-container);
+    border-color: transparent;
+  }
+
+  .card {
+    margin-bottom: 12px;
+    background: var(--md-sys-color-surface-container-lowest);
+    border-color: var(--divider);
+    border-radius: 14px;
+    box-shadow: none;
+  }
+
+  .card summary {
+    min-height: 50px;
+    padding: 12px 16px;
+  }
+
+  .card summary:hover {
+    background: var(--md-sys-color-surface-container-low);
+  }
+
+  .ctx {
+    padding: 5px;
+    background: var(--md-sys-color-surface-container-lowest);
+    border-color: var(--divider);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(26, 27, 32, 0.14), 0 2px 6px rgba(26, 27, 32, 0.08);
+  }
+
+  .ctx button:hover {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+  }
+
+  .topbtn {
+    min-height: 34px;
+    padding: 5px 10px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    color: var(--topbar-foreground, var(--md-sys-color-on-surface));
+    background: transparent;
+  }
+
+  .topbtn:hover {
+    border-color: var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
+  }
+
+  .conv,
+  .edit-btn,
+  .order-btn,
+  .load-older,
+  .join-item-ops .icon-btn,
+  .addacc-list .icon-btn {
+    border-radius: 8px;
+  }
+
+  .conv {
+    border-color: var(--md-sys-color-primary);
+  }
+
+  .modal-mask {
+    background: rgba(26, 27, 32, 0.34);
+    backdrop-filter: blur(2px);
+  }
+
+  .modal {
+    padding: 20px 22px;
+    border: 1px solid var(--divider);
+    border-radius: 20px;
+    background: var(--md-sys-color-surface-container-lowest);
+    box-shadow: 0 18px 40px rgba(26, 27, 32, 0.16), 0 4px 12px rgba(26, 27, 32, 0.1);
+  }
+
+  .set-nav {
+    width: 176px;
+    padding: 16px 10px;
+    background: var(--md-sys-color-surface-container-low);
+    border-right-color: var(--divider);
+  }
+
+  .set-nav-item {
+    height: 42px;
+    padding: 0 13px;
+    border-radius: 9px;
+  }
+
+  .set-nav-item.on {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+  }
+
+  .set-content {
+    padding: 22px 24px;
+    background: var(--md-sys-color-surface-container-lowest);
+  }
+
+  .set-group {
+    background: var(--md-sys-color-surface-container-low);
+    border-color: var(--divider);
+    border-radius: 14px;
+  }
+
+  .set-input,
+  .set-select,
+  .chat-input,
+  .join-links,
+  .rename-input,
+  .form select,
+  .form textarea {
+    border-color: var(--md-sys-color-outline-variant);
+    border-radius: 9px;
+    background: var(--md-sys-color-surface-container-lowest);
+  }
+
+  .mode-seg,
+  .speed-seg {
+    border-color: var(--md-sys-color-outline-variant);
+    border-radius: 10px;
+    background: var(--md-sys-color-surface-container);
+  }
+
+  .mode-item.on,
+  .seg.on {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+  }
+
+  .chat-switch-row,
+  .bound-box,
+  .qr-uri {
+    background: var(--md-sys-color-surface-container-low);
+    border-color: var(--divider);
+    border-radius: 10px;
+  }
+
+  .bbl {
+    border-radius: 16px;
+    box-shadow: none;
+  }
+
+  md-filled-button,
+  md-outlined-button {
+    --md-filled-button-container-shape: 10px;
+    --md-outlined-button-container-shape: 10px;
+  }
+
+  @media (max-width: 900px) {
+    .layout {
+      padding: 8px;
+      gap: 8px;
+    }
+
+    .left,
+    .mid,
+    .right {
+      padding: 10px;
+      border-radius: 12px;
+    }
+
+    .topbar {
+      padding: 0 12px;
+    }
+  }
+  /* ---------- 设置页重做：信息层级、导航分组与操作区域 ---------- */
+  .settings-modal {
+    width: min(920px, calc(100vw - 32px));
+    height: min(640px, calc(100vh - 32px));
+    border-radius: 18px;
+    background: var(--md-sys-color-surface-container-lowest);
+  }
+
+  .set-nav {
+    width: 216px;
+    padding: 18px 12px 14px;
+    gap: 4px;
+    background: var(--md-sys-color-surface-container-low);
+    border-right: 1px solid var(--divider);
+  }
+
+  .set-nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 10px 18px;
+    margin-bottom: 2px;
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .set-nav-brand-mark {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+
+  .set-nav-brand strong,
+  .set-nav-brand span {
+    display: block;
+  }
+
+  .set-nav-brand strong {
+    font-size: 14px;
+    line-height: 1.3;
+  }
+
+  .set-nav-brand span {
+    margin-top: 2px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 11px;
+  }
+
+  .set-nav-label {
+    padding: 13px 12px 5px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  .set-nav-item {
+    height: 40px;
+    padding: 0 12px;
+    gap: 11px;
+    border-radius: 9px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 13px;
+  }
+
+  .set-nav-item:hover:not(.on) {
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface);
+  }
+
+  .set-nav-item.on {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    font-weight: 600;
+  }
+
+  .set-nav-icon {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    font-family: 'Segoe UI Symbol', 'Segoe UI', sans-serif;
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .set-nav-spacer {
+    min-height: 10px;
+    flex: 1;
+  }
+
+  .set-content {
+    padding: 28px 30px 0;
+    background: var(--md-sys-color-surface);
+    overflow: hidden;
+  }
+
+  .set-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    flex-shrink: 0;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .set-heading-icon {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    flex-shrink: 0;
+    border-radius: 13px;
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-primary);
+    font-size: 24px;
+    font-weight: 600;
+  }
+
+  .set-heading-copy {
+    min-width: 0;
+  }
+
+  .set-breadcrumb {
+    margin-bottom: 3px;
+    color: var(--md-sys-color-primary);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .set-heading h1 {
+    margin: 0;
+    color: var(--md-sys-color-on-surface);
+    font-size: 24px;
+    line-height: 1.2;
+    letter-spacing: -0.3px;
+  }
+
+  .set-heading p {
+    margin: 7px 0 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .set-content-body {
+    flex: 1;
+    min-height: 0;
+    padding: 20px 2px 24px;
+    overflow-y: auto;
+  }
+
+  .set-content-body > .set-sec-title,
+  .set-content-body > .set-hint {
+    display: none;
+  }
+
+  .set-group {
+    margin-bottom: 14px;
+    background: var(--md-sys-color-surface-container-lowest);
+    border-color: var(--divider);
+    border-radius: 12px;
+  }
+
+  .settings-card {
+    margin-bottom: 14px;
+    border: 1px solid var(--divider);
+    border-radius: 14px;
+    background: var(--md-sys-color-surface-container-lowest);
+    overflow: hidden;
+  }
+
+  .settings-card-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .settings-card-icon {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-primary);
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .settings-card-head h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  .settings-card-head p {
+    margin: 3px 0 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 12px;
+  }
+
+  .settings-card-count {
+    margin-left: auto;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 11px;
+  }
+
+  .settings-card-body {
+    padding: 14px 18px 16px;
+  }
+
+  .email-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 8px;
+  }
+
+  .email-row:last-of-type {
+    margin-bottom: 12px;
+  }
+
+  .row-index {
+    width: 22px;
+    flex-shrink: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font-family: Consolas, monospace;
+    font-size: 11px;
+    text-align: center;
+  }
+
+  .email-row .join-link {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .row-delete {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 8px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 20px;
+  }
+
+  .row-delete:hover {
+    background: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-error);
+  }
+
+  .settings-empty {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 0 16px;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .settings-empty-icon {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 1px dashed var(--md-sys-color-outline-variant);
+    border-radius: 9px;
+    color: var(--md-sys-color-outline);
+    font-size: 15px;
+  }
+
+  .settings-empty strong,
+  .settings-empty span {
+    display: block;
+  }
+
+  .settings-empty strong {
+    color: var(--md-sys-color-on-surface);
+    font-size: 12px;
+  }
+
+  .settings-empty span {
+    margin-top: 2px;
+    font-size: 11px;
+  }
+
+  .add-setting-btn {
+    margin-left: 31px;
+  }
+
+  .settings-card-action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 13px 18px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 12px;
+  }
+
+  .settings-card-action md-outlined-button {
+    flex-shrink: 0;
+  }
+
+  .set-footer {
+    display: flex;
+    justify-content: flex-end;
+    flex-shrink: 0;
+    padding: 12px 0 18px;
+    border-top: 1px solid var(--divider);
+    background: var(--md-sys-color-surface);
+  }
+
+  .set-close {
+    top: 14px;
+    right: 14px;
+    z-index: 2;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .set-close:hover {
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface);
+  }
+
+  @media (max-width: 720px) {
+    .settings-modal {
+      width: calc(100vw - 20px);
+      height: calc(100vh - 20px);
+    }
+
+    .set-nav {
+      width: 174px;
+    }
+
+    .set-content {
+      padding: 22px 18px 0;
+    }
+
+    .settings-card-action {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+  /* ---------- 全局界面收口：统一层级、密度、操作反馈与空状态 ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .title {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    flex-shrink: 0;
+  }
+
+  .title::before {
+    content: 'TG';
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: -0.5px;
+  }
+
+  .conn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    margin-left: auto;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: var(--md-sys-color-surface-container);
+    font-size: 11px;
+  }
+
+  .conn.on {
+    background: color-mix(in srgb, var(--status-success) 13%, transparent);
+  }
+
+  .topbtn {
+    margin-left: 0;
+    min-height: 34px;
+    padding: 5px 11px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .topbtn.iconbtn {
+    width: 34px;
+    padding: 0;
+    font-size: 15px;
+  }
+
+  .topbtn:last-child:not(.iconbtn) {
+    border-color: color-mix(in srgb, var(--md-sys-color-primary) 24%, transparent);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+  }
+
+  .layout {
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .left,
+  .mid,
+  .right {
+    border-radius: 18px;
+    box-shadow: 0 1px 3px rgba(26, 27, 32, 0.05), 0 8px 22px rgba(26, 27, 32, 0.035);
+  }
+
+  .left {
+    padding: 12px;
+  }
+
+  .mid {
+    padding: 12px;
+  }
+
+  .right {
+    min-width: 0;
+    padding: 22px;
+  }
+
+  .search {
+    height: 44px;
+    margin-bottom: 12px;
+    font-size: 13px;
+  }
+
+  .item {
+    min-height: 62px;
+    padding: 9px 10px;
+  }
+
+  .item.cur {
+    box-shadow: inset 3px 0 0 var(--md-sys-color-primary);
+  }
+
+  .sec-head {
+    min-height: 36px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .sec-head h3 {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+  }
+
+  .head-btns {
+    gap: 2px;
+  }
+
+  .head-btns .back,
+  .sec-head > .back {
+    min-height: 30px;
+    padding: 5px 9px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    font-size: 10px;
+    line-height: 1;
+    vertical-align: 2px;
+  }
+
+  .chat-switch-row {
+    min-height: 50px;
+    padding: 9px 14px;
+    border-radius: 12px;
+    background: var(--md-sys-color-surface-container-low);
+  }
+
+  .chat-switch-label {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .status-dot {
+    width: 9px;
+    height: 9px;
+  }
+
+  .toggle {
+    width: 48px;
+    height: 28px;
+    border: 2px solid var(--md-sys-color-outline);
+    background: var(--md-sys-color-surface-container-high);
+  }
+
+  .toggle-thumb {
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    background: var(--md-sys-color-outline);
+  }
+
+  .toggle.on {
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary);
+  }
+
+  .toggle.on .toggle-thumb {
+    transform: translateX(20px);
+    background: var(--md-sys-color-on-primary);
+  }
+
+  .recv-rules {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin: 10px 0 12px;
+  }
+
+  .rule-chip {
+    min-height: 31px;
+    padding: 5px 11px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 12px;
+  }
+
+  .rule-chip:hover {
+    border-color: var(--md-sys-color-primary);
+    background: var(--hover-overlay);
+  }
+
+  .rule-chip.on {
+    border-color: transparent;
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    font-weight: 600;
+  }
+
+  .start-chat-row {
+    align-items: stretch;
+    gap: 10px;
+    margin: 0;
+  }
+
+  .chat-input {
+    height: 48px;
+    min-height: 48px;
+    margin: 0;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+
+  .send-btn {
+    min-width: 82px;
+    height: 48px;
+    padding: 0 18px;
+    border-radius: 12px;
+    font-weight: 600;
+  }
+
+  .send-btn:hover:not(:disabled) {
+    filter: brightness(0.96);
+  }
+
+  .send-btn:disabled {
+    opacity: 1;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .right > .empty {
+    display: flex;
+    flex: 1;
+    min-height: 150px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    margin: 0;
+    padding: 28px 20px;
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.5;
+  }
+
+  .right > .empty::before {
+    content: '○';
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 12px;
+    color: var(--md-sys-color-primary);
+    font-size: 22px;
+    font-weight: 300;
+  }
+
+  .log {
+    padding: 12px 14px;
+    border: 1px solid var(--divider);
+    border-radius: 12px;
+    background: var(--md-sys-color-surface-container-low);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 12px;
+    line-height: 1.65;
+  }
+
+  .prog {
+    min-height: 30px;
+    padding: 6px 2px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 12px;
+  }
+
+  .card {
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(26, 27, 32, 0.03);
+  }
+
+  .card summary {
+    min-height: 52px;
+    font-weight: 650;
+  }
+
+  .card[open] summary {
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .bi {
+    padding: 16px;
+    background: var(--md-sys-color-surface-container-low);
+  }
+
+  .dlg-list {
+    gap: 4px;
+    margin-top: 12px;
+  }
+
+  .dlg {
+    min-height: 62px;
+    padding: 9px 10px;
+    border: 1px solid transparent;
+    border-radius: 11px;
+  }
+
+  .dlg:hover {
+    border-color: var(--md-sys-color-primary-container);
+    background: var(--md-sys-color-surface-container-low);
+  }
+
+  input,
+  select,
+  textarea {
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.72;
+  }
+
+  md-filled-button,
+  md-outlined-button {
+    --md-filled-button-container-height: 40px;
+    --md-outlined-button-container-height: 40px;
+    --md-filled-button-container-shape: 10px;
+    --md-outlined-button-container-shape: 10px;
+  }
+
+  @media (max-width: 900px) {
+    .topbar {
+      gap: 2px;
+      padding-inline: 12px;
+    }
+
+    .topbtn {
+      padding-inline: 8px;
+    }
+
+    .title {
+      gap: 6px;
+      font-size: 16px;
+    }
+
+    .title::before {
+      width: 25px;
+      height: 25px;
+    }
+
+    .conn {
+      padding-inline: 7px;
+    }
+
+    .right {
+      padding: 16px;
+    }
+  }
+
+  .toggle:disabled,
+  .rule-chip:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+  }
+
+  .toggle:disabled {
+    border-color: var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container-high);
+  }
+
+  .toggle:disabled .toggle-thumb {
+    background: var(--md-sys-color-outline-variant);
+  }
+
+  .recv-rules-label {
+    margin: 12px 0 6px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+
+  .refresh-btn:disabled {
+    cursor: wait;
+    opacity: 0.62;
+  }
+
+  .dlg:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+  }
+
+  .chat-history > .empty {
+    list-style: none;
+    display: flex;
+    min-height: 120px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-direction: column;
+  }
+
+  .chat-input:disabled {
+    cursor: not-allowed;
+    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-surface-container);
+    opacity: 0.76;
+  }
+
+  .chat-input-row .send-btn:disabled {
+    opacity: 0.76;
+  }
+
+  @media (max-width: 900px) {
+    .layout {
+      overflow: auto;
+      flex-wrap: wrap;
+      align-content: flex-start;
+    }
+
+    .left,
+    .mid {
+      width: calc(50% - 7px) !important;
+      min-width: 0;
+      min-height: 320px;
+      flex: 1 1 320px;
+    }
+
+    .right {
+      width: 100%;
+      min-height: 390px;
+      flex: 1 1 100%;
+    }
+
+    .layout > .splitter {
+      display: none;
+    }
+  }
+
+  @media (max-width: 680px) {
+    .topbar {
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .topbar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .layout {
+      display: flex;
+      flex-wrap: nowrap;
+      flex-direction: column;
+      align-items: stretch;
+      padding: 8px;
+      gap: 8px;
+    }
+
+    .left,
+    .mid,
+    .right {
+      width: 100% !important;
+      min-height: 280px;
+      flex: 0 0 auto;
+      border-radius: 14px;
+    }
+
+    .right {
+      min-height: 380px;
+      padding: 14px;
+    }
+
+    .sec-head h3 {
+      font-size: 17px;
+    }
+
+    .start-chat-row,
+    .chat-input-row {
+      flex-wrap: wrap;
+    }
+
+    .chat-input {
+      min-width: 0;
+      flex: 1 1 220px;
+    }
+
+    .send-btn {
+      flex: 0 0 auto;
+    }
   }
 </style>
