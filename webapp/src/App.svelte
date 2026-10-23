@@ -256,20 +256,20 @@
     try {
       const r = await runRenamePending();
       const left = (r.items || []).length;
-      addLog(left ? `待执行改名:还有 ${left} 个文件夹被占用` : '待执行改名:已全部完成');
+      addLog(left ? `待执行重命名：还有 ${left} 个文件夹被占用` : '待执行重命名：已全部完成');
       await loadRenamePending();
       await loadAccounts();
     } catch (e: any) {
-      addLog(`执行待改名异常: ${e?.message ?? e}`);
+      addLog(`执行待重命名异常：${e?.message ?? e}`);
     }
   }
   async function doCancelRenamePending(oldName: string) {
     try {
       await cancelRenamePending(oldName);
-      addLog(`已取消待改名: ${oldName}`);
+      addLog(`已取消待重命名：${oldName}`);
       await loadRenamePending();
     } catch (e: any) {
-      addLog(`取消待改名异常: ${e?.message ?? e}`);
+      addLog(`取消待重命名异常：${e?.message ?? e}`);
     }
   }
 
@@ -324,7 +324,7 @@
         // 忽略头像刷新失败
       }
     } else {
-      addLog(`连接失败: ${r.msg || '未知错误'}`);
+      addLog(`连接失败：${r.msg || '未知错误'}`);
     }
   }
 
@@ -337,11 +337,11 @@
       flushSync(() => {
         onlineNames = new Set([...onlineNames, a.name]);
       });
-      addLog(`已切换到 ${a.name}(保持在线)`);
+      addLog(`已切换到 ${a.name}（保持在线）`);
       // 右栏自动回到日志页,避免停留在上一个账号的视图
       if (rightView !== 'log') setView('log');
     } else {
-      addLog(`切换失败: ${r.msg || '未知错误'}`);
+      addLog(`切换失败：${r.msg || '未知错误'}`);
       markOnline(a.name, false);
     }
   }
@@ -358,7 +358,7 @@
     await disconnect(name);
     markOnline(name, false);
     if (current?.name === name) connected = false;
-    addLog(`已断开连接: ${name}`);
+    addLog(`已断开连接：${name}`);
   }
   async function doReconnect() {
     if (!current) {
@@ -375,7 +375,7 @@
       return;
     }
     const r = await launchClient(current.path);
-    addLog(r.ok ? `已启动客户端: ${current.name}(${r.msg})` : `启动客户端失败: ${r.msg}`);
+    addLog(r.ok ? `已启动客户端：${current.name}（${r.msg}）` : `启动客户端失败：${r.msg}`);
   }
 
   // 右键「启动客户端」: 在资源管理器中打开账号文件夹
@@ -385,16 +385,16 @@
       return;
     }
     const r = await openFolder(current.path);
-    if (!r.ok) addLog(`打开文件夹失败: ${r.msg}`);
+    if (!r.ok) addLog(`打开文件夹失败：${r.msg}`);
   }
 
   // 账号轮询: 逐号登录保活+测活(后台任务,进度/结果走日志页)
   async function doPollAccounts() {
     setView('log');
     const scope = curGroup === 'all' ? '全部账号' : curGroup === 'ungrouped' ? '未分组' : `分组「${curGroup}」`;
-    addLog(`开始账号轮询(范围: ${scope},逐号登录保活+测活,每号间隔1s)…`);
+    addLog(`开始账号轮询（范围：${scope}，逐号登录保活与测活，每号间隔 1 秒）…`);
     const r = await pollAccounts(curGroup);
-    if (!r.ok) addLog(`轮询启动失败: ${r.msg}`);
+    if (!r.ok) addLog(`轮询启动失败：${r.msg}`);
   }
 
   // 格式转换: session+json → tdata(二级确认弹窗;覆盖勾选默认不选)
@@ -425,10 +425,10 @@
         addLog(`已转换出 tdata: ${r.path}`);
         await loadAccounts();
       } else {
-        addLog(`转换失败: ${r.msg}`);
+        addLog(`转换失败：${r.msg}`);
       }
     } catch (e: any) {
-      addLog(`转换异常: ${e?.message ?? e}`);
+      addLog(`转换异常：${e?.message ?? e}`);
     } finally {
       converting = false;
     }
@@ -456,10 +456,10 @@
         addLog(`已从 tdata 刷新 session+json: ${target.name}`);
         await loadAccounts();
       } else {
-        addLog(`刷新失败: ${r.msg}`);
+        addLog(`刷新失败：${r.msg}`);
       }
     } catch (e: any) {
-      addLog(`刷新异常: ${e?.message ?? e}`);
+      addLog(`刷新异常：${e?.message ?? e}`);
     } finally {
       t2sConverting = false;
     }
@@ -470,7 +470,7 @@
     setView('log');
     addLog('开始批量刷新 session（仅处理有 tdata 且测活失败的账号，每号间隔 1s）');
     const r = await refreshSsBatch();
-    if (!r.ok) addLog(`批量刷新启动失败: ${r.msg}`);
+    if (!r.ok) addLog(`批量刷新启动失败：${r.msg}`);
   }
 
   // 删除账号(二级确认): 弹窗醒目显示将被删除的文件夹,勾选确认才能执行
@@ -494,16 +494,16 @@
     try {
       const r = await deleteAccount(target.path);
       if (r.ok) {
-        addLog(`已删除账号: ${target.name}(${r.deleted_path})`);
+        addLog(`已删除账号：${target.name}（${r.deleted_path}）`);
         delOpen = false;
         if (current?.name === target.name) current = null;
         markOnline(target.name, false);
         await loadAccounts();
       } else {
-        addLog(`删除失败: ${r.msg}`);
+        addLog(`删除失败：${r.msg}`);
       }
     } catch (e: any) {
-      addLog(`删除异常: ${e?.message ?? e}`);
+      addLog(`删除异常：${e?.message ?? e}`);
     } finally {
       deleting = false;
     }
@@ -561,7 +561,7 @@
         qrTimer = setTimeout(qrPollLoop, 1500);
       } else if (r.status === 'success' && r.user) {
         qrStatus = 'success';
-        addLog(`[扫码] 登录成功: ${r.user.display}(+${r.user.phone}),已创建账号 ${r.user.name}`);
+        addLog(`[扫码] 登录成功：${r.user.display}（+${r.user.phone}），已创建账号 ${r.user.name}`);
         qrSession = '';
         addAccOpen = false;
         await loadAccounts();
@@ -640,7 +640,7 @@
           phoneStage = 'password';
         });
       } else if (r.status === 'success' && r.user) {
-        addLog(`[手机登录] 登录成功: ${r.user.display}(+${r.user.phone}),已创建账号 ${r.user.name}`);
+        addLog(`[手机登录] 登录成功：${r.user.display}（+${r.user.phone}），已创建账号 ${r.user.name}`);
         flushSync(() => {
           phoneSession = '';
           addAccOpen = false;
@@ -698,7 +698,7 @@
       const read = await Promise.all(items.map(addAccReadFile));
       addAccFiles = [...addAccFiles, ...read];
     } catch (err: any) {
-      addLog(`[新建] 读取文件失败: ${err?.message ?? err}`);
+      addLog(`[新建] 读取文件失败：${err?.message ?? err}`);
     } finally {
       addAccBusy = false;
     }
@@ -720,10 +720,10 @@
         addAccOpen = false;
         await loadAccounts();
       } else {
-        addLog(`[新建] 失败: ${r.msg}`);
+        addLog(`[新建] 失败：${r.msg}`);
       }
     } catch (e: any) {
-      addLog(`[新建] 异常: ${e?.message ?? e}`);
+      addLog(`[新建] 异常：${e?.message ?? e}`);
     } finally {
       addAccBusy = false;
     }
@@ -760,7 +760,7 @@
   function applyRenameQuick(key: string, label: string) {
     const val = renameQuickVal(key);
     if (!val) {
-      addLog(`该账号没有${label},无法填充`);
+      addLog(`该账号没有${label}，无法填充`);
       return;
     }
     renameInput = String(settings.rename_prefix ?? '') + val;
@@ -784,21 +784,21 @@
       const r = await renameAccount(renameTarget.path, newName);
       if (r.ok && r.pending) {
         // 文件夹被占用: 已加入待执行,客户端关闭后自动改名
-        addLog(`已加入待执行: ${renameTarget.name} → ${newName}（该账号客户端关闭后自动改名）`);
+        addLog(`已加入待执行：${renameTarget.name} → ${newName}（该账号客户端关闭后自动重命名）`);
         renameOpen = false;
         await loadRenamePending();
         await loadAccounts();
       } else if (r.ok) {
-        addLog(`已重命名: ${renameTarget.name} → ${newName}`);
+        addLog(`已重命名：${renameTarget.name} → ${newName}`);
         renameOpen = false;
         if (current?.name === renameTarget.name) current = null;
         markOnline(renameTarget.name, false);
         await loadAccounts();
       } else {
-        addLog(`重命名失败: ${r.msg}`);
+        addLog(`重命名失败：${r.msg}`);
       }
     } catch (e: any) {
-      addLog(`重命名异常: ${e?.message ?? e}`);
+      addLog(`重命名异常：${e?.message ?? e}`);
     } finally {
       renaming = false;
     }
@@ -809,7 +809,7 @@
       return;
     }
     const r = await packAccount(current.path, current.name);
-    addLog(r.ok ? `打包完成: ${r.msg}` : `打包失败: ${r.msg}`);
+    addLog(r.ok ? `打包完成：${r.msg}` : `打包失败：${r.msg}`);
   }
 
   // 在线账号集合(头像右下角橘点)
@@ -827,7 +827,7 @@
       addLog('请先选择账号');
       return;
     }
-    addLog(`正在刷新账号信息: ${current.name} …`);
+    addLog(`正在刷新账号信息：${current.name} …`);
     try {
       const r = await refreshAvatar(current.name);
       if (r.ok && r.info) {
@@ -844,12 +844,12 @@
         // 刷新成功=账号活着,立即摘掉轮询死号标识(后端已同步 poll_results)
         (current as any).poll_alive = true;
         applyFilter();
-        addLog(`已刷新账号信息: ${current.name}`);
+        addLog(`已刷新账号信息：${current.name}`);
       } else {
-        addLog(`刷新失败: ${r.msg || (r.info ? '未知错误' : '该账号无 session 或登录态失效')}`);
+        addLog(`刷新失败：${r.msg || (r.info ? '未知错误' : '该账号无 session 或登录态失效')}`);
       }
     } catch (e: any) {
-      addLog(`刷新异常: ${e?.message ?? e}`);
+      addLog(`刷新异常：${e?.message ?? e}`);
     }
   }
 
@@ -922,12 +922,12 @@
     try {
       const r = await exportAccounts();
       if (r.ok) {
-        addLog(`表格已更新并打开(${r.count ?? '?'} 个账号): ${r.path || '账号总表.xlsx'}`);
+        addLog(`表格已更新并打开（${r.count ?? '?'} 个账号）：${r.path || '账号总表.xlsx'}`);
       } else {
-        addLog(`导出失败: ${r.msg || '未知错误'}`);
+        addLog(`导出失败：${r.msg || '未知错误'}`);
       }
     } catch (e: any) {
-      addLog(`导出失败: ${e?.message ?? e}`);
+      addLog(`导出失败：${e?.message ?? e}`);
     } finally {
       exporting = false;
     }
@@ -967,8 +967,8 @@
 
   async function showWhitelist() {
     const wl = await getWhitelist();
-    addLog(`白名单用户: ${wl.users.join(', ') || '无'}`);
-    addLog(`白名单群/频道: ${wl.groups.join(', ') || '无'}`);
+    addLog(`白名单用户：${wl.users.join(', ') || '无'}`);
+    addLog(`白名单群组/频道：${wl.groups.join(', ') || '无'}`);
   }
 
   // 右栏视图
@@ -1033,7 +1033,7 @@
     try {
       await saveSettings({ join_links: joinEntries });
     } catch {
-      addLog('[加群] 链接保存失败(本次改动未持久化)');
+      addLog('[加群] 链接保存失败（本次改动未持久化）');
     }
   }
   function doJoinAddEntry() {
@@ -1075,10 +1075,10 @@
       if (r.ok) {
         dialogs = r.dialogs || [];
       } else {
-        addLog(`会话获取失败: ${r.msg || '未知错误'}`);
+        addLog(`会话获取失败：${r.msg || '未知错误'}`);
       }
     } catch (e: any) {
-      addLog(`会话获取异常: ${e?.message ?? e}`);
+      addLog(`会话获取异常：${e?.message ?? e}`);
     } finally {
       dialogsLoading = false;
     }
@@ -1104,11 +1104,11 @@
         historyHasMore = (r.msgs || []).length >= 20;
       } else {
         historyError = r.msg || '未知错误';
-        addLog(`记录获取失败: ${r.msg || '未知错误'}`);
+        addLog(`记录获取失败：${r.msg || '未知错误'}`);
       }
     } catch (e: any) {
       historyError = String(e?.message ?? e);
-      addLog(`记录获取异常: ${historyError}`);
+      addLog(`记录获取异常：${historyError}`);
     } finally {
       historyLoading = false;
     }
@@ -1169,10 +1169,10 @@
         startChatName = '';
         await openDialog(r.dialog);
       } else {
-        addLog(`发起聊天失败: ${r.msg || '未找到该用户'}`);
+        addLog(`发起聊天失败：${r.msg || '未找到该用户'}`);
       }
     } catch (e: any) {
-      addLog(`发起聊天异常: ${e?.message ?? e}`);
+      addLog(`发起聊天异常：${e?.message ?? e}`);
     } finally {
       startingChat = false;
     }
@@ -1197,7 +1197,7 @@
     } catch (e: any) {
       recvOn = previousOn;
       recvRules = previousRules;
-      addLog(`[消息接收] 设置失败: ${e?.message ?? e}`);
+      addLog(`[消息接收] 设置失败：${e?.message ?? e}`);
     }
   }
   function onRecvRuleChange(key: string) {
@@ -1216,10 +1216,10 @@
         const res = (r.results ?? [])[0];
         addLog(`[加群] ${e.name || e.link}: ${res?.ok ? '成功' : `失败 ${res?.err ?? ''}`}`);
       } else {
-        addLog(`[加群] 失败: ${r.msg}`);
+        addLog(`[加群] 失败：${r.msg}`);
       }
     } catch (err: any) {
-      addLog(`[加群] 失败: ${err?.message ?? err}`);
+      addLog(`[加群] 失败：${err?.message ?? err}`);
     }
   }
   async function doJoinChats() {
@@ -1233,12 +1233,12 @@
       const r = await joinChats(links);
       if (r.ok) {
         const okN = (r.results ?? []).filter((x: any) => x.ok).length;
-        addLog(`[加群] 完成: 成功 ${okN}/${(r.results ?? []).length}`);
+        addLog(`[加群] 完成： 成功 ${okN}/${(r.results ?? []).length}`);
       } else {
-        addLog(`[加群] 失败: ${r.msg}`);
+        addLog(`[加群] 失败：${r.msg}`);
       }
     } catch (e: any) {
-      addLog(`[加群] 失败: ${e?.message ?? e}`);
+      addLog(`[加群] 失败：${e?.message ?? e}`);
     }
   }
   let passkeys = $state<any[]>([]);
@@ -1278,13 +1278,13 @@
       addLog('正在生成通行密钥二维码…');
       const r = await initPasskey();
       if (!r.ok) {
-        addLog(`生成失败: ${r.msg || JSON.stringify(r)}`);
+        addLog(`生成失败：${r.msg || JSON.stringify(r)}`);
         return;
       }
       pkQrImg = `data:image/png;base64,${r.img}`;
       addLog('[通行密钥] 请用手机扫描二维码，经蓝牙连接完成注册');
     } catch (e) {
-      addLog(`生成异常: ${String(e)}`);
+      addLog(`生成异常：${String(e)}`);
     }
   }
   async function doDeleteDevice(hash: number) {
@@ -1317,22 +1317,22 @@
   }
   async function doSendEmail() {
     const r = await sendEmailCode(emailInput);
-    addLog(r.ok ? '验证码已发送' : `发送失败: ${r.msg}`);
+    addLog(r.ok ? '验证码已发送' : `发送失败：${r.msg}`);
   }
   async function doVerifyEmail() {
     const r = await verifyEmailCode(codeInput, emailInput);
     if (r.ok) {
-      addLog(`邮箱绑定成功: ${emailInput}`);
+      addLog(`邮箱绑定成功：${emailInput}`);
       boundEmail = emailInput.trim();
       showEmailForm = false;
       codeInput = '';
     } else {
-      addLog(`验证失败: ${r.msg}`);
+      addLog(`验证失败：${r.msg}`);
     }
   }
   async function doSet2FA() {
     const r = await set2FA(cur2fa, new2fa);
-    addLog(r.ok ? '2FA 设置成功' : `设置失败: ${r.msg}`);
+    addLog(r.ok ? '2FA 设置成功' : `设置失败：${r.msg}`);
   }
 
   // 资料编辑
@@ -1471,10 +1471,10 @@
         groups = r.groups;
         groupModalOpen = false;
       } else {
-        addLog(`新建失败: ${r.msg}`);
+        addLog(`新建失败：${r.msg}`);
       }
     } catch (e: any) {
-      addLog(`新建异常: ${e?.message ?? e}`);
+      addLog(`新建异常：${e?.message ?? e}`);
     } finally {
       groupCreating = false;
     }
@@ -1548,7 +1548,7 @@
     for (const k of keys) ordered[k] = groups[k];
     groups = ordered;
     const r = await reorderGroups(keys);
-    if (!r.ok) addLog(`分组排序保存失败: ${r.msg}`);
+    if (!r.ok) addLog(`分组排序保存失败：${r.msg}`);
   }
   // 分组右键菜单
   let groupMenu = $state<{ x: number; y: number; name: string } | null>(null);
@@ -1581,7 +1581,7 @@
       if (curGroup === groupRenameTarget) curGroup = newName;
       groupRenameOpen = false;
     } else {
-      addLog(`重命名失败: ${r.msg}`);
+      addLog(`重命名失败：${r.msg}`);
     }
   }
   // 分组删除确认弹窗(成员回到未分组)
@@ -1605,10 +1605,10 @@
         applyFilter();
         groupDelOpen = false;
       } else {
-        addLog(`删除分组失败: ${r.msg}`);
+        addLog(`删除分组失败：${r.msg}`);
       }
     } catch (e: any) {
-      addLog(`删除分组异常: ${e?.message ?? e}`);
+      addLog(`删除分组异常：${e?.message ?? e}`);
     } finally {
       groupDeleting = false;
     }
@@ -1664,7 +1664,7 @@
   async function doConvertTdata(a: Account) {
     addLog(`正在转换 ${a.name} …`);
     const r = await convertTdata(a.path);
-    addLog(r.ok ? `${a.name} 转换完成` : `${a.name} 转换失败: ${r.msg}`);
+    addLog(r.ok ? `${a.name} 转换完成` : `${a.name} 转换失败：${r.msg}`);
     await loadAccounts();
   }
 
@@ -1684,7 +1684,7 @@
       const bytes = new Uint8Array(buf);
       for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
       const r = await importArchive(btoa(bin), f.name.replace(/\.zip$/i, ''));
-      addLog(r.ok ? `导入完成: ${r.msg}` : `导入失败: ${r.msg}`);
+      addLog(r.ok ? `导入完成：${r.msg}` : `导入失败：${r.msg}`);
     }
     await loadAccounts();
   }
@@ -1825,7 +1825,7 @@
       const p = await getPing();
       if (p?.version) {
         appVersion = String(p.version);
-        addLog(`程序版本: v${appVersion}（报问题时请带上此版本号和 logs 目录日志）`);
+        addLog(`程序版本： v${appVersion}（报问题时请带上此版本号和 logs 目录日志）`);
       }
     } catch {
       // 版本号显示失败不影响使用
@@ -1924,7 +1924,7 @@
           <span class="meta">
             <span class="nm">
               {a.display || a.name}
-              {#if (a as any).poll_alive === false}<span class="dead-tag" title={`轮询: ${(a as any).poll_msg || '死号'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''}`}>死</span>{:else if (a as any).poll_alive === null}<span class="unk-tag" title={`轮询: ${(a as any).poll_msg || '状态未知'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''} —— 状态未知，可重试或重新登录`}>?</span>{/if}
+              {#if (a as any).poll_alive === false}<span class="dead-tag" title={`轮询：${(a as any).poll_msg || '死号'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''}`}>死</span>{:else if (a as any).poll_alive === null}<span class="unk-tag" title={`轮询：${(a as any).poll_msg || '状态未知'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''} —— 状态未知，可重试或重新登录`}>?</span>{/if}
               {#if a.username}<span class="uname">{a.username}</span>{/if}
             </span>
             <span class="sub">{a.country ? `${a.country} ` : ''}{a.phone ? `+${a.phone}` : a.state}</span>
@@ -1932,7 +1932,7 @@
           {#if renamePending[a.name]}
             <span
               class="pend-tag"
-              title={`待执行改名 → ${renamePending[a.name]}（该账号客户端关闭后自动改名；右键可立即执行或取消）`}
+              title={`待执行重命名 → ${renamePending[a.name]}（该账号客户端关闭后自动重命名；右键可立即执行或取消）`}
             >待改名</span>
           {/if}
           {#if a.state === 'tdata'}

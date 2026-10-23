@@ -1660,7 +1660,7 @@ class Engine:
         """温和停止: 当前动作完成后停。返回是否真的请求了停止。"""
         if self._task_running:
             self._cancel.set()
-            self._log('[停止] 已请求停止,当前动作完成后中止…')
+            self._log('[停止] 已请求停止，当前动作完成后中止…')
             return True
         return False
 
@@ -2050,7 +2050,7 @@ class Engine:
         target = os.path.join(account_dir, 'tdata')
         if os.path.exists(target) and os.listdir(target):
             if not overwrite:
-                raise RuntimeError('目标 tdata 已存在且非空,为避免覆盖未执行转换'
+                raise RuntimeError('目标 tdata 已存在且非空，为避免覆盖未执行转换'
                                    '(可勾选「覆盖已有 tdata/session」后重试)')
             import shutil as _shutil
             _shutil.rmtree(target)
@@ -2113,7 +2113,7 @@ class Engine:
                 txt = f'{type(e).__name__}: {e}'
                 if 'NoPasswordProvided' in txt or 'Two-step' in txt:
                     raise RuntimeError(
-                        '该账号开启了两步验证,需要正确的 2FA 密码才能转换:'
+                        '该账号开启了两步验证，需要正确的 2FA 密码才能转换：'
                         '请在弹窗中填写(若该号已有 tdata 则无需转换)') from None
                 if 'PasswordIncorrect' in txt:
                     src_tip = '输入的' if pwd_source == '手填' else f'json {pwd_source}里保存的'
@@ -2126,7 +2126,7 @@ class Engine:
                 txt = f'{type(e).__name__}: {e}'
                 if 'PasswordIncorrect' in txt or 'NoPasswordProvided' in txt or 'Two-step' in txt:
                     raise RuntimeError(
-                        '2FA 密码未提供或不正确,请在弹窗中填写正确的两步验证密码'
+                        '2FA 密码未提供或不正确，请在弹窗中填写正确的两步验证密码'
                         '(若该号已有 tdata 则无需转换)') from None
                 raise
             if not desktop.SaveTData(target):
@@ -2142,7 +2142,7 @@ class Engine:
         """温和停止: 当前动作完成后停。返回是否真的请求了停止。"""
         if self._task_running:
             self._cancel.set()
-            self._log('[停止] 已请求停止,当前动作完成后中止…')
+            self._log('[停止] 已请求停止，当前动作完成后中止…')
             return True
         return False
 
@@ -2236,7 +2236,7 @@ class Engine:
                             else:
                                 # authorized=False = session 被服务器拒绝,账号未死,重新登录即可
                                 results[name] = {'alive': None,
-                                                 'msg': 'session 失效,账号未死,请重新登录(勿删号!)',
+                                                 'msg': 'session 失效，账号未死，请重新登录(勿删号!)',
                                                  'time': now}
                                 self._log(f'[轮询] {i}/{total} {name}: session 失效，重新登录可恢复')
                         finally:

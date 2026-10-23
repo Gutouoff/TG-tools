@@ -281,9 +281,9 @@ def _err_msg(kind: str, e) -> str:
     if kind == 'banned':
         return '账号封禁/注销(真死号)'
     if kind == 'session':
-        return 'session 失效,账号未死,请重新登录(勿删号!)'
+        return 'session 失效，账号未死，请重新登录(勿删号!)'
     if kind == 'net':
-        return '网络连接失败,状态未知(勿删号,可稍后重试)'
+        return '网络连接失败，状态未知(勿删号，可稍后重试)'
     return f'异常未判定: {type(e).__name__}'
 
 

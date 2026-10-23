@@ -62,7 +62,7 @@ def _install_crash_log():
 
     def _hook(exc_type, exc, tb):
         try:
-            tg_log.log('未捕获异常: ' + ''.join(traceback.format_exception(exc_type, exc, tb)), level='error')
+            tg_log.log('未捕获异常：' + ''.join(traceback.format_exception(exc_type, exc, tb)), level='error')
         except Exception:
             pass
         try:
@@ -74,7 +74,7 @@ def _install_crash_log():
     try:
         def _thread_hook(args):
             try:
-                tg_log.log('线程未捕获异常: ' + ''.join(
+                tg_log.log('线程未捕获异常：' + ''.join(
                     traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback)),
                     level='error')
             except Exception:
@@ -1453,7 +1453,7 @@ async def init_passkey():
                         except ValueError:
                             return
                         _emit({'type': 'progress', 'done': elapsed,
-                               'total': 300, 'label': '通行密钥: 等待手机扫码(5分钟内有效)'})
+                               'total': 300, 'label': '通行密钥：等待手机扫码(5分钟内有效)'})
                         return
                     _emit({'type': 'state', 'status': f'passkey_{s}'})
 
