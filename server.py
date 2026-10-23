@@ -26,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 import tg_tool
 import tg_engine
 import tg_profile
+import tg_log
 
 
 def _load_cable():
@@ -53,6 +54,41 @@ if tg_tool.IS_FROZEN:
         ROOT = SCRIPT_DIR                    # onefile
 else:
     ROOT = os.path.dirname(tg_tool.SCRIPT_DIR)
+
+# 统一日志: 落盘(按天)+ 内存缓冲, Web 端由 tg_log.sink 广播
+def _install_crash_log():
+    """主线程/子线程未捕获异常也写进日志文件(窗口模式没有控制台可看)。"""
+    import traceback
+
+    def _hook(exc_type, exc, tb):
+        try:
+            tg_log.log('未捕获异常: ' + ''.join(traceback.format_exception(exc_type, exc, tb)), level='error')
+        except Exception:
+            pass
+        try:
+            sys.__excepthook__(exc_type, exc, tb)
+        except Exception:
+            pass
+
+    sys.excepthook = _hook
+    try:
+        def _thread_hook(args):
+            try:
+                tg_log.log('线程未捕获异常: ' + ''.join(
+                    traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback)),
+                    level='error')
+            except Exception:
+                pass
+        threading.excepthook = _thread_hook
+    except Exception:
+        pass
+
+
+try:
+    tg_log.init(tg_tool.LOG_DIR)
+    _install_crash_log()
+except Exception:
+    pass
 
 @asynccontextmanager
 async def lifespan(app):
@@ -127,6 +163,10 @@ class _AuthMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         except Exception as e:
+            try:
+                tg_log.log(f'接口异常 {scope.get("path", "")}: {type(e).__name__}: {e}', level='error')
+            except Exception:
+                pass
             if not started:
                 resp = json.dumps({'ok': False,
                                    'msg': f'服务器内部错误: {type(e).__name__}: {str(e)[:200]}'}).encode()
@@ -137,6 +177,10 @@ class _AuthMiddleware:
             if not isinstance(e, Exception):
                 raise   # SystemExit 等继续上抛交回运行时
         except BaseException as e:
+            try:
+                tg_log.log(f'接口异常中止 {scope.get("path", "")}: {type(e).__name__}: {e}', level='error')
+            except Exception:
+                pass
             if not started:
                 resp = json.dumps({'ok': False,
                                    'msg': f'服务器异常中止: {type(e).__name__}: {str(e)[:200]}'}).encode()
@@ -155,9 +199,10 @@ _engine = None
 
 
 def _emit(data: dict):
-    # 日志行统一打码手机号(引擎日志不走 tg_tool.log,补一层)
+    # 日志行统一进 tg_log: 打码 + 落盘 + 内存缓冲 + WebSocket 广播
     if data.get('type') == 'log' and data.get('line'):
-        data = {**data, 'line': tg_tool._mask_phone_text(data['line'])}
+        tg_log.log(str(data['line']))
+        return
     # debug 诊断事件(蓝牙原始广播/厂商数据/EID 诊断)只在 debug 等级下发
     if data.get('type') == 'state':
         st = str(data.get('status') or '')
@@ -174,14 +219,22 @@ def _emit(data: dict):
             pass
 
 
+def _log_sink(entry: dict):
+    """tg_log 的广播出口: 结构化日志条目推给所有 WebSocket 客户端。"""
+    if _loop:
+        try:
+            asyncio.run_coroutine_threadsafe(
+                _ws_broadcast({'type': 'log', **entry}), _loop)
+        except Exception:
+            pass
+
+
 def init_engine():
     global _engine
-    # tg_tool.log 的行(资料刷新失败原因等)也广播到 Web 日志页
-    if tg_tool.UI_LOG_HOOK is None:
-        tg_tool.UI_LOG_HOOK = lambda msg: _emit({'type': 'log', 'line': msg})
+    tg_log.set_sink(_log_sink)
     if _engine is None:
         _engine = tg_engine.Engine(
-            on_log=lambda msg: _emit({'type': 'log', 'line': msg}),
+            on_log=lambda msg: tg_log.log(msg, tag='engine'),
             on_progress=lambda done, total, label: _emit(
                 {'type': 'progress', 'done': done, 'total': total, 'label': label}),
             on_state=lambda st, data: _emit(
@@ -272,6 +325,13 @@ async def ws_endpoint(ws: WebSocket):
 @app.get('/api/ping')
 async def ping():
     return {'status': 'ok', 'app': 'TG工具箱', 'version': tg_tool.APP_VERSION}
+
+
+@app.get('/api/logs')
+async def get_logs(limit: int = 500, level: str = '', q: str = ''):
+    """日志回放: 内存缓冲(含上次运行尾部), 支持级别与关键字过滤。"""
+    items = tg_log.history(limit=limit, level=level, q=q)
+    return {'ok': True, 'items': items, 'file': tg_log.current_file()}
 
 
 # ---------- 账号列表 ----------

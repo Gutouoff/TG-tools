@@ -35,6 +35,8 @@ import time
 import urllib.request
 import zipfile
 
+import tg_log
+
 
 # ============ 版本号 ============
 # 规则(semver): 大版本.小版本.微调[-beta.N]
@@ -473,19 +475,13 @@ LOGFILE = None
 
 
 def init_log():
+    """初始化日志: 交给 tg_log 统一写 logs/tg-tool-YYYYMMDD.log(按天)。"""
     global LOGFILE
-    logdir = LOG_DIR
+    LOGFILE = None
     try:
-        os.makedirs(logdir, exist_ok=True)
+        return tg_log.init(LOG_DIR)
     except Exception:
-        logdir = WORKDIR
-    ts = time.strftime('%Y%m%d-%H%M%S')
-    path = os.path.join(logdir, f'tg-tool-{ts}.log')
-    try:
-        LOGFILE = open(path, 'w', encoding='utf-8')
-    except Exception:
-        LOGFILE = None
-    return path
+        return ''
 
 
 _PHONE_RE = re.compile(r'(?<!\d)(\+?\d{1,3}[-\s]?)?(\d{3})\d{4}(\d{4})(?!\d)')
@@ -507,18 +503,15 @@ def log(msg):
     if not isinstance(msg, str):
         msg = str(msg)
     msg = _mask_phone_text(msg)
-    ts = time.strftime('%H:%M:%S')
-    line = f'[{ts}] {msg}'
+    line = f'[{time.strftime("%H:%M:%S")}] {msg}'
     try:
         print(line, flush=True)
     except Exception:
         pass   # windowed 打包时无 stdout,忽略
-    if LOGFILE:
-        try:
-            LOGFILE.write(line + '\n')
-            LOGFILE.flush()
-        except Exception:
-            pass
+    try:
+        tg_log.log(msg)   # 落盘 + 内存缓冲 + Web 广播统一走 tg_log
+    except Exception:
+        pass
     if UI_LOG_HOOK:
         try:
             UI_LOG_HOOK(msg)

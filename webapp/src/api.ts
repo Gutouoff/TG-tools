@@ -13,11 +13,22 @@ export interface Account {
 export interface LogEvent {
   type: 'log' | 'progress' | 'state' | 'avatars_done';
   line?: string;
+  msg?: string;
+  ts?: string;
+  level?: LogLevel;
   done?: number;
   total?: number;
   label?: string;
   status?: string;
   data?: unknown;
+}
+
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+export interface LogItem {
+  ts: string;
+  level: LogLevel;
+  msg: string;
 }
 
 // 本地 API 鉴权 token（优先 url query,其次后端注入到 index.html 的 window.__TG_TOKEN__）
@@ -59,6 +70,11 @@ function jsonHeaders(extra?: Record<string, string>): Headers {
 
 export async function getAccounts(): Promise<Account[]> {
   const r = await apiFetch('/api/accounts');
+  return r.json();
+}
+
+export async function getLogs(limit = 600): Promise<{ ok: boolean; items?: LogItem[]; file?: string }> {
+  const r = await apiFetch(`/api/logs?limit=${limit}`);
   return r.json();
 }
 
