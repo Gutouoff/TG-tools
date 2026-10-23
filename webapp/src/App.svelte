@@ -89,12 +89,6 @@
   // 连接/重连进行中的提示文案(顶栏状态),空=不在连接中
   let connectingLabel = $state('');
   let logs = $state<LogItem[]>([]);
-  // 日志页: 级别过滤 / 关键字 / 自动滚动 / 日志文件路径
-  let logLevel = $state<'all' | LogLevel>('all');
-  let logQuery = $state('');
-  let logAutoScroll = $state(true);
-  let logFile = $state('');
-  const LOG_ORDER: Record<string, number> = { debug: 10, info: 20, warn: 30, error: 40 };
   // 程序版本号(顶栏显示,来自后端 APP_VERSION)
   let appVersion = $state('');
   let progress = $state({ done: 0, total: 0, label: '' });
@@ -210,8 +204,8 @@
     // $state 深代理可直接 push,避免每条日志整组拷贝(O(n))
     logs.push({ ts: ts || stampNow(), level, msg: line });
     if (logs.length > 2000) logs.splice(0, logs.length - 2000);
-    // 日志视图自动滚到最底(可在日志页关掉)
-    if (rightView === 'log' && logAutoScroll) {
+    // 日志视图自动滚到最底,免手动滑动
+    if (rightView === 'log') {
       setTimeout(() => {
         const el = document.querySelector('.log');
         if (el) el.scrollTop = el.scrollHeight;
@@ -219,21 +213,9 @@
     }
   }
 
-  // 日志页显示的行(级别 >= 所选级别, 再按关键字过滤)
-  let logView = $derived.by(() => {
-    const min = logLevel === 'all' ? 0 : (LOG_ORDER[logLevel] || 0);
-    const q = logQuery.trim().toLowerCase();
-    return logs.filter((e) => {
-      if (min && (LOG_ORDER[e.level] || 20) < min) return false;
-      if (q && !e.msg.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  });
-
   async function loadLogHistory() {
     try {
       const r = await getLogs(800);
-      if (r?.file) logFile = r.file;
       const items = Array.isArray(r?.items) ? r.items : [];
       if (!items.length) return;
       const seen = new Set(logs.map((e) => `${e.ts}|${e.msg}`));
@@ -246,36 +228,6 @@
     } catch {
       // 历史加载失败不影响实时日志
     }
-  }
-
-  function logText(): string {
-    return logView.map((e) => `${e.ts} [${e.level.toUpperCase()}] ${e.msg}`).join('\n');
-  }
-
-  async function copyLogs() {
-    const text = logText();
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      addLog(`已复制 ${logView.length} 条日志到剪贴板`);
-    } catch {
-      addLog('复制失败: 浏览器拒绝访问剪贴板', 'warn');
-    }
-  }
-
-  function exportLogs() {
-    if (!logView.length) return;
-    const d = new Date();
-    const p = (n: number) => String(n).padStart(2, '0');
-    const name = `TG工具箱日志-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.txt`;
-    const blob = new Blob([logText()], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
-    addLog(`已导出 ${logView.length} 条日志: ${name}`);
   }
 
   async function loadAccounts() {
@@ -1029,8 +981,8 @@
       rightView = v;
       if (v === 'chat') chatUnread = 0;
     });
-    // 切回日志页时滚到最新一条(自动滚动开启时)
-    if (v === 'log' && logAutoScroll) {
+    // 切回日志页时滚到最新一条
+    if (v === 'log') {
       setTimeout(() => {
         const el = document.querySelector('.log');
         if (el) el.scrollTop = el.scrollHeight;
@@ -2132,7 +2084,7 @@
   <section class="right">
     {#if rightView === 'log'}
       <div class="sec-head">
-        <h3>日志 <span class="log-count">{logView.length}/{logs.length}</span></h3>
+        <h3>日志</h3>
         {#if lastView !== 'log'}
           <button class="back" onclick={() => setView(lastView)}>返回</button>
         {/if}
@@ -2146,30 +2098,11 @@
           <div class="prog-fill" style="width:{Math.min(100, Math.round((progress.done / progress.total) * 100))}%"></div>
         </div>
       {/if}
-      <div class="log-tools">
-        <div class="log-filter" role="group" aria-label="日志级别">
-          <button class="log-seg" class:on={logLevel === 'all'} onclick={() => (logLevel = 'all')}>全部</button>
-          <button class="log-seg" class:on={logLevel === 'debug'} onclick={() => (logLevel = 'debug')}>调试</button>
-          <button class="log-seg" class:on={logLevel === 'info'} onclick={() => (logLevel = 'info')}>信息</button>
-          <button class="log-seg" class:on={logLevel === 'warn'} onclick={() => (logLevel = 'warn')}>警告</button>
-          <button class="log-seg" class:on={logLevel === 'error'} onclick={() => (logLevel = 'error')}>错误</button>
-        </div>
-        <input class="log-search" placeholder="搜索日志…" bind:value={logQuery} aria-label="搜索日志" />
-        <button class="log-btn" class:on={logAutoScroll} onclick={() => (logAutoScroll = !logAutoScroll)} title="收到新日志时自动滚到底">
-          {logAutoScroll ? '↓ 自动滚动' : '‖ 已暂停滚动'}
-        </button>
-        <button class="log-btn" onclick={copyLogs} disabled={!logView.length}>复制</button>
-        <button class="log-btn" onclick={exportLogs} disabled={!logView.length}>导出</button>
-        <button class="log-btn" onclick={() => (logs = [])} disabled={!logs.length}>清空</button>
-      </div>
-      {#if logFile}
-        <div class="log-file" title={logFile}>日志文件：{logFile}</div>
-      {/if}
-      {#if !logView.length}
-        <p class="empty">{logs.length ? '没有匹配的日志' : '暂无日志'}</p>
+      {#if !logs.length}
+        <p class="empty">暂无日志</p>
       {/if}
       <ul class="log">
-        {#each logView as e, i (e.ts + '|' + i)}
+        {#each logs as e, i (e.ts + '|' + i)}
           <li class="log-line" class:lv-warn={e.level === 'warn'} class:lv-error={e.level === 'error'}>
             <span class="log-ts">{e.ts ? e.ts.slice(11) : ''}</span>
             <span class="log-msg">{e.msg}</span>
@@ -6147,93 +6080,6 @@
     color: var(--md-sys-color-on-surface-variant);
     font-size: 12px;
     line-height: 1.65;
-  }
-
-  .log-count {
-    margin-left: 6px;
-    color: var(--md-sys-color-on-surface-variant);
-    font-size: 11px;
-    font-weight: 400;
-  }
-
-  .log-tools {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    margin: 8px 0 6px;
-  }
-
-  .log-filter {
-    display: inline-flex;
-    overflow: hidden;
-    border: 1px solid var(--divider);
-    border-radius: 8px;
-  }
-
-  .log-seg {
-    padding: 4px 9px;
-    border: 0;
-    background: none;
-    color: var(--md-sys-color-on-surface-variant);
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  .log-seg.on {
-    background: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
-  }
-
-  .log-search {
-    flex: 1 1 120px;
-    min-width: 110px;
-    height: 28px;
-    padding: 0 9px;
-    border: 1px solid var(--divider);
-    border-radius: 8px;
-    background: var(--md-sys-color-surface);
-    color: var(--md-sys-color-on-surface);
-    font-size: 12px;
-    outline: none;
-  }
-
-  .log-search:focus {
-    border-color: var(--md-sys-color-primary);
-  }
-
-  .log-btn {
-    padding: 4px 9px;
-    border: 1px solid var(--divider);
-    border-radius: 8px;
-    background: none;
-    color: var(--md-sys-color-on-surface-variant);
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  .log-btn:hover:not(:disabled) {
-    background: var(--hover-overlay);
-  }
-
-  .log-btn.on {
-    border-color: var(--md-sys-color-primary);
-    color: var(--md-sys-color-primary);
-  }
-
-  .log-btn:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  .log-file {
-    margin: 0 0 6px;
-    overflow: hidden;
-    color: var(--md-sys-color-on-surface-variant);
-    font-size: 11px;
-    opacity: 0.75;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .log-line {

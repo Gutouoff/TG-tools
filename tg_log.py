@@ -172,7 +172,7 @@ def log(msg, level='info', tag=''):
             lv = _classify(text)
         ts = time.strftime('%Y-%m-%d %H:%M:%S')
         entry = {'ts': ts, 'level': lv, 'msg': text}
-        line = '%s [%s] %s%s\n' % (ts, _LABEL[LEVELS[lv]], ('[%s] ' % tag) if tag else '', text)
+        line = '%s [%s] %s\n' % (ts, _LABEL[LEVELS[lv]], text)
         with _lock:
             _ring.append(entry)
             _open_file_locked()
