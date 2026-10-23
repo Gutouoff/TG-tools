@@ -31,6 +31,11 @@ dist/
 node_modules/
 webapp/dist/
 
+# Android M0 构建缓存与产物
+android_m0*/.buildozer/
+android_m0*/bin/
+android_m0*/.venv/
+
 # 工具临时目录
 .zcode/
 
