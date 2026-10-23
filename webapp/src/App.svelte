@@ -392,7 +392,7 @@
   async function doPollAccounts() {
     setView('log');
     const scope = curGroup === 'all' ? '全部账号' : curGroup === 'ungrouped' ? '未分组' : `分组「${curGroup}」`;
-    addLog(`开始账号轮询（范围：${scope}，逐号登录保活与测活，每号间隔 1 秒）…`);
+    addLog(`开始账号轮询（范围：${scope}，逐号登录保活并检测状态，每号间隔 1 秒）…`);
     const r = await pollAccounts(curGroup);
     if (!r.ok) addLog(`轮询启动失败：${r.msg}`);
   }
@@ -468,7 +468,7 @@
   // 批量刷新 s+s 数据: 所有有 tdata 且测活失败的离线账号(后台任务)
   async function doRefreshSsBatch() {
     setView('log');
-    addLog('开始批量刷新 session（仅处理有 tdata 且测活失败的账号，每号间隔 1s）');
+    addLog('开始批量刷新 session（仅处理有 tdata 且登录态失效的账号，每号间隔 1 秒）');
     const r = await refreshSsBatch();
     if (!r.ok) addLog(`批量刷新启动失败：${r.msg}`);
   }
@@ -898,12 +898,12 @@
     loadSettings();
   }
   const settingsMeta: Record<string, { title: string; description: string; icon: string; group: string }> = {
-    general: { title: '通用', description: '调整工具箱的默认行为和文件处理方式。', icon: '⚙', group: '配置' },
-    appearance: { title: '外观', description: '选择界面模式、颜色主题和功能区排列。', icon: '◐', group: '配置' },
+    general: { title: '通用', description: '配置默认行为与文件处理方式。', icon: '⚙', group: '配置' },
+    appearance: { title: '外观', description: '选择界面模式、颜色主题与功能区排列。', icon: '◐', group: '配置' },
     proxy: { title: '代理', description: '配置 Telegram 连接所使用的网络代理。', icon: '⇄', group: '配置' },
-    join: { title: '加群频道', description: '维护登录时可以快速填入的邮箱和常用入口。', icon: '↗', group: '工具' },
-    whitelist: { title: '白名单', description: '保护指定用户和群，避免被清理任务误操作。', icon: '✓', group: '保护' },
-    about: { title: '关于', description: '查看当前版本和项目相关信息。', icon: 'i', group: '帮助' }
+    join: { title: '加群频道', description: '维护登录时可快速填入的邮箱与常用群组、频道入口。', icon: '↗', group: '工具' },
+    whitelist: { title: '白名单', description: '保护指定用户与群组，避免被删除任务处理。', icon: '✓', group: '保护' },
+    about: { title: '关于', description: '查看当前版本与项目相关信息。', icon: 'i', group: '帮助' }
   };
   function settingsInfo() {
     return settingsMeta[settingsSection] || settingsMeta.general;
@@ -1871,7 +1871,7 @@
   <button class="topbtn" onclick={doReconnect}>重新连接</button>
   <button class="topbtn" onclick={doLaunchClient}
     oncontextmenu={(e) => { e.preventDefault(); doOpenAccountFolder(); }}
-    title="启动当前账号的 Telegram 客户端（右键打开账号文件夹）">启动客户端</button>
+    title="启动当前账号的 Telegram 客户端；右键账号卡片可打开文件夹">启动客户端</button>
   <button class="topbtn" onclick={doDisconnect}>断开连接</button>
   <button class="topbtn" onclick={doPack}>打包</button>
   <button class="topbtn iconbtn" onclick={toggleTheme} title={themeMode === 'dark' ? '切换到浅色' : '切换到深色'}>
@@ -1924,7 +1924,7 @@
           <span class="meta">
             <span class="nm">
               {a.display || a.name}
-              {#if (a as any).poll_alive === false}<span class="dead-tag" title={`轮询：${(a as any).poll_msg || '死号'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''}`}>死</span>{:else if (a as any).poll_alive === null}<span class="unk-tag" title={`轮询：${(a as any).poll_msg || '状态未知'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''} —— 状态未知，可重试或重新登录`}>?</span>{/if}
+              {#if (a as any).poll_alive === false}<span class="dead-tag" title={`轮询：${(a as any).poll_msg || '无法连接'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''}`}>失效</span>{:else if (a as any).poll_alive === null}<span class="unk-tag" title={`轮询：${(a as any).poll_msg || '状态未知'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''} —— 状态未知，可重试或重新登录`}>?</span>{/if}
               {#if a.username}<span class="uname">{a.username}</span>{/if}
             </span>
             <span class="sub">{a.country ? `${a.country} ` : ''}{a.phone ? `+${a.phone}` : a.state}</span>
@@ -1933,7 +1933,7 @@
             <span
               class="pend-tag"
               title={`待执行重命名 → ${renamePending[a.name]}（该账号客户端关闭后自动重命名；右键可立即执行或取消）`}
-            >待改名</span>
+            >待重命名</span>
           {/if}
           {#if a.state === 'tdata'}
             <button class="conv" onclick={(e) => { e.stopPropagation(); doConvertTdata(a); }}>转换</button>
@@ -1967,8 +1967,8 @@
       {/if}
       <button onclick={() => { const a = accounts.find((x) => x.name === ctxMenu!.name); if (a) openRename(a); closeCtx(); }}>重命名文件夹…</button>
       {#if renamePending[ctxMenu.name]}
-        <button onclick={() => { doRunRenamePending(); closeCtx(); }}>立即执行待改名 → {renamePending[ctxMenu.name]}</button>
-        <button onclick={() => { doCancelRenamePending(ctxMenu!.name); closeCtx(); }}>取消待改名</button>
+        <button onclick={() => { doRunRenamePending(); closeCtx(); }}>立即执行待重命名 → {renamePending[ctxMenu.name]}</button>
+        <button onclick={() => { doCancelRenamePending(ctxMenu!.name); closeCtx(); }}>取消待重命名</button>
       {/if}
     </div>
   {/if}
@@ -2060,14 +2060,14 @@
       <div class="conv-group">
         <md-outlined-button class="full-row" onclick={doOpenTdataToSs}>tdata 转 session+json</md-outlined-button>
         <md-outlined-button class="full-row" onclick={doOpenConvertTdata} disabled={converting}>{converting ? '转换中…' : 'session+json 转 tdata'}</md-outlined-button>
-        <md-outlined-button onclick={doRefreshSsBatch}>刷新session（批量修复测活失败）</md-outlined-button>
+        <md-outlined-button onclick={doRefreshSsBatch}>刷新 session（批量修复登录态失效的账号）</md-outlined-button>
       </div>
     </details>
       {:else if c === '其他设置'}
     <details class="card" data-card="其他设置" open={isCardOpen('其他设置', false)} ontoggle={(e) => onCardToggle('其他设置', (e.currentTarget as HTMLDetailsElement).open)}>
       <summary>其他设置</summary>
       <div class="grid">
-        <md-outlined-button onclick={() => updateTelegram()}>安装升级客户端</md-outlined-button>
+        <md-outlined-button onclick={() => updateTelegram()}>安装或升级客户端</md-outlined-button>
         <md-outlined-button onclick={doRefreshAccountInfo}>刷新账号信息</md-outlined-button>
         <md-outlined-button onclick={doPollAccounts}>账号轮询</md-outlined-button>
         <md-outlined-button onclick={openJoinView}>加群频道…</md-outlined-button>
@@ -2167,7 +2167,7 @@
         {:else if !onlineNames.has(current.name)}
           <p class="empty">请先连接账号再查看会话</p>
         {:else if !dialogs.length}
-          <p class="empty">{dialogsLoading ? '正在加载会话…' : '暂无会话，点右上角「刷新」获取'}</p>
+          <p class="empty">{dialogsLoading ? '正在加载会话…' : '暂无会话，请点击右上角「刷新」获取'}</p>
         {/if}
         <ul class="dlg-list">
           {#each dialogs as d (d.id)}
@@ -2247,7 +2247,7 @@
       {#if pkQrImg}
         <div class="qr-box">
           <img class="qr-img" src={pkQrImg} alt="通行密钥二维码" />
-          <p class="qr-tip">请用<b>手机系统相机 / Google 智能镜头</b>扫描<br />（由手机密码管理器完成通行密钥注册；Telegram 客户端不参与扫码）</p>
+          <p class="qr-tip">请使用<b>手机系统相机或 Google 智能镜头</b>扫描<br />（由手机密码管理器完成通行密钥注册；Telegram 客户端不参与扫码）</p>
         </div>
       {/if}
       <ul class="sec-list">
@@ -2269,7 +2269,7 @@
         <input placeholder="当前密码" bind:value={cur2fa} />
       {/if}
       <input placeholder="新密码" bind:value={new2fa} />
-      <md-filled-button onclick={doSet2FA}>设置/修改</md-filled-button>
+      <md-filled-button onclick={doSet2FA}>设置或修改</md-filled-button>
     {:else if rightView === 'email'}
       <div class="sec-head">
         <h3>邮箱登录</h3>
@@ -2283,11 +2283,11 @@
         <md-outlined-button onclick={() => (showEmailForm = true)}>换绑邮箱</md-outlined-button>
       {:else}
         {#if boundEmail}
-          <p class="set-hint">当前绑定：{boundEmail}。填写新邮箱完成换绑。</p>
+          <p class="set-hint">当前绑定：{boundEmail}。填写新邮箱即可完成换绑。</p>
         {/if}
         {#if emailPresets.length}
           <div class="rename-quick">
-            <span class="rename-quick-label">预选邮箱:</span>
+            <span class="rename-quick-label">预选邮箱：</span>
             {#each emailPresets as p}
               <button class="rule-chip" onclick={() => (emailInput = p)}>{p}</button>
             {/each}
@@ -2398,7 +2398,7 @@
             {/if}
           {/each}
           {#if !joinEntries.some((e) => e.type === cat)}
-            <li class="empty">暂无{catLabel}链接，点上方「添加链接」</li>
+            <li class="empty">暂无{catLabel}链接，请点击上方「添加链接」</li>
           {/if}
         </ul>
       {/each}
@@ -2413,7 +2413,7 @@
     <div class="ctx" style="left:{groupMenu.x}px;top:{groupMenu.y}px" onclick={(e) => e.stopPropagation()}>
       <div class="ctx-title">分组：{groupMenu.name}</div>
       <button onclick={doOpenGroupRename}>重命名…</button>
-      <button class="ctx-disconnect" onclick={doOpenGroupDelete}>删除分组（账号回未分组）</button>
+      <button class="ctx-disconnect" onclick={doOpenGroupDelete}>删除分组（账号移回未分组）</button>
     </div>
   {/if}
 
@@ -2514,7 +2514,7 @@
               </md-filled-button>
             </div>
           {:else if phoneStage === 'code'}
-            <p class="set-hint">验证码已发送至 +{phoneInput}，请查收短信/TG 官方消息</p>
+            <p class="set-hint">验证码已发送至 +{phoneInput}，请查收短信或 Telegram 官方消息</p>
             <div class="set-row set-row-col">
               <span class="set-label">验证码</span>
               <input class="set-input" inputmode="numeric" placeholder="登录验证码"
@@ -2575,7 +2575,7 @@
         <button class="back set-close rename-x" title="关闭" onclick={() => (t2sOpen = false)}>✕</button>
       </div>
       <p class="set-hint">
-        使用账号 <b>{current.display || current.name}</b> 的 <b>tdata</b> 重新生成 session+json，覆盖现有会话数据。适用于 session 过期导致测活失败的账号。
+        使用账号 <b>{current.display || current.name}</b> 的 <b>tdata</b> 重新生成 session+json，覆盖现有会话数据。适用于 session 过期、登录态失效的账号。
       </p>
       <p class="set-hint" style="color: var(--md-sys-color-error)">
         在线账号仅刷新 json 元数据；离线账号将删除旧 session 并从 tdata 重建，tdata 已失效则刷新失败。
@@ -2610,7 +2610,7 @@
       <div class="set-row" style="margin-top:8px">
         <span class="set-label">2FA 密码</span>
         <input class="set-input" type="password" autocomplete="new-password"
-          bind:value={convTwofa} placeholder="开启两步验证的账号必填；留空使用 json 中保存的密码" />
+          bind:value={convTwofa} placeholder="开启两步验证的账号必填；留空则使用 json 中保存的密码" />
       </div>
       <div class="rename-btns">
         <md-outlined-button onclick={() => (convOpen = false)}>取消</md-outlined-button>
@@ -2642,7 +2642,7 @@
           <span class="del-val mono">{delTarget.uid}</span>
         </div>{/if}
         <div class="set-row set-row-col">
-          <span class="set-label">将删除的文件夹</span>
+          <span class="set-label">将被删除的文件夹</span>
           <code class="del-path">{delTarget.path}</code>
         </div>
       </div>
@@ -2700,7 +2700,7 @@
       />
       {#if renameQuickOpts.length}
         <div class="rename-quick">
-          <span class="rename-quick-label">快捷填充:</span>
+          <span class="rename-quick-label">快捷填充：</span>
           {#each renameQuickOpts as [k, label]}
             {#if renameQuickVal(k)}
               <button class="rule-chip" title={renameQuickVal(k)} onclick={() => applyRenameQuick(k, label)}>{label}</button>
@@ -2742,7 +2742,6 @@
         <div class="set-heading">
           <div class="set-heading-icon">{settingsInfo().icon}</div>
           <div class="set-heading-copy">
-            <div class="set-breadcrumb">设置 / {settingsInfo().group}</div>
             <h1>{settingsInfo().title}</h1>
             <p>{settingsInfo().description}</p>
           </div>
@@ -2757,17 +2756,17 @@
             </div>
             <div class="set-row">
               <span class="set-label">默认压缩密码（AES-256）</span>
-              <input class="set-input" type="password" autocomplete="new-password" bind:value={settings.pack_password} placeholder="留空则不加密" />
+              <input class="set-input" type="password" autocomplete="new-password" bind:value={settings.pack_password} placeholder="留空则不启用加密" />
             </div>
             <div class="set-row">
               <span class="set-label">日志等级</span>
               <select class="set-select" bind:value={settings.log_level}>
                 <option value="info">常规（info）</option>
-                <option value="debug">调试（debug，含蓝牙诊断等原始日志）</option>
+                <option value="debug">调试（debug，包含蓝牙诊断等原始日志）</option>
               </select>
             </div>
             <div class="set-row set-row-col">
-              <span class="set-label">文件夹重命名快捷项（勾选在弹窗中显示）</span>
+              <span class="set-label">文件夹重命名快捷项（勾选后显示在弹窗中）</span>
               <div class="check-row">
                 {#each RENAME_QUICK_DEFS as [k, label]}
                   <label class="check-item">
@@ -2783,7 +2782,7 @@
             </div>
             <div class="set-row">
               <span class="set-label">快捷项自定义前缀</span>
-              <input class="set-input" bind:value={settings.rename_prefix} placeholder="例如 tg_（点快捷项时自动加在前面）" />
+              <input class="set-input" bind:value={settings.rename_prefix} placeholder="例如 tg_" title="选择快捷项时自动添加到文件夹名前" />
             </div>
           </div>
         {:else if settingsSection === 'appearance'}
@@ -2879,7 +2878,7 @@
               <div class="settings-card-icon">@</div>
               <div>
                 <h2>预选邮箱</h2>
-                <p>登录时可以一键填入，减少重复输入。</p>
+                <p>登录时可快速填入，避免重复输入。</p>
               </div>
               <span class="settings-card-count">{emailPresets.length} 个</span>
             </div>
@@ -2894,8 +2893,8 @@
               {#if !emailPresets.length}
                 <div class="settings-empty">
                   <div class="settings-empty-icon">@</div>
-                  <strong>还没有预选邮箱</strong>
-                  <span>添加后，登录邮箱时可以快速填入。</span>
+                  <strong>暂无预选邮箱</strong>
+                  <span>添加后可在登录邮箱时快速填入。</span>
                 </div>
               {/if}
               <md-outlined-button class="add-setting-btn" onclick={() => emailPresets = [...emailPresets, '']}>＋ 添加邮箱</md-outlined-button>
@@ -2906,17 +2905,17 @@
               <div class="settings-card-icon">↗</div>
               <div>
                 <h2>加群频道</h2>
-                <p>管理常用群组和频道链接，登录后可快速执行加入。</p>
+                <p>管理常用群组与频道链接，登录后可快速加入。</p>
               </div>
             </div>
             <div class="settings-card-action">
-              <span>前往完整的加群频道管理页面</span>
+              <span>前往完整的加群频道管理页</span>
               <md-outlined-button onclick={() => { settingsOpen = false; openJoinView(); }}>打开管理页面 <span aria-hidden="true">→</span></md-outlined-button>
             </div>
           </section>
         {:else if settingsSection === 'whitelist'}
           <div class="set-sec-title">白名单</div>
-          <p class="set-hint">白名单内的用户/群永久受删除任务保护。</p>
+          <p class="set-hint">白名单中的用户与群组不会被删除任务处理。</p>
           <div class="set-group-title">用户白名单</div>
           <div class="set-group">
             <div class="join-edit-row">
@@ -2929,10 +2928,10 @@
               {/each}
             </ul>
           </div>
-          <div class="set-group-title">群/频道白名单</div>
+          <div class="set-group-title">群组/频道白名单</div>
           <div class="set-group">
             <div class="join-edit-row">
-              <input class="set-input join-link" placeholder="群 ID" bind:value={wlGroupInput} />
+              <input class="set-input join-link" placeholder="群组 ID" bind:value={wlGroupInput} />
               <md-outlined-button onclick={doAddGroup}>添加</md-outlined-button>
             </div>
             <ul class="sec-list">
@@ -5541,14 +5540,6 @@
 
   .set-heading-copy {
     min-width: 0;
-  }
-
-  .set-breadcrumb {
-    margin-bottom: 3px;
-    color: var(--md-sys-color-primary);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
   }
 
   .set-heading h1 {

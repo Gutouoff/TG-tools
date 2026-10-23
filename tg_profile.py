@@ -279,12 +279,12 @@ def classify_conn_error(e) -> str:
 def _err_msg(kind: str, e) -> str:
     """按分类输出面向用户的提示。"""
     if kind == 'banned':
-        return '账号封禁/注销(真死号)'
+        return '账号已封禁或注销'
     if kind == 'session':
-        return 'session 失效，账号未死，请重新登录(勿删号!)'
+        return '登录态失效，账号仍可用，请重新登录（请勿删除账号）'
     if kind == 'net':
-        return '网络连接失败，状态未知(勿删号，可稍后重试)'
-    return f'异常未判定: {type(e).__name__}'
+        return '网络连接失败，状态未知（请勿删除账号，可稍后重试）'
+    return f'异常未判定：{type(e).__name__}'
 
 
 def _worker(root, on_update):

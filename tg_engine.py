@@ -1996,7 +1996,7 @@ class Engine:
             targets.append((name, path))
         self._log(T('t169', len(targets)))
         if not targets:
-            self._state('done', '没有需要刷新的账号(仅处理有 tdata 且测活失败的)')
+            self._state('done', '没有需要刷新的账号（仅处理有 tdata 且测活失败的账号）')
             return None
         if self._task_running:
             self._state('done', '已有任务在运行')
@@ -2236,7 +2236,7 @@ class Engine:
                             else:
                                 # authorized=False = session 被服务器拒绝,账号未死,重新登录即可
                                 results[name] = {'alive': None,
-                                                 'msg': 'session 失效，账号未死，请重新登录(勿删号!)',
+                                                 'msg': '登录态失效，账号仍可用，请重新登录（请勿删除账号）',
                                                  'time': now}
                                 self._log(f'[轮询] {i}/{total} {name}: session 失效，重新登录可恢复')
                         finally:

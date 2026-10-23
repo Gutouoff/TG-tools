@@ -668,7 +668,7 @@ async def export_accounts():
         name = a.get('name', '')
         info = sec.get(name) or {}
         poll = a.get('poll_alive')
-        status = '死号' if poll is False else ''
+        status = '失效' if poll is False else ''
         if not status and a.get('state') == 'empty':
             status = '无登录态'
         pk_n = info.get('passkeys')
