@@ -161,7 +161,7 @@ def close():
         _fh = None
 
 
-def log(msg, level='info', tag=''):
+def log(msg, level='info'):
     """写一条日志。level 省略时按关键字归到 warn/error。"""
     try:
         text = mask(msg if isinstance(msg, str) else str(msg))

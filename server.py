@@ -234,7 +234,7 @@ def init_engine():
     tg_log.set_sink(_log_sink)
     if _engine is None:
         _engine = tg_engine.Engine(
-            on_log=lambda msg: tg_log.log(msg, tag='engine'),
+            on_log=lambda msg: tg_log.log(msg),
             on_progress=lambda done, total, label: _emit(
                 {'type': 'progress', 'done': done, 'total': total, 'label': label}),
             on_state=lambda st, data: _emit(

@@ -2146,7 +2146,7 @@
         <div class="start-chat-row">
           <input
             class="chat-input"
-            placeholder="@用户名、数字 ID 或 t.me 链接，回车发起聊天"
+            placeholder="@用户名 或 数字 ID"
             bind:value={startChatName}
             disabled={!current || !onlineNames.has(current.name)}
             onkeydown={(e) => { if (e.key === 'Enter') doStartChat(); }}
