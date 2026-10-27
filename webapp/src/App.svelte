@@ -85,6 +85,7 @@
   import GroupCreateDialog from './components/GroupCreateDialog.svelte';
   import DeleteAccountDialog from './components/DeleteAccountDialog.svelte';
   import AccountCard from './components/AccountCard.svelte';
+  import FunctionCards from './components/FunctionCards.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -2142,107 +2143,42 @@
   <div class="splitter" onmousedown={(e) => startDrag(e, 'left')}></div>
 
   <section class="mid" class:narrow={midW < 340} style="width:{midW}px">
-    {#each cardOrder as c (c)}
-      {#if c === '基本信息'}
-    <details class="card" data-card="基本信息" open={isCardOpen('基本信息', true)} ontoggle={(e) => onCardToggle('基本信息', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>基本信息</summary>
-      <div class="bi">
-        {#if current?.avatar && !avatarFailed.has(current.name)}
-          <img class="avatar big" src={avatarUrl(current)} alt="" onerror={() => onAvatarError(current.name)} />
-        {:else}
-          <span class="avatar big" style="background:{avatarColor(current?.name || '-')}">
-            {current?.display?.[0] || current?.name?.[0] || '-'}
-          </span>
-        {/if}
-        <div class="bi-meta">
-          <div class="bi-name">{current?.display || current?.name || '未选择账号'}</div>
-          <div class="bi-sub">@{current?.username || current?.phone || '-'}</div>
-        </div>
-        <button class="edit-btn" onclick={loadProfile}>编辑</button>
-      </div>
-    </details>
-      {:else if c === '聊天'}
-    <details class="card" data-card="聊天" open={isCardOpen('聊天', true)} ontoggle={(e) => onCardToggle('聊天', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>聊天</summary>
-      <div class="chat-ctl">
-        <div class="chat-switch-row">
-          <span class="chat-switch-label">
-            <span class="status-dot" class:on={recvOn}></span>
-            <span class="chat-switch-text">接收新消息</span>
-            <em class="chat-state">{recvOn ? '监听中' : '已停止'}</em>
-          </span>
-          <button
-            class="toggle"
-            class:on={recvOn}
-            role="switch"
-            aria-label="接收新消息"
-            aria-checked={recvOn}
-            disabled={!current || !onlineNames.has(current.name)}
-            title={!current || !onlineNames.has(current.name) ? '请先连接账号' : recvOn ? '停止接收' : '开始接收'}
-            onclick={() => applyRecv(!recvOn)}
-          >
-            <span class="toggle-thumb"></span>
-          </button>
-        </div>
-        <div class="chat-entries">
-          <button class="chat-entry" onclick={() => { curDialog = null; setView('chat'); }}>
-            消息列表
-            {#if chatUnread}<span class="badge">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}
-          </button>
-        </div>
-      </div>
-    </details>
-      {:else if c === '安全'}
-    <details class="card" data-card="安全" open={isCardOpen('安全', false)} ontoggle={(e) => onCardToggle('安全', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>安全</summary>
-      <div class="grid">
-        <md-outlined-button onclick={load2FA}>两步验证</md-outlined-button>
-        <md-outlined-button onclick={loadPasskeys}>通行密钥</md-outlined-button>
-        <md-outlined-button onclick={showEmail}>邮箱登录</md-outlined-button>
-        <md-outlined-button onclick={loadDevices}>登录设备</md-outlined-button>
-      </div>
-    </details>
-      {:else if c === '删除'}
-    <details class="card" data-card="删除" open={isCardOpen('删除', true)} ontoggle={(e) => onCardToggle('删除', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>删除</summary>
-      <div class="grid">
-        <md-outlined-button onclick={() => postTask('/api/tasks/delete-contacts')}>删联系人</md-outlined-button>
-        <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'users' })}>删对话</md-outlined-button>
-        <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'bots' })}>删机器人</md-outlined-button>
-        <md-outlined-button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'groups' })}>删频道</md-outlined-button>
-      </div>
-      <div class="speed-row">
-        <span class="speed-label">速度</span>
-        <div class="speed-seg">
-          {#each SPEED_SEG as [label, v]}
-            <button class="seg" class:on={speedVal === v} onclick={() => onSpeed(v)}>{label}</button>
-          {/each}
-        </div>
-      </div>
-    </details>
-      {:else if c === '转换'}
-    <details class="card" data-card="转换" open={isCardOpen('转换', false)} ontoggle={(e) => onCardToggle('转换', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>转换</summary>
-      <div class="conv-group">
-        <md-outlined-button class="full-row" onclick={doOpenTdataToSs}>tdata 转 session+json</md-outlined-button>
-        <md-outlined-button class="full-row" onclick={doOpenConvertTdata} disabled={converting}>{converting ? '转换中…' : 'session+json 转 tdata'}</md-outlined-button>
-        <md-outlined-button onclick={doRefreshSsBatch}>刷新 session（批量修复登录态失效的账号）</md-outlined-button>
-      </div>
-    </details>
-      {:else if c === '其他设置'}
-    <details class="card" data-card="其他设置" open={isCardOpen('其他设置', false)} ontoggle={(e) => onCardToggle('其他设置', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>其他设置</summary>
-      <div class="grid">
-        <md-outlined-button onclick={() => updateTelegram()}>安装或升级客户端</md-outlined-button>
-        <md-outlined-button onclick={doRefreshAccountInfo}>刷新账号信息</md-outlined-button>
-        <md-outlined-button onclick={doPollAccounts}>账号轮询</md-outlined-button>
-        <md-outlined-button onclick={openJoinView}>加群频道…</md-outlined-button>
-        <md-outlined-button onclick={doExportAccounts} disabled={exporting}>{exporting ? '导出中…' : '导出表格'}</md-outlined-button>
-        <md-outlined-button class="danger-btn" onclick={doOpenDeleteAccount}>删除账号</md-outlined-button>
-      </div>
-    </details>
-      {/if}
-    {/each}
+    <FunctionCards
+      {cardOrder}
+      isOpen={isCardOpen}
+      onToggle={onCardToggle}
+      {current}
+      {avatarFailed}
+      {avatarUrl}
+      {avatarColor}
+      onAvatarError={onAvatarError}
+      onEditProfile={loadProfile}
+      {recvOn}
+      canRecv={!!current && onlineNames.has(current.name)}
+      {chatUnread}
+      onToggleRecv={() => applyRecv(!recvOn)}
+      onOpenChatList={() => { curDialog = null; setView('chat'); }}
+      on2FA={load2FA}
+      onPasskeys={loadPasskeys}
+      onEmail={showEmail}
+      onDevices={loadDevices}
+      onDeleteContacts={() => postTask('/api/tasks/delete-contacts')}
+      onDeleteDialogs={(choice) => postTask('/api/tasks/delete-dialogs', { choice })}
+      {speedVal}
+      speedSeg={SPEED_SEG}
+      onSpeed={onSpeed}
+      {converting}
+      onOpenTdataToSs={doOpenTdataToSs}
+      onOpenConvertTdata={doOpenConvertTdata}
+      onRefreshSs={doRefreshSsBatch}
+      onUpdateTelegram={() => updateTelegram()}
+      onRefreshInfo={doRefreshAccountInfo}
+      onPollAccounts={doPollAccounts}
+      onJoinChannels={openJoinView}
+      {exporting}
+      onExport={doExportAccounts}
+      onDeleteAccount={doOpenDeleteAccount}
+    />
   </section>
 
   <div class="splitter" onmousedown={(e) => startDrag(e, 'mid')}></div>
