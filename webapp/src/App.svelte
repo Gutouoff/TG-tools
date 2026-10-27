@@ -3217,6 +3217,7 @@
 {/if}
 
 <style>
+  :global {
   .topbar {
     display: flex;
     align-items: center;
@@ -8214,5 +8215,6 @@
     .mobile-row-connect:active {
       transform: none;
     }
+  }
   }
 </style>
