@@ -871,6 +871,13 @@
   let settings = $state<Record<string, any>>({});
   let settingsOpen = $state(false);
   let settingsSection = $state<'general' | 'appearance' | 'proxy' | 'join' | 'whitelist' | 'about'>('general');
+  // 手机端设置采用「分组列表 → 子页」的钻取结构，null 表示停留在列表页
+  let mobileSettingsSection = $state<'general' | 'appearance' | 'proxy' | 'join' | 'whitelist' | 'about' | null>(null);
+  function openSettingsSection(s: 'general' | 'appearance' | 'proxy' | 'join' | 'whitelist' | 'about') {
+    settingsSection = s;
+    mobileSettingsSection = s;
+    if (s === 'whitelist') loadWhitelist();
+  }
   let themeMode = $derived((settings.theme_mode as string) || 'light');
   async function loadSettings() {
     settings = {
@@ -884,6 +891,8 @@
       email_presets: [],
     };
     settingsOpen = true;
+    // 每次打开都回到设置列表页，避免停在上次的子页
+    mobileSettingsSection = null;
     try {
       settings = await getSettings();
       applyJoinEntries(settings.join_links);
@@ -973,6 +982,20 @@
 
   // 右栏视图
   let rightView = $state<'log' | 'passkey' | '2fa' | 'email' | 'devices' | 'profile' | 'settings' | 'chat' | 'join'>('log');
+  let mobileTab = $state<'accounts' | 'current' | 'activity' | 'more'>('accounts');
+  let mobilePanelOpen = $state(false);
+  const MOBILE_PANEL_TITLES: Record<string, string> = {
+    log: '运行日志', passkey: '通行密钥', '2fa': '两步验证', email: '邮箱登录',
+    devices: '登录设备', profile: '编辑资料', settings: '设置', chat: '会话', join: '群组与频道',
+  };
+  function openMobilePanel(v: typeof rightView) {
+    setView(v);
+    mobilePanelOpen = true;
+  }
+  function closeMobilePanel() {
+    mobilePanelOpen = false;
+    setView('log');
+  }
   // 日志页的「返回」目标: 从哪个界面点进日志,就回哪个界面
   let lastView = $state<typeof rightView>('log');
   function setView(v: typeof rightView) {
@@ -1880,7 +1903,179 @@
   <button class="topbtn" onclick={loadSettings}>设置</button>
 </header>
 
-<svelte:window onmousemove={onWinMouseMove} onmouseup={onWinMouseUp} /><div class="layout">
+<div class="mobile-app">
+  <header class="mobile-header">
+    {#if mobilePanelOpen}
+      <button class="mobile-back" aria-label="返回" onclick={closeMobilePanel}>‹</button>
+      <div class="mobile-heading">
+        <strong>{MOBILE_PANEL_TITLES[rightView] || '详情'}</strong>
+        <span>{current?.display || current?.name || '当前账号'}</span>
+      </div>
+      <span class="mobile-header-spacer"></span>
+    {:else}
+      <div class="mobile-brand-mark" aria-hidden="true">TG</div>
+      <div class="mobile-heading">
+        <strong>TG小号工具箱</strong>
+        <span>{accounts.length} 个账号 · {onlineNames.size} 个在线</span>
+      </div>
+      <span class="mobile-conn" class:on={connected && !connectingLabel} aria-label={connectingLabel || (connected ? '已连接' : '未连接')}></span>
+      <button class="mobile-add" aria-label="新建账号" title="新建账号" onclick={doOpenAddAccount}>＋</button>
+    {/if}
+  </header>
+
+  {#if !mobilePanelOpen}
+    <main class="mobile-main">
+      {#key mobileTab}
+      <div class="mobile-page">
+      {#if mobileTab === 'accounts'}
+        <div class="mobile-account-toolbar">
+          <label class="mobile-search-wrap">
+            <span aria-hidden="true">⌕</span>
+            <input class="mobile-search" placeholder="搜索账号" bind:value={search} oninput={onSearch} />
+            {#if search}<button class="mobile-clear" aria-label="清空搜索" onclick={() => { search = ''; onSearch(); }}>×</button>{/if}
+          </label>
+          <button class="mobile-filter" aria-label="新建分组" title="新建分组" onclick={doCreateGroup}>☷</button>
+        </div>
+        <div class="mobile-groups" aria-label="账号分组">
+          {#each ['all', 'ungrouped', ...Object.keys(groups)] as g}
+            <button class="mobile-group" class:active={curGroup === g} onclick={() => selectGroup(g)}>
+              {g === 'all' ? '全部' : g === 'ungrouped' ? '未分组' : g}
+            </button>
+          {/each}
+          <button class="mobile-group mobile-group-add" aria-label="新建分组" onclick={doCreateGroup}>＋</button>
+        </div>
+        <div class="mobile-list-heading">
+          <strong>{curGroup === 'all' ? '所有账号' : curGroup === 'ungrouped' ? '未分组' : curGroup}</strong>
+          <span>{filtered.length}</span>
+        </div>
+        {#if filtered.length}
+          <ul class="mobile-account-list">
+            {#each filtered as a, i (a.name)}
+              <li class="mobile-account-row" style="--i:{i}">
+                <button class="mobile-account-main" onclick={() => { current = a; mobileTab = 'current'; }}>
+                  <span class="mobile-avatar-wrap">
+                    {#if a.avatar && !avatarFailed.has(a.name)}
+                      <img class="mobile-avatar" src={avatarUrl(a)} alt="" onerror={() => onAvatarError(a.name)} />
+                    {:else}
+                      <span class="mobile-avatar" style="background:{avatarColor(a.name)}">{a.display?.[0] || a.username?.[0] || a.name[0] || '-'}</span>
+                    {/if}
+                    <i class="mobile-presence" class:online={onlineNames.has(a.name)}></i>
+                  </span>
+                  <span class="mobile-account-copy">
+                    <span class="mobile-account-name">{a.display || a.name}</span>
+                    <span class="mobile-account-sub">{a.username ? `@${a.username}` : a.phone ? `+${a.phone}` : a.state}</span>
+                  </span>
+                  {#if (a as any).poll_alive === false}<span class="mobile-state failed">失效</span>{:else if onlineNames.has(a.name)}<span class="mobile-state online">在线</span>{:else}<span class="mobile-state">离线</span>{/if}
+                  <span class="mobile-chevron" aria-hidden="true">›</span>
+                </button>
+                <button class="mobile-row-connect" aria-label={onlineNames.has(a.name) ? `切换到${a.display || a.name}` : `连接${a.display || a.name}`} onclick={() => onlineNames.has(a.name) ? onSwitch(a) : onConnect(a)}>
+                  {onlineNames.has(a.name) ? '切换' : '连接'}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <div class="mobile-empty">
+            <span class="mobile-empty-icon" aria-hidden="true">＋</span>
+            <strong>{search ? '没有匹配的账号' : '还没有账号'}</strong>
+            <span>{search ? '换个关键词试试' : '添加账号后即可在此管理连接与资料'}</span>
+            {#if !search}<button class="mobile-primary" onclick={doOpenAddAccount}>新建账号</button>{/if}
+          </div>
+        {/if}
+      {:else if mobileTab === 'current'}
+        {#if current}
+          <section class="mobile-current-card">
+            <div class="mobile-current-top">
+              <span class="mobile-current-avatar" style="background:{avatarColor(current.name)}">
+                {#if current.avatar && !avatarFailed.has(current.name)}
+                  <img src={avatarUrl(current)} alt="" onerror={() => onAvatarError(current.name)} />
+                {:else}{current.display?.[0] || current.name[0] || '-'}{/if}
+              </span>
+              <div class="mobile-current-copy">
+                <strong>{current.display || current.name}</strong>
+                <span>{current.username ? `@${current.username}` : current.phone ? `+${current.phone}` : current.name}</span>
+                <span class="mobile-current-status" class:online={onlineNames.has(current.name)}>
+                  <i></i>{onlineNames.has(current.name) ? '已连接' : connectingLabel || '未连接'}
+                </span>
+              </div>
+              <button class="mobile-more-action" aria-label="账号操作" title="账号操作" onclick={doOpenAccountFolder}>•••</button>
+            </div>
+            <div class="mobile-primary-actions">
+              {#if onlineNames.has(current.name)}
+                <button class="mobile-primary" onclick={doDisconnect}>断开连接</button>
+                <button class="mobile-secondary" onclick={doReconnect}>重新连接</button>
+              {:else}
+                <button class="mobile-primary" onclick={() => onConnect(current)}>连接账号</button>
+                <button class="mobile-secondary" onclick={doLaunchClient}>启动客户端</button>
+              {/if}
+            </div>
+          </section>
+          <div class="mobile-section-label">账号管理</div>
+          <div class="mobile-action-list">
+            <button onclick={loadProfile}><span class="mobile-action-icon mint">人</span><span><strong>个人资料</strong><small>姓名、用户名、头像与生日</small></span><b>›</b></button>
+            <button onclick={() => openMobilePanel('chat')}><span class="mobile-action-icon blue">聊</span><span><strong>消息与会话</strong><small>查看会话、收发消息</small></span><b>›</b></button>
+            <button onclick={() => openMobilePanel('2fa')}><span class="mobile-action-icon violet">盾</span><span><strong>安全设置</strong><small>两步验证、通行密钥与设备</small></span><b>›</b></button>
+            <button onclick={() => openMobilePanel('devices')}><span class="mobile-action-icon amber">端</span><span><strong>登录设备</strong><small>查看并管理已授权设备</small></span><b>›</b></button>
+          </div>
+          <div class="mobile-section-label">常用操作</div>
+          <div class="mobile-quick-grid">
+            <button onclick={() => postTask('/api/tasks/delete-contacts')}><span>删</span><strong>删联系人</strong></button>
+            <button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'users' })}><span>清</span><strong>删对话</strong></button>
+            <button onclick={doPack}><span>包</span><strong>打包账号</strong></button>
+            <button onclick={doRefreshAccountInfo}><span>刷</span><strong>刷新资料</strong></button>
+          </div>
+        {:else}
+          <div class="mobile-empty">
+            <span class="mobile-empty-icon" aria-hidden="true">◎</span>
+            <strong>尚未选择账号</strong>
+            <span>先从账号列表中选择或连接一个账号</span>
+            <button class="mobile-primary" onclick={() => (mobileTab = 'accounts')}>查看账号</button>
+          </div>
+        {/if}
+      {:else if mobileTab === 'activity'}
+        <div class="mobile-activity-head">
+          <div><strong>运行记录</strong><span>最近的连接与操作状态</span></div>
+          <button class="mobile-refresh" aria-label="刷新日志" title="刷新日志" onclick={loadLogHistory}>↻</button>
+        </div>
+        {#if progress.label}
+          <div class="mobile-progress"><span>{progress.label}</span><b>{progress.done}/{progress.total}</b><div><i style="width:{progress.total ? Math.min(100, Math.round(progress.done / progress.total * 100)) : 0}%"></i></div></div>
+        {/if}
+        {#if logs.length}
+          <ul class="mobile-log-list">
+            {#each logs as e, i (e.ts + '|' + i)}
+              <li class:error={e.level === 'error'} class:warning={e.level === 'warn'}>
+                <i></i><div><span>{e.msg}</span><time>{e.ts ? e.ts.slice(11, 19) : ''}</time></div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <div class="mobile-empty compact"><strong>暂无运行记录</strong><span>连接账号或执行操作后，状态会显示在这里</span></div>
+        {/if}
+      {:else}
+        <div class="mobile-section-label">偏好设置</div>
+        <div class="mobile-action-list">
+          <button onclick={loadSettings}><span class="mobile-action-icon blue">设</span><span><strong>程序设置</strong><small>外观、代理、白名单与打包</small></span><b>›</b></button>
+          <button onclick={toggleTheme}><span class="mobile-action-icon violet">◐</span><span><strong>切换外观</strong><small>当前：{themeMode === 'dark' ? '深色' : '浅色'}</small></span><b>›</b></button>
+          <button onclick={() => openMobilePanel('join')}><span class="mobile-action-icon mint">群</span><span><strong>群组与频道</strong><small>管理常用加入链接</small></span><b>›</b></button>
+          <button onclick={doOpenAddAccount}><span class="mobile-action-icon amber">＋</span><span><strong>新建账号</strong><small>导入文件或扫码登录</small></span><b>›</b></button>
+          <button onclick={() => openMobilePanel('log')}><span class="mobile-action-icon slate">≡</span><span><strong>运行日志</strong><small>查看程序状态与错误</small></span><b>›</b></button>
+        </div>
+        <div class="mobile-version">TG小号工具箱{appVersion ? ` · v${appVersion}` : ''}</div>
+      {/if}
+      </div>
+      {/key}
+    </main>
+  {/if}
+
+  <nav class="mobile-nav" aria-label="主导航">
+    <button class:active={mobileTab === 'accounts' && !mobilePanelOpen} aria-current={mobileTab === 'accounts' && !mobilePanelOpen ? 'page' : undefined} onclick={() => { mobilePanelOpen = false; mobileTab = 'accounts'; }}><span aria-hidden="true">▦</span><small>账号</small></button>
+    <button class:active={mobileTab === 'current' && !mobilePanelOpen} aria-current={mobileTab === 'current' && !mobilePanelOpen ? 'page' : undefined} onclick={() => { mobilePanelOpen = false; mobileTab = 'current'; }}><span aria-hidden="true">◉</span><small>当前</small></button>
+    <button class:active={mobileTab === 'activity' && !mobilePanelOpen} aria-current={mobileTab === 'activity' && !mobilePanelOpen ? 'page' : undefined} onclick={() => { mobilePanelOpen = false; mobileTab = 'activity'; }}><span aria-hidden="true">≡</span><small>动态</small></button>
+    <button class:active={mobileTab === 'more' && !mobilePanelOpen} aria-current={mobileTab === 'more' && !mobilePanelOpen ? 'page' : undefined} onclick={() => { mobilePanelOpen = false; mobileTab = 'more'; }}><span aria-hidden="true">•••</span><small>更多</small></button>
+  </nav>
+</div>
+
+<svelte:window onmousemove={onWinMouseMove} onmouseup={onWinMouseUp} /><div class="layout" class:mobile-panel-open={mobilePanelOpen}>
   <aside class="left" style="width:{leftW}px" ondragover={onDragOver} ondrop={onDrop} onclick={closeCtx}>
     <div class="groups">
       {#each ['all', 'ungrouped', ...Object.keys(groups)] as g}
@@ -2082,6 +2277,11 @@
   <div class="splitter" onmousedown={(e) => startDrag(e, 'mid')}></div>
 
   <section class="right">
+    {#if mobilePanelOpen}
+      <div class="mobile-panel-bar">
+        <button class="mobile-panel-back" aria-label="返回" onclick={closeMobilePanel}>‹ 返回</button>
+      </div>
+    {/if}
     {#if rightView === 'log'}
       <div class="sec-head">
         <h3>日志</h3>
@@ -2720,7 +2920,63 @@
 
 {#if settingsOpen}
   <div class="modal-mask" onclick={() => (settingsOpen = false)}>
-    <div class="modal settings-modal" onclick={(e) => e.stopPropagation()}>
+    <div class="modal settings-modal" class:set-mobile-sub={mobileSettingsSection !== null} onclick={(e) => e.stopPropagation()}>
+      <div class="set-mobile-head">
+        {#if mobileSettingsSection !== null}
+          <button class="set-mobile-back" aria-label="返回设置列表" onclick={() => (mobileSettingsSection = null)}>‹</button>
+        {/if}
+        <strong>{mobileSettingsSection !== null ? settingsInfo().title : '设置'}</strong>
+        <button class="set-mobile-close" aria-label="关闭设置" onclick={() => { settingsOpen = false; mobileSettingsSection = null; }}>✕</button>
+      </div>
+      <div class="set-mobile-root">
+        <div class="set-mobile-group-label">配置</div>
+        <div class="set-mobile-group">
+          <button onclick={() => openSettingsSection('general')}>
+            <span class="set-mobile-ico">⚙</span>
+            <span class="set-mobile-copy"><strong>通用</strong><small>打包命名、压缩密码、日志等级</small></span>
+            <span class="set-mobile-value">{settings.log_level === 'debug' ? '调试' : '常规'}</span>
+            <b aria-hidden="true">›</b>
+          </button>
+          <button onclick={() => openSettingsSection('appearance')}>
+            <span class="set-mobile-ico">◐</span>
+            <span class="set-mobile-copy"><strong>外观</strong><small>界面模式与色彩主题</small></span>
+            <span class="set-mobile-value">{themeMode === 'dark' ? '深色' : '浅色'}</span>
+            <b aria-hidden="true">›</b>
+          </button>
+          <button onclick={() => openSettingsSection('proxy')}>
+            <span class="set-mobile-ico">⇄</span>
+            <span class="set-mobile-copy"><strong>代理</strong><small>Telegram 连接使用的网络代理</small></span>
+            <span class="set-mobile-value">{settings.proxy_mode && settings.proxy_mode !== 'none' ? `${settings.proxy_host || '已配置'}:${settings.proxy_port || ''}` : '未启用'}</span>
+            <b aria-hidden="true">›</b>
+          </button>
+        </div>
+
+        <div class="set-mobile-group-label">工具</div>
+        <div class="set-mobile-group">
+          <button onclick={() => openSettingsSection('join')}>
+            <span class="set-mobile-ico">↗</span>
+            <span class="set-mobile-copy"><strong>加群频道</strong><small>常用群组与频道链接</small></span>
+            <span class="set-mobile-value">{joinEntries.length} 个</span>
+            <b aria-hidden="true">›</b>
+          </button>
+          <button onclick={() => openSettingsSection('whitelist')}>
+            <span class="set-mobile-ico">✓</span>
+            <span class="set-mobile-copy"><strong>白名单</strong><small>删除时永久保留的对象</small></span>
+            <span class="set-mobile-value">{wlUsers.length + wlGroups.length} 项</span>
+            <b aria-hidden="true">›</b>
+          </button>
+        </div>
+
+        <div class="set-mobile-group-label">帮助</div>
+        <div class="set-mobile-group">
+          <button onclick={() => openSettingsSection('about')}>
+            <span class="set-mobile-ico">i</span>
+            <span class="set-mobile-copy"><strong>关于</strong><small>版本与仓库地址</small></span>
+            <span class="set-mobile-value">v{appVersion || '…'}</span>
+            <b aria-hidden="true">›</b>
+          </button>
+        </div>
+      </div>
       <nav class="set-nav" aria-label="设置导航">
         <div class="set-nav-brand">
           <div class="set-nav-brand-mark">TG</div>
@@ -6337,6 +6593,1626 @@
 
     .send-btn {
       flex: 0 0 auto;
+    }
+  }
+
+  /* ==================== 手机端壳（窄屏专用，宽屏完全隐藏） ==================== */
+  .mobile-app {
+    display: none;
+  }
+
+  /* 设置弹窗的移动端头部与列表，仅窄屏显示 */
+  .set-mobile-head,
+  .set-mobile-root {
+    display: none;
+  }
+
+  @media (max-width: 899px) {
+    /* 手机壳自带顶栏，隐藏桌面顶栏 */
+    .topbar {
+      display: none !important;
+    }
+
+    /* 窄屏下不再渲染桌面三栏，改用手机壳 */
+    .layout {
+      display: none !important;
+    }
+
+    /* 打开详情面板时，整屏呈现原有的右侧面板 */
+    .layout.mobile-panel-open {
+      display: block !important;
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      padding: 0;
+      background: var(--md-sys-color-surface);
+    }
+
+    .layout.mobile-panel-open .left,
+    .layout.mobile-panel-open .mid,
+    .layout.mobile-panel-open .splitter {
+      display: none !important;
+    }
+
+    .layout.mobile-panel-open .right {
+      width: 100% !important;
+      height: 100%;
+      max-height: none;
+      border-radius: 0;
+      box-shadow: none;
+      padding: 14px 14px calc(84px + env(safe-area-inset-bottom, 0px));
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    .mobile-app {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+      background: var(--md-sys-color-surface);
+    }
+
+    /* ---------- 顶部栏 ---------- */
+    .mobile-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 0 0 auto;
+      padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+      background: var(--md-sys-color-surface);
+    }
+
+    .mobile-brand-mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      flex: 0 0 auto;
+      border-radius: 11px;
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+    }
+
+    .mobile-heading {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .mobile-heading strong {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mobile-heading span {
+      font-size: 11.5px;
+      color: var(--md-sys-color-on-surface-variant);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mobile-conn {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: var(--md-sys-color-outline-variant);
+    }
+
+    .mobile-conn.on {
+      background: var(--status-online);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--status-online) 16%, transparent);
+    }
+
+    .mobile-add,
+    .mobile-back,
+    .mobile-filter,
+    .mobile-refresh,
+    .mobile-more-action {
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 12px;
+      background: var(--md-sys-color-surface-container);
+      color: var(--md-sys-color-on-surface);
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .mobile-add {
+      background: var(--md-sys-color-primary-container);
+      color: var(--md-sys-color-on-primary-container);
+      font-size: 20px;
+    }
+
+    .mobile-back {
+      background: transparent;
+      font-size: 26px;
+      padding-bottom: 4px;
+    }
+
+    .mobile-header-spacer {
+      width: 36px;
+      flex: 0 0 auto;
+    }
+
+    /* ---------- 内容区 ---------- */
+    .mobile-main {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      padding: 4px 16px calc(84px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .mobile-account-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .mobile-search-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 42px;
+      padding: 0 12px;
+      border-radius: 13px;
+      background: var(--md-sys-color-surface-container);
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 15px;
+    }
+
+    .mobile-search {
+      flex: 1 1 auto;
+      min-width: 0;
+      border: none;
+      background: transparent;
+      color: var(--md-sys-color-on-surface);
+      font-size: 14px;
+      outline: none;
+    }
+
+    .mobile-clear {
+      border: none;
+      background: transparent;
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 17px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0 2px;
+    }
+
+    .mobile-groups {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding-bottom: 12px;
+      margin-bottom: 4px;
+    }
+
+    .mobile-groups::-webkit-scrollbar {
+      display: none;
+    }
+
+    .mobile-group {
+      flex: 0 0 auto;
+      height: 34px;
+      padding: 0 14px;
+      border: none;
+      border-radius: 999px;
+      background: var(--md-sys-color-surface-container);
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .mobile-group.active {
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
+    }
+
+    .mobile-group-add {
+      width: 34px;
+      padding: 0;
+      font-size: 16px;
+    }
+
+    .mobile-list-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 6px 2px 8px;
+    }
+
+    .mobile-list-heading strong {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--md-sys-color-on-surface-variant);
+      letter-spacing: 0.2px;
+    }
+
+    .mobile-list-heading span {
+      font-size: 12px;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    /* ---------- 账号行 ---------- */
+    .mobile-account-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mobile-account-row {
+      display: flex;
+      align-items: stretch;
+      gap: 4px;
+      border-radius: 16px;
+      background: var(--md-sys-color-surface-container-lowest);
+      border: 1px solid var(--divider);
+      overflow: hidden;
+    }
+
+    .mobile-account-main {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      flex: 1 1 auto;
+      min-width: 0;
+      padding: 12px 8px 12px 12px;
+      border: none;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .mobile-account-main:active {
+      background: var(--state-layer);
+    }
+
+    .mobile-avatar-wrap {
+      position: relative;
+      flex: 0 0 auto;
+    }
+
+    .mobile-avatar {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      object-fit: cover;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .mobile-presence {
+      position: absolute;
+      right: -2px;
+      bottom: -2px;
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      border: 2px solid var(--md-sys-color-surface-container-lowest);
+      background: var(--md-sys-color-outline-variant);
+    }
+
+    .mobile-presence.online {
+      background: var(--status-online);
+    }
+
+    .mobile-account-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .mobile-account-name {
+      font-size: 14.5px;
+      font-weight: 650;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mobile-account-sub {
+      font-size: 12px;
+      color: var(--md-sys-color-on-surface-variant);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mobile-state {
+      flex: 0 0 auto;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--md-sys-color-surface-container);
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .mobile-state.online {
+      background: color-mix(in srgb, var(--status-online) 14%, transparent);
+      color: var(--status-online);
+    }
+
+    .mobile-state.failed {
+      background: color-mix(in srgb, var(--md-sys-color-error) 12%, transparent);
+      color: var(--md-sys-color-error);
+    }
+
+    .mobile-chevron {
+      flex: 0 0 auto;
+      color: var(--md-sys-color-outline);
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .mobile-row-connect {
+      flex: 0 0 auto;
+      padding: 0 13px;
+      border: none;
+      border-left: 1px solid var(--divider);
+      background: transparent;
+      color: var(--md-sys-color-primary);
+      font-size: 12.5px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    .mobile-row-connect:active {
+      background: var(--state-layer);
+    }
+
+    /* ---------- 当前账号 ---------- */
+    .mobile-current-card {
+      margin: 4px 0 18px;
+      padding: 16px;
+      border-radius: 20px;
+      background: linear-gradient(160deg, var(--md-sys-color-primary-container), var(--md-sys-color-surface-container-lowest));
+      border: 1px solid var(--divider);
+    }
+
+    .mobile-current-top {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .mobile-current-avatar {
+      display: grid;
+      place-items: center;
+      width: 54px;
+      height: 54px;
+      flex: 0 0 auto;
+      border-radius: 18px;
+      overflow: hidden;
+      color: #fff;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .mobile-current-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .mobile-current-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .mobile-current-copy strong {
+      font-size: 17px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mobile-current-copy > span {
+      font-size: 12px;
+      color: var(--md-sys-color-on-surface-variant);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mobile-current-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px !important;
+      font-weight: 600;
+    }
+
+    .mobile-current-status i {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--md-sys-color-outline-variant);
+    }
+
+    .mobile-current-status.online {
+      color: var(--status-online);
+    }
+
+    .mobile-current-status.online i {
+      background: var(--status-online);
+    }
+
+    .mobile-primary-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .mobile-primary,
+    .mobile-secondary {
+      flex: 1 1 0;
+      height: 44px;
+      border-radius: 14px;
+      border: none;
+      font-size: 14px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    .mobile-primary {
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
+    }
+
+    .mobile-primary:active {
+      filter: brightness(0.94);
+    }
+
+    .mobile-secondary {
+      background: var(--md-sys-color-surface-container-lowest);
+      color: var(--md-sys-color-primary);
+      border: 1px solid color-mix(in srgb, var(--md-sys-color-primary) 30%, transparent);
+    }
+
+    /* ---------- 分组标题 / 操作列表 ---------- */
+    .mobile-section-label {
+      padding: 4px 4px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .mobile-action-list {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 18px;
+      border-radius: 18px;
+      background: var(--md-sys-color-surface-container-lowest);
+      border: 1px solid var(--divider);
+      overflow: hidden;
+    }
+
+    .mobile-action-list button {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 14px;
+      border: none;
+      border-bottom: 1px solid var(--divider);
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .mobile-action-list button:last-child {
+      border-bottom: none;
+    }
+
+    .mobile-action-list button:active {
+      background: var(--state-layer);
+    }
+
+    .mobile-action-list button > span:nth-child(2) {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .mobile-action-list strong {
+      font-size: 14.5px;
+      font-weight: 650;
+    }
+
+    .mobile-action-list small {
+      font-size: 12px;
+      color: var(--md-sys-color-on-surface-variant);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mobile-action-list b {
+      flex: 0 0 auto;
+      color: var(--md-sys-color-outline);
+      font-size: 17px;
+      font-weight: 400;
+    }
+
+    .mobile-action-icon {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      flex: 0 0 auto;
+      border-radius: 11px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .mobile-action-icon.blue { background: #DCE6FF; color: #174A9C; }
+    .mobile-action-icon.mint { background: #D6F5E3; color: #176B45; }
+    .mobile-action-icon.violet { background: #EADDFF; color: #4A3B8F; }
+    .mobile-action-icon.amber { background: #FFE8C2; color: #7A4B00; }
+    .mobile-action-icon.slate { background: #E2E5EC; color: #44474F; }
+
+    .mobile-quick-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .mobile-quick-grid button {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 13px 12px;
+      border-radius: 15px;
+      border: 1px solid var(--divider);
+      background: var(--md-sys-color-surface-container-lowest);
+      color: inherit;
+      cursor: pointer;
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+
+    .mobile-quick-grid button:active {
+      background: var(--state-layer);
+    }
+
+    .mobile-quick-grid span {
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      flex: 0 0 auto;
+      border-radius: 9px;
+      background: var(--md-sys-color-surface-container);
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 12px;
+    }
+
+    /* ---------- 动态 ---------- */
+    .mobile-activity-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 2px 12px;
+    }
+
+    .mobile-activity-head > div {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .mobile-activity-head strong {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .mobile-activity-head span {
+      font-size: 12px;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .mobile-progress {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+      padding: 12px 13px;
+      border-radius: 14px;
+      background: var(--md-sys-color-surface-container-lowest);
+      border: 1px solid var(--divider);
+      font-size: 12.5px;
+    }
+
+    .mobile-progress > span {
+      font-weight: 600;
+    }
+
+    .mobile-progress > b {
+      font-size: 11.5px;
+      color: var(--md-sys-color-on-surface-variant);
+      font-weight: 500;
+    }
+
+    .mobile-progress > div {
+      height: 5px;
+      border-radius: 999px;
+      background: var(--md-sys-color-surface-container);
+      overflow: hidden;
+    }
+
+    .mobile-progress i {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--md-sys-color-primary);
+      transition: width 0.25s ease;
+    }
+
+    .mobile-log-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .mobile-log-list li {
+      display: flex;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: var(--md-sys-color-surface-container-lowest);
+      border: 1px solid var(--divider);
+    }
+
+    .mobile-log-list li > i {
+      width: 6px;
+      height: 6px;
+      flex: 0 0 auto;
+      margin-top: 6px;
+      border-radius: 999px;
+      background: var(--md-sys-color-outline-variant);
+    }
+
+    .mobile-log-list li.warning > i { background: #F2994A; }
+    .mobile-log-list li.error > i { background: var(--md-sys-color-error); }
+
+    .mobile-log-list li > div {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .mobile-log-list span {
+      font-size: 13px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .mobile-log-list li.error span {
+      color: var(--md-sys-color-error);
+    }
+
+    .mobile-log-list time {
+      font-size: 11px;
+      color: var(--md-sys-color-on-surface-variant);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .mobile-version {
+      padding: 18px 0 8px;
+      text-align: center;
+      font-size: 11.5px;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    /* ---------- 空状态 ---------- */
+    .mobile-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 7px;
+      padding: 46px 22px;
+      text-align: center;
+    }
+
+    .mobile-empty.compact {
+      padding: 34px 22px;
+    }
+
+    .mobile-empty-icon {
+      display: grid;
+      place-items: center;
+      width: 52px;
+      height: 52px;
+      margin-bottom: 4px;
+      border-radius: 17px;
+      background: var(--md-sys-color-surface-container);
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 22px;
+    }
+
+    .mobile-empty strong {
+      font-size: 15px;
+      font-weight: 650;
+    }
+
+    .mobile-empty > span:not(.mobile-empty-icon) {
+      font-size: 12.5px;
+      color: var(--md-sys-color-on-surface-variant);
+      max-width: 260px;
+      line-height: 1.5;
+    }
+
+    .mobile-empty .mobile-primary {
+      margin-top: 10px;
+      padding: 0 26px;
+      flex: 0 0 auto;
+      width: auto;
+      height: 42px;
+    }
+
+    /* ---------- 底部导航 ---------- */
+    .mobile-nav {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 30;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+      background: color-mix(in srgb, var(--md-sys-color-surface) 92%, transparent);
+      backdrop-filter: blur(14px);
+      border-top: 1px solid var(--divider);
+    }
+
+    .mobile-nav button {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      padding: 7px 0;
+      border: none;
+      background: transparent;
+      color: var(--md-sys-color-on-surface-variant);
+      cursor: pointer;
+    }
+
+    .mobile-nav button span {
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .mobile-nav button small {
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .mobile-nav button.active {
+      color: var(--md-sys-color-primary);
+    }
+
+    .mobile-nav button.active span {
+      transform: translateY(-1px);
+    }
+
+    .mobile-panel-bar {
+      position: sticky;
+      top: calc(-14px);
+      z-index: 5;
+      margin: -14px -14px 10px;
+      padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px;
+      background: color-mix(in srgb, var(--md-sys-color-surface) 94%, transparent);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--divider);
+    }
+
+    .mobile-panel-back {
+      display: inline-flex;
+      align-items: center;
+      height: 34px;
+      padding: 0 14px 0 10px;
+      border: 1px solid var(--divider);
+      border-radius: 999px;
+      background: var(--md-sys-color-surface-container-lowest);
+      color: var(--md-sys-color-primary);
+      font-size: 13px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    .layout.mobile-panel-open .sec-head .back {
+      display: none;
+    }
+
+    /* ---------- 设置：手机端改为「分组列表 → 子页」钻取结构 ---------- */
+    .set-mobile-head {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex: 0 0 auto;
+      padding: calc(8px + env(safe-area-inset-top, 0px)) 8px 8px 12px;
+      background: var(--md-sys-color-surface);
+    }
+
+    .set-mobile-head strong {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-size: 20px;
+      font-weight: 650;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .set-mobile-back,
+    .set-mobile-close {
+      display: grid;
+      place-items: center;
+      width: 48px;
+      height: 48px;
+      flex: 0 0 auto;
+      border: none;
+      border-radius: 14px;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .set-mobile-back {
+      color: var(--md-sys-color-primary);
+      font-size: 26px;
+      padding-bottom: 6px;
+    }
+
+    .set-mobile-close {
+      margin-left: auto;
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 16px;
+    }
+
+    .modal-mask {
+      align-items: stretch;
+      justify-content: stretch;
+      padding: 0;
+    }
+
+    .settings-modal {
+      display: flex;
+      flex-direction: column;
+      width: 100vw;
+      max-width: none;
+      height: 100vh;
+      max-height: none;
+      border-radius: 0;
+      background: var(--md-sys-color-surface);
+    }
+
+    /* 手机端不再使用横向标签，改为列表钻取 */
+    .set-nav {
+      display: none;
+    }
+
+    .set-mobile-root {
+      display: none;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 4px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .settings-modal:not(.set-mobile-sub) .set-mobile-root {
+      display: block;
+    }
+
+    .set-mobile-group-label {
+      padding: 16px 4px 8px;
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .set-mobile-group {
+      display: flex;
+      flex-direction: column;
+      border-radius: 16px;
+      border: 1px solid var(--md-sys-color-outline-variant);
+      background: var(--md-sys-color-surface-container-lowest);
+      overflow: hidden;
+    }
+
+    .set-mobile-group button {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      min-height: 64px;
+      padding: 12px 16px;
+      border: none;
+      border-bottom: 1px solid var(--md-sys-color-outline-variant);
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition: background-color 150ms cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    .set-mobile-group button:last-child {
+      border-bottom: none;
+    }
+
+    .set-mobile-group button:active {
+      background: var(--state-layer);
+    }
+
+    .set-mobile-ico {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      flex: 0 0 auto;
+      border-radius: 12px;
+      background: var(--md-sys-color-surface-container-high);
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 16px;
+    }
+
+    .set-mobile-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .set-mobile-copy strong {
+      font-size: 16px;
+      line-height: 20px;
+      font-weight: 600;
+    }
+
+    .set-mobile-copy small {
+      font-size: 12px;
+      line-height: 16px;
+      color: var(--md-sys-color-on-surface-variant);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .set-mobile-value {
+      flex: 0 0 auto;
+      max-width: 40%;
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .set-mobile-group button > b {
+      flex: 0 0 auto;
+      color: var(--md-sys-color-outline);
+      font-size: 18px;
+      font-weight: 400;
+    }
+
+    /* 子页内容 */
+    .set-content {
+      display: none;
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
+      padding: 4px 16px 0;
+    }
+
+    .settings-modal.set-mobile-sub .set-content {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .set-content-body {
+      padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* 子页标题已在顶栏显示，隐藏重复的标题块 */
+    .set-heading {
+      display: none;
+    }
+
+    .set-row {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .set-input,
+    .set-select {
+      width: 100%;
+    }
+
+    .set-footer {
+      position: sticky;
+      bottom: 0;
+      padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px));
+      background: var(--md-sys-color-surface);
+    }
+
+    .set-close {
+      display: none;
+    }
+
+    /* ==================== M3 / Android 规范校准 ====================
+       依据：
+       - Android 无障碍规范：可点击目标 ≥ 48×48dp
+       - Material 3 导航栏：3–5 个目标、标签常显、激活态用指示器承载
+       - Material 3 字体阶梯：title-large 22 / body-large 16 / body-medium 14 /
+         body-small 12 / label-medium 12
+       - Material 3 色彩角色：surface-container-* / on-surface-variant / primary-container
+       - 间距走 4dp 栅格，屏幕左右边距 16dp，双行列表项高 72dp
+       本段放在手机端样式之后，用同等特异性覆盖上面的临时值。 */
+
+    /* ---- 触控目标：所有可点元素不得小于 48dp ---- */
+    .mobile-add,
+    .mobile-back,
+    .mobile-filter,
+    .mobile-refresh,
+    .mobile-more-action,
+    .mobile-clear {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      font-size: 20px;
+    }
+
+    .mobile-header-spacer {
+      width: 48px;
+    }
+
+    .mobile-nav button {
+      min-height: 48px;
+      gap: 4px;
+      padding: 6px 0;
+    }
+
+    .mobile-account-main {
+      min-height: 72px;
+      padding: 12px 8px 12px 16px;
+    }
+
+    .mobile-row-connect {
+      min-width: 64px;
+      min-height: 72px;
+    }
+
+    .mobile-action-list button {
+      min-height: 56px;
+      padding: 12px 16px;
+    }
+
+    .mobile-quick-grid button {
+      min-height: 56px;
+      padding: 12px 12px;
+    }
+
+    .mobile-primary,
+    .mobile-secondary,
+    .mobile-panel-back,
+    .set-mobile-close {
+      min-height: 48px;
+    }
+
+    .set-mobile-close {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      font-size: 16px;
+    }
+
+    .mobile-primary,
+    .mobile-secondary {
+      height: 48px;
+      font-size: 15px;
+    }
+
+    .mobile-group {
+      min-height: 40px;
+      padding: 0 16px;
+      font-size: 14px;
+    }
+
+    /* ---- 字体阶梯 ---- */
+    .mobile-heading strong {
+      font-size: 22px;
+      line-height: 28px;
+      font-weight: 650;
+      letter-spacing: 0;
+    }
+
+    .mobile-heading span {
+      font-size: 12px;
+      line-height: 16px;
+    }
+
+    .mobile-search {
+      font-size: 16px;
+    }
+
+    .mobile-list-heading strong {
+      font-size: 14px;
+      letter-spacing: 0.1px;
+    }
+
+    .mobile-list-heading span {
+      font-size: 12px;
+    }
+
+    .mobile-account-name {
+      font-size: 16px;
+      line-height: 20px;
+      font-weight: 600;
+    }
+
+    .mobile-account-sub {
+      font-size: 14px;
+      line-height: 18px;
+    }
+
+    .mobile-state {
+      font-size: 12px;
+      padding: 4px 10px;
+    }
+
+    .mobile-current-copy strong {
+      font-size: 22px;
+      line-height: 28px;
+    }
+
+    .mobile-current-copy > span {
+      font-size: 14px;
+      line-height: 18px;
+    }
+
+    .mobile-current-status {
+      font-size: 12px !important;
+    }
+
+    .mobile-section-label {
+      font-size: 14px;
+      padding: 8px 4px 8px;
+    }
+
+    .mobile-action-list strong {
+      font-size: 16px;
+      line-height: 20px;
+    }
+
+    .mobile-action-list small {
+      font-size: 14px;
+      line-height: 18px;
+    }
+
+    .mobile-quick-grid button {
+      font-size: 14px;
+    }
+
+    .mobile-activity-head strong {
+      font-size: 18px;
+    }
+
+    .mobile-activity-head span,
+    .mobile-progress,
+    .mobile-progress > b {
+      font-size: 12px;
+    }
+
+    .mobile-log-list span {
+      font-size: 14px;
+      line-height: 20px;
+    }
+
+    .mobile-log-list time,
+    .mobile-version,
+    .mobile-empty > span:not(.mobile-empty-icon) {
+      font-size: 12px;
+    }
+
+    .mobile-empty strong {
+      font-size: 16px;
+    }
+
+    /* ---- 底部导航：M3 激活指示器（图标下的胶囊） ---- */
+    .mobile-nav button span {
+      display: grid;
+      place-items: center;
+      width: 56px;
+      height: 28px;
+      border-radius: 999px;
+      font-size: 18px;
+      transition: background-color 0.18s ease;
+    }
+
+    .mobile-nav button.active span {
+      background: var(--md-sys-color-secondary-container);
+      color: var(--md-sys-color-on-secondary-container);
+      transform: none;
+    }
+
+    .mobile-nav button small {
+      font-size: 12px;
+      line-height: 16px;
+      font-weight: 500;
+    }
+
+    .mobile-nav button.active small {
+      font-weight: 600;
+    }
+
+    /* ---- 色彩：改用 M3 角色，去掉硬编码色值 ---- */
+    .mobile-action-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      font-size: 14px;
+    }
+
+    .mobile-action-icon.blue,
+    .mobile-action-icon.mint,
+    .mobile-action-icon.violet,
+    .mobile-action-icon.amber,
+    .mobile-action-icon.slate {
+      background: var(--md-sys-color-surface-container-high);
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .mobile-quick-grid span {
+      background: var(--md-sys-color-surface-container-high);
+      color: var(--md-sys-color-on-surface-variant);
+      width: 32px;
+      height: 32px;
+      font-size: 13px;
+    }
+
+    .mobile-current-card {
+      background: var(--md-sys-color-surface-container-low);
+      border-color: var(--md-sys-color-outline-variant);
+      padding: 16px;
+      border-radius: 24px;
+    }
+
+    .mobile-account-row {
+      border-color: var(--md-sys-color-outline-variant);
+      border-radius: 16px;
+    }
+
+    .mobile-action-list,
+    .mobile-log-list li,
+    .mobile-progress {
+      border-color: var(--md-sys-color-outline-variant);
+      border-radius: 16px;
+    }
+
+    /* ---- 间距：4dp 栅格 ---- */
+    .mobile-main {
+      padding: 8px 16px calc(96px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .mobile-header {
+      padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px;
+      gap: 12px;
+    }
+
+    .mobile-account-toolbar {
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .mobile-search-wrap {
+      height: 48px;
+      padding: 0 16px;
+      border-radius: 16px;
+      font-size: 18px;
+    }
+
+    .mobile-groups {
+      gap: 8px;
+      padding-bottom: 8px;
+    }
+
+    .mobile-account-list {
+      gap: 8px;
+    }
+
+    .mobile-action-list {
+      margin-bottom: 24px;
+    }
+
+    .mobile-quick-grid {
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .mobile-empty {
+      padding: 48px 24px;
+      gap: 8px;
+    }
+
+    .mobile-nav {
+      padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* ---- 无障碍：键盘/辅助功能焦点可见 ---- */
+    .mobile-app button:focus-visible,
+    .mobile-app input:focus-visible {
+      outline: 2px solid var(--md-sys-color-primary);
+      outline-offset: 2px;
+    }
+
+    .mobile-row-connect:focus-visible {
+      outline-offset: -2px;
+    }
+  }
+
+  /* ==================== 动效（Material 3 motion） ====================
+     时长取自 M3 motion tokens：short4 = 200ms，medium1 = 250ms，medium2 = 300ms；
+     缓动：standard = cubic-bezier(0.2, 0, 0, 1)，
+           emphasized-decelerate = cubic-bezier(0.05, 0.7, 0.1, 1)。
+     尊重系统「减弱动态效果」设置。 */
+
+  @keyframes m-page-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes m-row-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes m-pill-in {
+    0% {
+      transform: scaleX(0.4);
+      opacity: 0.4;
+    }
+    100% {
+      transform: scaleX(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes m-sheet-in {
+    from {
+      transform: translateY(18px);
+      opacity: 0;
+    }
+    to {
+      transform: none;
+      opacity: 1;
+    }
+  }
+
+  @keyframes m-mask-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (max-width: 899px) {
+    /* Android WebView 默认会画一层蓝色点击高亮，与 M3 状态层冲突，关掉后用自己的状态层 */
+    .mobile-app,
+    .mobile-app * {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .mobile-app button,
+    .mobile-app input {
+      touch-action: manipulation;
+    }
+
+    /* 底栏按压态：未选中时给一层轻状态层 */
+    .mobile-nav button:active span {
+      background: var(--md-sys-color-surface-container-high);
+    }
+
+    .mobile-nav button.active:active span {
+      background: var(--md-sys-color-secondary-container);
+      filter: brightness(0.97);
+    }
+
+    /* 页签切换：整页淡入上移 */
+    .mobile-page {
+      animation: m-page-in 200ms cubic-bezier(0.2, 0, 0, 1) both;
+    }
+
+    /* 账号列表：逐行错峰入场 */
+    .mobile-account-row {
+      animation: m-row-in 200ms cubic-bezier(0.2, 0, 0, 1) both;
+      animation-delay: calc(var(--i, 0) * 24ms);
+      transition: transform 120ms cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    .mobile-action-list button,
+    .mobile-quick-grid button,
+    .mobile-group {
+      transition: background-color 150ms cubic-bezier(0.2, 0, 0, 1),
+        transform 120ms cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    /* 按压反馈：轻微缩放 + 状态层 */
+    .mobile-account-row:active,
+    .mobile-action-list button:active,
+    .mobile-quick-grid button:active,
+    .mobile-primary:active,
+    .mobile-secondary:active,
+    .mobile-row-connect:active {
+      transform: scale(0.975);
+    }
+
+    .mobile-primary,
+    .mobile-secondary {
+      transition: transform 120ms cubic-bezier(0.2, 0, 0, 1),
+        filter 150ms linear;
+    }
+
+    /* 底栏：指示器缩放出现，标签颜色渐变 */
+    .mobile-nav button span {
+      transition: background-color 200ms cubic-bezier(0.2, 0, 0, 1),
+        color 200ms cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    .mobile-nav button.active span {
+      animation: m-pill-in 250ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
+    }
+
+    .mobile-nav button small {
+      transition: color 200ms cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    /* 当前账号卡：入场 */
+    .mobile-current-card {
+      animation: m-sheet-in 250ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
+    }
+
+    /* 详情面板：底部上滑 */
+    .layout.mobile-panel-open {
+      animation: m-mask-in 180ms linear both;
+    }
+
+    .layout.mobile-panel-open .right {
+      animation: m-sheet-in 300ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
+    }
+
+    /* 设置弹窗：整屏上滑 + 遮罩淡入 */
+    .modal-mask {
+      animation: m-mask-in 200ms linear both;
+    }
+
+    .settings-modal {
+      animation: m-sheet-in 280ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
+    }
+
+    /* 进度条：平滑推进 */
+    .mobile-progress i {
+      transition: width 300ms cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    /* 日志：新行淡入 */
+    .mobile-log-list li {
+      animation: m-row-in 180ms cubic-bezier(0.2, 0, 0, 1) both;
+    }
+
+    /* 顶部连接状态点：呼吸提示 */
+    .mobile-conn.on {
+      animation: m-conn-pulse 2.4s ease-in-out infinite;
+    }
+  }
+
+  @keyframes m-conn-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-online) 40%, transparent);
+    }
+    50% {
+      box-shadow: 0 0 0 5px color-mix(in srgb, var(--status-online) 0%, transparent);
+    }
+  }
+
+  /* 系统开启「减弱动态效果」时，动画与过渡退化为瞬时 */
+  @media (prefers-reduced-motion: reduce) {
+    .mobile-page,
+    .mobile-account-row,
+    .mobile-current-card,
+    .mobile-log-list li,
+    .mobile-nav button.active span,
+    .layout.mobile-panel-open,
+    .layout.mobile-panel-open .right,
+    .modal-mask,
+    .settings-modal,
+    .mobile-conn.on {
+      animation: none !important;
+    }
+
+    .mobile-account-row,
+    .mobile-action-list button,
+    .mobile-quick-grid button,
+    .mobile-group,
+    .mobile-primary,
+    .mobile-secondary,
+    .mobile-nav button span,
+    .mobile-nav button small,
+    .mobile-progress i {
+      transition: none !important;
+    }
+
+    .mobile-account-row:active,
+    .mobile-action-list button:active,
+    .mobile-quick-grid button:active,
+    .mobile-primary:active,
+    .mobile-secondary:active,
+    .mobile-row-connect:active {
+      transform: none;
     }
   }
 </style>

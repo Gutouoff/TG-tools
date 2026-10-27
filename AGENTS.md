@@ -61,3 +61,27 @@ CLI（tg_tool.py）仍可用；Tkinter GUI（tg_ui.py）已归档至 `legacy/`�
 - **Z 微调**：bug 修复、界面小改
 - **预发布**：大/小版本发布前先出 `-beta.N`（如 `1.1.0-beta.1`）给测试者;**beta 不做不可逆配置迁移**（保持向后兼容,退回正式版不坏数据）
 - 发布节奏：改功能 → bump `APP_VERSION` → 构建 → git tag `v{版本}` → 推送 tag
+
+
+# UI 重设计任务约束（本任务期间生效）
+
+## 目标
+只重做前端外观（视觉、布局、样式），不改任何功能与行为。
+
+## 禁止修改（只读）
+- 根目录所有 *.py（server.py、web_main.py、tg_engine.py、tg_tool.py、cable.py、tg_profile.py、tl_patch.py、tdata2session.py）
+- legacy/、docs/releases/
+- TG工具箱Web.spec、*.bat、requirements.txt
+- webapp/ 中 <script> 里的业务逻辑、api.ts 的接口与数据结构
+- vite 配置中的 base 与输出目录
+- 界面文本.txt 里已有的 t0xx key（不得改名、删除、复用到别的含义）
+
+## 规则
+- Svelte 5 runes 语法（$state、$derived、$props、onclick），不写 Svelte 4 语法
+- 颜色、圆角、间距、字体一律走 CSS 变量，不写死
+- 字体与图标必须本地打包，禁止任何 CDN 或外链
+- 界面文案不得硬编码，走现有的 界面文本.txt 机制
+- 运行环境是 Windows + WebView2（Chromium），可用现代 CSS
+- 状态的视觉区分（在线/离线/运行中/取消/FloodWait 等待）必须保留
+- 删除、退群、清理对话等危险操作必须保持醒目的警示样式
+- 每完成一个独立改动：npm run build 必须通过，并单独 commit
