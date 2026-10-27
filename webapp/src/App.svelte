@@ -87,6 +87,7 @@
   import AccountCard from './components/AccountCard.svelte';
   import FunctionCards from './components/FunctionCards.svelte';
   import JoinView from './components/JoinView.svelte';
+  import SecurityViews from './components/SecurityViews.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -2321,82 +2322,28 @@
         </div>
       {/if}
 
-    {:else if rightView === 'passkey'}
-      <div class="sec-head">
-        <h3>通行密钥</h3>
-        <button class="back" onclick={() => setView('log')}>日志</button>
-      </div>
-      <md-filled-button onclick={doInitPasskey}>＋ 添加通行密钥</md-filled-button>
-      {#if pkQrImg}
-        <div class="qr-box">
-          <img class="qr-img" src={pkQrImg} alt="通行密钥二维码" />
-          <p class="qr-tip">请使用<b>手机系统相机或 Google 智能镜头</b>扫描<br />（由手机密码管理器完成通行密钥注册；Telegram 客户端不参与扫码）</p>
-        </div>
-      {/if}
-      <ul class="sec-list">
-        {#each passkeys as pk}
-          <li class="sec-item">
-            <span>{pk.name || '（未命名）'}</span>
-            <button class="danger" onclick={() => doDeletePasskey(pk.id)}>删除</button>
-          </li>
-        {/each}
-      </ul>
-      {#if !passkeys.length}<p class="empty">暂无通行密钥</p>{/if}
-    {:else if rightView === '2fa'}
-      <div class="sec-head">
-        <h3>两步验证</h3>
-        <button class="back" onclick={() => setView('log')}>日志</button>
-      </div>
-      <p>当前状态：{has2fa ? '已开启' : '未开启'}</p>
-      {#if has2fa}
-        <input placeholder="当前密码" bind:value={cur2fa} />
-      {/if}
-      <input placeholder="新密码" bind:value={new2fa} />
-      <md-filled-button onclick={doSet2FA}>设置或修改</md-filled-button>
-    {:else if rightView === 'email'}
-      <div class="sec-head">
-        <h3>邮箱登录</h3>
-        <button class="back" onclick={() => setView('log')}>日志</button>
-      </div>
-      {#if boundEmail && !showEmailForm}
-        <div class="bound-box">
-          <div class="bound-label">已绑定邮箱</div>
-          <div class="bound-email">{boundEmail}</div>
-        </div>
-        <md-outlined-button onclick={() => (showEmailForm = true)}>换绑邮箱</md-outlined-button>
-      {:else}
-        {#if boundEmail}
-          <p class="set-hint">当前绑定：{boundEmail}。填写新邮箱即可完成换绑。</p>
-        {/if}
-        {#if emailPresets.length}
-          <div class="rename-quick">
-            <span class="rename-quick-label">预选邮箱：</span>
-            {#each emailPresets as p}
-              <button class="rule-chip" onclick={() => (emailInput = p)}>{p}</button>
-            {/each}
-          </div>
-        {/if}
-        <input placeholder="邮箱地址" bind:value={emailInput} />
-        <md-outlined-button onclick={doSendEmail}>发送验证码</md-outlined-button>
-        <input placeholder="验证码" bind:value={codeInput} />
-        <md-filled-button onclick={doVerifyEmail}>验证绑定</md-filled-button>
-      {/if}
-    {:else if rightView === 'devices'}
-      <div class="sec-head">
-        <h3>登录设备</h3>
-        <button class="back" onclick={() => setView('log')}>日志</button>
-      </div>
-      <ul class="sec-list">
-        {#each devices as d}
-          <li class="sec-item">
-            <span>{d.device_model || '未知设备'}{d.current ? '（本设备）' : ''}</span>
-            {#if !d.current}
-              <button class="danger" onclick={() => doDeleteDevice(d.hash)}>删除</button>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-      {#if !devices.length}<p class="empty">暂无设备</p>{/if}
+    {:else if rightView === 'passkey' || rightView === '2fa' || rightView === 'email' || rightView === 'devices'}
+      <SecurityViews
+        view={rightView}
+        onBack={() => setView('log')}
+        {passkeys}
+        pkQrImg={pkQrImg}
+        onInitPasskey={doInitPasskey}
+        onDeletePasskey={doDeletePasskey}
+        {has2fa}
+        bind:cur2fa
+        bind:new2fa
+        onSet2FA={doSet2FA}
+        {boundEmail}
+        bind:showEmailForm
+        {emailPresets}
+        bind:emailInput
+        bind:codeInput
+        onSendEmail={doSendEmail}
+        onVerifyEmail={doVerifyEmail}
+        {devices}
+        onDeleteDevice={doDeleteDevice}
+      />
     {:else if rightView === 'profile'}
       <div class="sec-head">
         <h3>编辑资料</h3>
