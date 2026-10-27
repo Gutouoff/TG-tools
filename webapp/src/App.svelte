@@ -77,6 +77,7 @@
     type LogLevel,
     type LogItem,
   } from './api';
+  import LogView from './components/LogView.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -2283,32 +2284,7 @@
       </div>
     {/if}
     {#if rightView === 'log'}
-      <div class="sec-head">
-        <h3>日志</h3>
-        {#if lastView !== 'log'}
-          <button class="back" onclick={() => setView(lastView)}>返回</button>
-        {/if}
-      </div>
-      <div class="prog">
-        <span>{progress.label || '无任务'}</span>
-        <span>{progress.total ? `${progress.done}/${progress.total}` : ''}</span>
-      </div>
-      {#if progress.total}
-        <div class="prog-bar">
-          <div class="prog-fill" style="width:{Math.min(100, Math.round((progress.done / progress.total) * 100))}%"></div>
-        </div>
-      {/if}
-      {#if !logs.length}
-        <p class="empty">暂无日志</p>
-      {/if}
-      <ul class="log">
-        {#each logs as e, i (e.ts + '|' + i)}
-          <li class="log-line" class:lv-warn={e.level === 'warn'} class:lv-error={e.level === 'error'}>
-            <span class="log-ts">{e.ts ? e.ts.slice(11) : ''}</span>
-            <span class="log-msg">{e.msg}</span>
-          </li>
-        {/each}
-      </ul>
+      <LogView {logs} {progress} showBack={lastView !== 'log'} onBack={() => setView(lastView)} />
     {:else if rightView === 'chat'}
       {#if !curDialog}
         <div class="sec-head">
