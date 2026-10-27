@@ -31,6 +31,11 @@ dist/
 node_modules/
 webapp/dist/
 
+# Playwright 运行产物（截图基线 webapp/e2e/*-snapshots 要入库，以下不入库）
+webapp/test-results/
+webapp/playwright-report/
+webapp/blob-report/
+
 # Android M0 构建缓存与产物
 android_m0*/.buildozer/
 android_m0*/bin/
