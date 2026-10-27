@@ -86,6 +86,7 @@
   import DeleteAccountDialog from './components/DeleteAccountDialog.svelte';
   import AccountCard from './components/AccountCard.svelte';
   import FunctionCards from './components/FunctionCards.svelte';
+  import JoinView from './components/JoinView.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -2436,57 +2437,17 @@
         <md-filled-button onclick={doSaveProfile}>保存</md-filled-button>
       </div>
     {:else if rightView === 'join'}
-      <div class="sec-head">
-        <h3>加群频道</h3>
-        <button class="back" onclick={() => setView('log')}>日志</button>
-      </div>
-      <div class="join-toolbar">
-        <md-outlined-button onclick={doJoinAddEntry}>＋ 添加链接</md-outlined-button>
-      </div>
-      {#each [['group', '群'], ['channel', '频道']] as [cat, catLabel]}
-        <div class="join-cat">{catLabel}</div>
-        <ul class="sec-list">
-          {#each joinEntries as e, i (i)}
-            {#if e.type === cat}
-              <li class="sec-item join-item">
-                {#if joinEditIdx === i}
-                  <!-- 行内编辑: 类型+备注+链接,确定/取消 -->
-                  <div class="join-edit">
-                    <div class="join-edit-row">
-                      <select class="set-select join-type" bind:value={e.type}>
-                        <option value="group">群</option>
-                        <option value="channel">频道</option>
-                      </select>
-                      <input class="set-input join-name" bind:value={e.name} placeholder="备注名" />
-                    </div>
-                    <input class="set-input join-link" bind:value={e.link} placeholder="https://t.me/xxx 或 @xxx 或邀请链接" />
-                    <div class="join-edit-btns">
-                      <md-outlined-button onclick={doJoinCancelEdit}>取消</md-outlined-button>
-                      <md-filled-button onclick={() => doJoinSaveEdit(i)}>保存</md-filled-button>
-                    </div>
-                  </div>
-                {:else}
-                  <span class="join-item-meta">
-                    <b>{e.name || '(未命名)'}</b>
-                    <small>{e.link}</small>
-                  </span>
-                  <span class="join-item-ops">
-                    <button class="back" onclick={() => doJoinOne(e)}>加入</button>
-                    <button class="icon-btn" title="编辑" onclick={() => (joinEditIdx = i)}>✎</button>
-                    <button class="icon-btn danger" title="删除" onclick={() => doJoinDelete(i)}>✕</button>
-                  </span>
-                {/if}
-              </li>
-            {/if}
-          {/each}
-          {#if !joinEntries.some((e) => e.type === cat)}
-            <li class="empty">暂无{catLabel}链接，请点击上方「添加链接」</li>
-          {/if}
-        </ul>
-      {/each}
-      {#if joinEntries.length}
-        <md-outlined-button class="full-row" onclick={doJoinChats}>全部加入（当前账号）</md-outlined-button>
-      {/if}
+      <JoinView
+        entries={joinEntries}
+        bind:editIdx={joinEditIdx}
+        onAdd={doJoinAddEntry}
+        onCancelEdit={doJoinCancelEdit}
+        onSaveEdit={doJoinSaveEdit}
+        onJoin={doJoinOne}
+        onDelete={doJoinDelete}
+        onJoinAll={doJoinChats}
+        onBack={() => setView('log')}
+      />
     {/if}
   </section>
 </div>
