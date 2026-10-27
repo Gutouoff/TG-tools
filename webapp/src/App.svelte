@@ -78,6 +78,7 @@
     type LogItem,
   } from './api';
   import LogView from './components/LogView.svelte';
+  import ContextMenu from './components/ContextMenu.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -2141,32 +2142,18 @@
   </aside>
 
   {#if ctxMenu}
-    <div class="ctx" style="left:{ctxMenu.x}px;top:{ctxMenu.y}px" onclick={(e) => e.stopPropagation()}>
-      <div class="ctx-title">移动分组（可多选）</div>
-      {#each Object.keys(groups) as g}
-        <label class="ctx-check">
-          <input
-            class="ctx-check-native"
-            type="checkbox"
-            checked={(groups[g] || []).includes(ctxMenu.name)}
-            onchange={() => doMoveAccount(ctxMenu.name, g)}
-          />
-          <span class="ctx-check-box" class:on={(groups[g] || []).includes(ctxMenu.name)}>
-            {#if (groups[g] || []).includes(ctxMenu.name)}✓{/if}
-          </span>
-          <span>{g}</span>
-        </label>
-      {/each}
-      <button onclick={() => { doMoveAccount(ctxMenu.name, 'ungrouped'); closeCtx(); }}>移出所有分组</button>
-      {#if onlineNames.has(ctxMenu.name)}
-        <button class="ctx-disconnect" onclick={() => { disconnectOne(ctxMenu.name); closeCtx(); }}>断开连接（保持其他在线）</button>
-      {/if}
-      <button onclick={() => { const a = accounts.find((x) => x.name === ctxMenu!.name); if (a) openRename(a); closeCtx(); }}>重命名文件夹…</button>
-      {#if renamePending[ctxMenu.name]}
-        <button onclick={() => { doRunRenamePending(); closeCtx(); }}>立即执行待重命名 → {renamePending[ctxMenu.name]}</button>
-        <button onclick={() => { doCancelRenamePending(ctxMenu!.name); closeCtx(); }}>取消待重命名</button>
-      {/if}
-    </div>
+    <ContextMenu
+      {ctxMenu}
+      {groups}
+      {onlineNames}
+      {renamePending}
+      onMove={(name, g) => doMoveAccount(name, g)}
+      onClose={closeCtx}
+      onDisconnect={disconnectOne}
+      onRename={(name) => { const a = accounts.find((x) => x.name === name); if (a) openRename(a); }}
+      onRunPending={doRunRenamePending}
+      onCancelPending={doCancelRenamePending}
+    />
   {/if}
 
   <div class="splitter" onmousedown={(e) => startDrag(e, 'left')}></div>
