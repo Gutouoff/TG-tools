@@ -79,6 +79,7 @@
   } from './api';
   import LogView from './components/LogView.svelte';
   import ContextMenu from './components/ContextMenu.svelte';
+  import TopBar from './components/TopBar.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -1889,21 +1890,19 @@
   });
 </script>
 
-<header class="topbar">
-  <span class="title">TG小号工具箱</span>
-  <span class="conn" class:on={connected && !connectingLabel}>{connectingLabel ? `● ${connectingLabel}` : connected ? '● 已连接' : '● 未连接'}</span>
-  <button class="topbtn" onclick={doOpenAddAccount}>新建账号</button>
-  <button class="topbtn" onclick={doReconnect}>重新连接</button>
-  <button class="topbtn" onclick={doLaunchClient}
-    oncontextmenu={(e) => { e.preventDefault(); doOpenAccountFolder(); }}
-    title="启动当前账号的 Telegram 客户端；右键账号卡片可打开文件夹">启动客户端</button>
-  <button class="topbtn" onclick={doDisconnect}>断开连接</button>
-  <button class="topbtn" onclick={doPack}>打包</button>
-  <button class="topbtn iconbtn" onclick={toggleTheme} title={themeMode === 'dark' ? '切换到浅色' : '切换到深色'}>
-    {themeMode === 'dark' ? '☀️' : '🌙'}
-  </button>
-  <button class="topbtn" onclick={loadSettings}>设置</button>
-</header>
+<TopBar
+  {connected}
+  {connectingLabel}
+  {themeMode}
+  onAddAccount={doOpenAddAccount}
+  onReconnect={doReconnect}
+  onLaunchClient={doLaunchClient}
+  onOpenFolder={doOpenAccountFolder}
+  onDisconnect={doDisconnect}
+  onPack={doPack}
+  onToggleTheme={toggleTheme}
+  onSettings={loadSettings}
+/>
 
 <div class="mobile-app">
   <header class="mobile-header">
