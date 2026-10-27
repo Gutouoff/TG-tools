@@ -82,6 +82,7 @@
   import TopBar from './components/TopBar.svelte';
   import GroupRenameDialog from './components/GroupRenameDialog.svelte';
   import GroupDeleteDialog from './components/GroupDeleteDialog.svelte';
+  import GroupCreateDialog from './components/GroupCreateDialog.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -2800,27 +2801,12 @@
 {/if}
 
 {#if groupModalOpen}
-  <div class="modal-mask" onclick={() => (groupModalOpen = false)}>
-    <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
-      <div class="rename-head">
-        <span>新建分组</span>
-        <button class="back set-close rename-x" title="关闭" onclick={() => (groupModalOpen = false)}>✕</button>
-      </div>
-      <input
-        class="rename-input"
-        bind:value={groupInput}
-        onkeydown={(e) => { if (e.key === 'Enter') doCreateGroupConfirm(); }}
-        placeholder="输入分组名称"
-        maxlength="30"
-      />
-      <div class="rename-btns">
-        <md-outlined-button onclick={() => (groupModalOpen = false)}>取消</md-outlined-button>
-        <md-filled-button disabled={groupCreating || !groupInput.trim()} onclick={doCreateGroupConfirm}>
-          {groupCreating ? '处理中…' : '确定'}
-        </md-filled-button>
-      </div>
-    </div>
-  </div>
+  <GroupCreateDialog
+    bind:value={groupInput}
+    creating={groupCreating}
+    onClose={() => (groupModalOpen = false)}
+    onConfirm={doCreateGroupConfirm}
+  />
 {/if}
 
 {#if renameOpen}
