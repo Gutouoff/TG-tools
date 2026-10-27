@@ -81,6 +81,7 @@
   import ContextMenu from './components/ContextMenu.svelte';
   import TopBar from './components/TopBar.svelte';
   import GroupRenameDialog from './components/GroupRenameDialog.svelte';
+  import GroupDeleteDialog from './components/GroupDeleteDialog.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -2697,23 +2698,12 @@
 {/if}
 
 {#if groupDelOpen}
-  <div class="modal-mask" onclick={() => (groupDelOpen = false)}>
-    <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
-      <div class="rename-head">
-        <span>删除分组</span>
-        <button class="back set-close rename-x" title="关闭" onclick={() => (groupDelOpen = false)}>✕</button>
-      </div>
-      <p class="set-hint">
-        删除分组「<b>{groupDelTarget}</b>」？组内账号不受影响，将归入「未分组」。
-      </p>
-      <div class="rename-btns">
-        <md-outlined-button onclick={() => (groupDelOpen = false)}>取消</md-outlined-button>
-        <md-filled-button class="danger-btn" disabled={groupDeleting} onclick={doGroupDeleteConfirm}>
-          {groupDeleting ? '删除中…' : '删除'}
-        </md-filled-button>
-      </div>
-    </div>
-  </div>
+  <GroupDeleteDialog
+    target={groupDelTarget}
+    deleting={groupDeleting}
+    onClose={() => (groupDelOpen = false)}
+    onConfirm={doGroupDeleteConfirm}
+  />
 {/if}
 
 {#if t2sOpen && current}
