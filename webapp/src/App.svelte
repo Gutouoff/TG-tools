@@ -88,6 +88,7 @@
   import FunctionCards from './components/FunctionCards.svelte';
   import JoinView from './components/JoinView.svelte';
   import SecurityViews from './components/SecurityViews.svelte';
+  import ProfileView from './components/ProfileView.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -1374,16 +1375,6 @@
   let editLastName = $state('');
   let editUsername = $state('');
   let editAbout = $state('');
-  let aboutEl = $state<HTMLTextAreaElement>();
-  // 简介自动增高: 打开资料/内容变化时都调整(替代只在 oninput 时触发)
-  $effect(() => {
-    const el = aboutEl;
-    const _content = editAbout;   // 建立依赖: 内容变化时重新调高
-    if (el && rightView === 'profile') {
-      el.style.height = 'auto';
-      el.style.height = el.scrollHeight + 'px';
-    }
-  });
   let editDay = $state('');
   let editMonth = $state('');
   let editYear = $state('');
@@ -2345,44 +2336,23 @@
         onDeleteDevice={doDeleteDevice}
       />
     {:else if rightView === 'profile'}
-      <div class="sec-head">
-        <h3>编辑资料</h3>
-        <button class="back" onclick={() => setView('log')}>日志</button>
-      </div>
-      <div class="bi">
-        {#if current?.avatar && !avatarFailed.has(current.name)}
-          <img class="avatar big" src={avatarUrl(current)} alt="" onerror={() => onAvatarError(current.name)} />
-        {:else}
-          <span class="avatar big" style="background:{avatarColor(current?.name || '-')}">{current?.display?.[0] || current?.name?.[0] || '-'}</span>
-        {/if}
-        <div class="bi-meta">
-          <div class="bi-name">{current?.display || current?.name || '未选择账号'}</div>
-          <div class="bi-sub">@{current?.username || '-'}</div>
-        </div>
-      </div>
-      <div class="form">
-        <label>名字</label>
-        <input bind:value={editFirstName} />
-        <label>姓氏</label>
-        <input bind:value={editLastName} />
-        <label>用户名（不带 @）</label>
-        <input bind:value={editUsername} />
-        <label>简介</label>
-        <textarea
-          bind:value={editAbout}
-          bind:this={aboutEl}
-          rows="1"
-        ></textarea>
-        <label>生日（月 / 日 / 年）</label>
-        <div class="row3">
-          <input placeholder="月" bind:value={editMonth} />
-          <input placeholder="日" bind:value={editDay} />
-          <input placeholder="年" bind:value={editYear} />
-        </div>
-        <label>头像</label>
-        <input type="file" accept="image/*" onchange={doUploadAvatar} />
-        <md-filled-button onclick={doSaveProfile}>保存</md-filled-button>
-      </div>
+      <ProfileView
+        {current}
+        {avatarFailed}
+        {avatarUrl}
+        {avatarColor}
+        onAvatarError={onAvatarError}
+        bind:firstName={editFirstName}
+        bind:lastName={editLastName}
+        bind:username={editUsername}
+        bind:about={editAbout}
+        bind:month={editMonth}
+        bind:day={editDay}
+        bind:year={editYear}
+        onUploadAvatar={doUploadAvatar}
+        onSaveProfile={doSaveProfile}
+        onBack={() => setView('log')}
+      />
     {:else if rightView === 'join'}
       <JoinView
         entries={joinEntries}
