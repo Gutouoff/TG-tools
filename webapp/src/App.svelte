@@ -84,6 +84,7 @@
   import GroupDeleteDialog from './components/GroupDeleteDialog.svelte';
   import GroupCreateDialog from './components/GroupCreateDialog.svelte';
   import DeleteAccountDialog from './components/DeleteAccountDialog.svelte';
+  import AccountCard from './components/AccountCard.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -2104,41 +2105,20 @@
     <ul class="list">
       {#key filterVersion}
       {#each filtered as a}
-        <li
-          class="item"
-          class:cur={current?.name === a.name}
-          ondblclick={() => onConnect(a)}
-          onclick={() => (current = a)}
-          oncontextmenu={(e) => onAccountContext(e, a)}
-        >
-          <div class="avatar-wrap">
-            {#if a.avatar && !avatarFailed.has(a.name)}
-              <img class="avatar" src={avatarUrl(a)} alt="" onerror={() => onAvatarError(a.name)} />
-            {:else}
-              <span class="avatar" style="background:{avatarColor(a.name)}">{a.display?.[0] || a.username?.[0] || a.name[0] || '-'}</span>
-            {/if}
-            {#if onlineNames.has(a.name)}
-              <span class="online-dot"></span>
-            {/if}
-          </div>
-          <span class="meta">
-            <span class="nm">
-              {a.display || a.name}
-              {#if (a as any).poll_alive === false}<span class="dead-tag" title={`轮询：${(a as any).poll_msg || '无法连接'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''}`}>失效</span>{:else if (a as any).poll_alive === null}<span class="unk-tag" title={`轮询：${(a as any).poll_msg || '状态未知'}${(a as any).poll_time ? ` @ ${(a as any).poll_time}` : ''} —— 状态未知，可重试或重新登录`}>?</span>{/if}
-              {#if a.username}<span class="uname">{a.username}</span>{/if}
-            </span>
-            <span class="sub">{a.country ? `${a.country} ` : ''}{a.phone ? `+${a.phone}` : a.state}</span>
-          </span>
-          {#if renamePending[a.name]}
-            <span
-              class="pend-tag"
-              title={`待执行重命名 → ${renamePending[a.name]}（该账号客户端关闭后自动重命名；右键可立即执行或取消）`}
-            >待重命名</span>
-          {/if}
-          {#if a.state === 'tdata'}
-            <button class="conv" onclick={(e) => { e.stopPropagation(); doConvertTdata(a); }}>转换</button>
-          {/if}
-        </li>
+        <AccountCard
+          account={a}
+          isCurrent={current?.name === a.name}
+          isOnline={onlineNames.has(a.name)}
+          hasAvatar={!!a.avatar && !avatarFailed.has(a.name)}
+          avatarSrc={avatarUrl(a)}
+          avatarBg={avatarColor(a.name)}
+          renameTarget={renamePending[a.name] || ''}
+          onSelect={() => (current = a)}
+          onConnect={() => onConnect(a)}
+          onContext={(e) => onAccountContext(e, a)}
+          onAvatarError={() => onAvatarError(a.name)}
+          onConvert={() => doConvertTdata(a)}
+        />
       {/each}
       {/key}
     </ul>
