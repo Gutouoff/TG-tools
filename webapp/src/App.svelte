@@ -83,6 +83,7 @@
   import GroupRenameDialog from './components/GroupRenameDialog.svelte';
   import GroupDeleteDialog from './components/GroupDeleteDialog.svelte';
   import GroupCreateDialog from './components/GroupCreateDialog.svelte';
+  import DeleteAccountDialog from './components/DeleteAccountDialog.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -2763,41 +2764,13 @@
 {/if}
 
 {#if delOpen && delTarget}
-  <div class="modal-mask" onclick={() => (delOpen = false)}>
-    <div class="modal rename-modal del-modal" onclick={(e) => e.stopPropagation()}>
-      <div class="del-icon">
-        <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true">
-          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
-        </svg>
-      </div>
-      <div class="del-title">删除账号</div>
-      <p class="del-sub">此操作<b>不可恢复</b>。将永久删除该账号的 session、tdata、登录凭据等全部文件，删除后只能重新登录。</p>
-      <div class="set-group">
-        <div class="set-row">
-          <span class="set-label">账号</span>
-          <span class="del-val">{delTarget.display || delTarget.name}</span>
-        </div>
-        {#if delTarget.uid}<div class="set-row">
-          <span class="set-label">UID</span>
-          <span class="del-val mono">{delTarget.uid}</span>
-        </div>{/if}
-        <div class="set-row set-row-col">
-          <span class="set-label">将被删除的文件夹</span>
-          <code class="del-path">{delTarget.path}</code>
-        </div>
-      </div>
-      <label class="del-check">
-        <input type="checkbox" bind:checked={delConfirm} />
-        <span>我已了解该操作不可恢复，确认删除该账号的全部文件</span>
-      </label>
-      <div class="rename-btns">
-        <md-outlined-button onclick={() => (delOpen = false)}>取消</md-outlined-button>
-        <md-filled-button class="danger-btn" disabled={deleting || !delConfirm} onclick={doDeleteAccount}>
-          {deleting ? '删除中…' : '永久删除'}
-        </md-filled-button>
-      </div>
-    </div>
-  </div>
+  <DeleteAccountDialog
+    target={delTarget}
+    bind:confirm={delConfirm}
+    {deleting}
+    onClose={() => (delOpen = false)}
+    onConfirm={doDeleteAccount}
+  />
 {/if}
 
 {#if groupModalOpen}
