@@ -80,6 +80,7 @@
   import LogView from './components/LogView.svelte';
   import ContextMenu from './components/ContextMenu.svelte';
   import TopBar from './components/TopBar.svelte';
+  import GroupRenameDialog from './components/GroupRenameDialog.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -2580,26 +2581,12 @@
   {/if}
 
   {#if groupRenameOpen}
-  <div class="modal-mask" onclick={() => (groupRenameOpen = false)}>
-    <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
-      <div class="rename-head">
-        <span>分组重命名</span>
-        <button class="back set-close rename-x" title="关闭" onclick={() => (groupRenameOpen = false)}>✕</button>
-      </div>
-      <input
-        class="rename-input"
-        bind:value={groupRenameInput}
-        onkeydown={(e) => { if (e.key === 'Enter') doGroupRenameConfirm(); }}
-        placeholder="输入新的分组名称"
-        maxlength="30"
-      />
-      <div class="rename-btns">
-        <md-outlined-button onclick={() => (groupRenameOpen = false)}>取消</md-outlined-button>
-        <md-filled-button disabled={!groupRenameInput.trim()} onclick={doGroupRenameConfirm}>确定</md-filled-button>
-      </div>
-    </div>
-  </div>
-{/if}
+    <GroupRenameDialog
+      bind:value={groupRenameInput}
+      onClose={() => (groupRenameOpen = false)}
+      onConfirm={doGroupRenameConfirm}
+    />
+  {/if}
 
 {#if addAccOpen}
   <div class="modal-mask" onclick={() => closeAddAcc()}>
