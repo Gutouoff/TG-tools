@@ -1,5 +1,6 @@
 import { mount } from 'svelte';
 import './app.css';
+import './styles/app-ui.css';
 import App from './App.svelte';
 
 // @material/web 组件(按需引入)
