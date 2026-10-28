@@ -60,6 +60,13 @@ test('视觉基线：加群频道视图', async ({ app }) => {
   await expect(app).toHaveScreenshot('07-join-view.png');
 });
 
+test('视觉基线：新建账号弹窗', async ({ app }) => {
+  await app.locator('.topbar').getByText('新建账号', { exact: true }).click();
+  await expect(app.locator('.addacc-modal')).toBeVisible();
+  await settle(app);
+  await expect(app).toHaveScreenshot('11-add-account.png');
+});
+
 test('视觉基线：资料编辑', async ({ app }) => {
   await app.locator('.list .item').first().click();
   await app.locator('.edit-btn').click();

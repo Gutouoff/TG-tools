@@ -51,6 +51,22 @@ test('删除账号弹窗：勾选前禁用、勾选后可用', async ({ app }) =
   await expect(modal).toHaveCount(0);
 });
 
+test('新建账号弹窗：三种方式切换', async ({ app }) => {
+  await app.locator('.topbar').getByText('新建账号', { exact: true }).click();
+  const modal = app.locator('.addacc-modal');
+  await expect(modal).toBeVisible();
+  await expect(modal.locator('.addacc-drop')).toBeVisible();
+
+  await modal.locator('.mode-item', { hasText: '手机号登录' }).click();
+  await expect(modal.locator('.phonelogin-box')).toContainText('手机号码');
+
+  await modal.locator('.mode-item', { hasText: '扫码登录' }).click();
+  await expect(modal.locator('.qrlogin-box')).toBeVisible();
+
+  await modal.locator('.set-close').click();
+  await expect(modal).toHaveCount(0);
+});
+
 test('聊天：消息列表与发起聊天识别提示', async ({ app }) => {
   await app.locator('.list .item').first().click();
   await app.locator('.chat-entry', { hasText: '消息列表' }).click();

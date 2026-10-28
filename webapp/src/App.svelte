@@ -92,6 +92,7 @@
   import ChatView from './components/ChatView.svelte';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import MobileApp from './components/MobileApp.svelte';
+  import AddAccountDialog from './components/AddAccountDialog.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -526,7 +527,7 @@
 
   // 新建账号(顶栏): 拖入 session/json/tdata/zip 建号;扫码登录标签页
   let addAccOpen = $state(false);
-  let addAccTab = $state<'files' | 'qr'>('files');
+  let addAccTab = $state<'files' | 'qr' | 'phone'>('files');
   let addAccDragging = $state(false);
   let addAccFiles = $state<Array<{ name: string; data: string }>>([]);
   let addAccBusy = $state(false);
@@ -2158,111 +2159,32 @@
   {/if}
 
 {#if addAccOpen}
-  <div class="modal-mask" onclick={() => closeAddAcc()}>
-    <div class="modal rename-modal addacc-modal" onclick={(e) => e.stopPropagation()}>
-      <div class="rename-head">
-        <span>新建账号</span>
-        <button class="back set-close rename-x" title="关闭" onclick={() => closeAddAcc()}>✕</button>
-      </div>
-      <div class="mode-seg addacc-tabs">
-        <button class="mode-item" class:on={addAccTab === 'files'} onclick={() => (addAccTab = 'files')}>拖入文件</button>
-        <button class="mode-item" class:on={addAccTab === 'qr'} onclick={() => doStartQrLogin()}>扫码登录</button>
-        <button class="mode-item" class:on={addAccTab === 'phone'} onclick={() => (addAccTab = 'phone')}>手机号登录</button>
-      </div>
-      {#if addAccTab === 'files'}
-        <div
-          class="addacc-drop"
-          class:over={addAccDragging}
-          ondragover={onAddAccDragOver}
-          ondragleave={() => (addAccDragging = false)}
-          ondrop={onAddAccDrop}
-        >
-          <div class="addacc-drop-icon">⬇</div>
-          <div>拖入文件创建账号</div>
-          <small>.session / .json / 2fa.txt / .zip（tdata 或 session+json 打包）</small>
-          <small>zip 将自动解压；tdata 将自动转换为 session</small>
-        </div>
-        {#if addAccFiles.length}
-          <ul class="addacc-list">
-            {#each addAccFiles as f, i}
-              <li class="sec-item">
-                <span>{f.name}</span>
-                <button class="icon-btn" title="移除" onclick={() => addAccRemove(i)}>✕</button>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-        <div class="rename-btns">
-          <md-outlined-button onclick={() => closeAddAcc()}>取消</md-outlined-button>
-          <md-filled-button disabled={!addAccFiles.length || addAccBusy} onclick={doAddAccountConfirm}>
-            {addAccBusy ? '创建中…' : '创建账号'}
-          </md-filled-button>
-        </div>
-      {:else}
-        <div class="qrlogin-box">
-          {#if qrImg}
-            <img class="qr-img" src={`data:image/png;base64,${qrImg}`} alt="登录二维码" />
-            <p class="qr-tip">手机 Telegram → 设置 → 设备 → <b>链接桌面设备</b>，扫描此二维码</p>
-            <p class="qr-tip qr-status">
-              {#if qrStatus === 'waiting'}等待扫码确认…（{qrRemain}s 后过期）{/if}
-              {#if qrStatus === 'expired'}二维码已过期，请关闭后重试{/if}
-              {#if qrStatus === 'error'}{qrErr}{/if}
-            </p>
-          {:else if qrStatus === 'loading'}
-            <p class="empty">正在生成二维码…</p>
-          {:else}
-            <p class="empty">{qrErr || '点击「扫码登录」标签页生成二维码'}</p>
-          {/if}
-        </div>
-        <div class="rename-btns">
-          <md-outlined-button onclick={() => closeAddAcc(true)}>取消登录</md-outlined-button>
-        </div>
-      {:else if addAccTab === 'phone'}
-        <div class="phonelogin-box">
-          {#if phoneStage === 'phone'}
-            <div class="set-row set-row-col">
-              <span class="set-label">手机号码（含国家区号，如 6281234567890）</span>
-              <input class="set-input" inputmode="numeric" placeholder="6281234567890"
-                bind:value={phoneInput} onkeydown={(e) => { if (e.key === 'Enter') doPhoneLoginStart(); }} />
-            </div>
-            {#if phoneErr}<p class="set-hint" style="color: var(--md-sys-color-error)">{phoneErr}</p>{/if}
-            <div class="rename-btns">
-              <md-filled-button disabled={!phoneInput.trim() || phoneBusy} onclick={doPhoneLoginStart}>
-                {phoneBusy ? '发送中…' : '发送验证码'}
-              </md-filled-button>
-            </div>
-          {:else if phoneStage === 'code'}
-            <p class="set-hint">验证码已发送至 +{phoneInput}，请查收短信或 Telegram 官方消息</p>
-            <div class="set-row set-row-col">
-              <span class="set-label">验证码</span>
-              <input class="set-input" inputmode="numeric" placeholder="登录验证码"
-                bind:value={phoneCode} onkeydown={(e) => { if (e.key === 'Enter') doPhoneLoginSubmit(); }} />
-            </div>
-            {#if phoneErr}<p class="set-hint" style="color: var(--md-sys-color-error)">{phoneErr}</p>{/if}
-            <div class="rename-btns">
-              <md-outlined-button onclick={() => phoneReset()}>重填手机号</md-outlined-button>
-              <md-filled-button disabled={!phoneCode.trim() || phoneBusy} onclick={doPhoneLoginSubmit}>
-                {phoneBusy ? '验证中…' : '登录'}
-              </md-filled-button>
-            </div>
-          {:else if phoneStage === 'password'}
-            <p class="set-hint">该账号开启了两步验证，请输入 2FA 密码</p>
-            <div class="set-row set-row-col">
-              <span class="set-label">两步验证密码</span>
-              <input class="set-input" type="password" autocomplete="new-password" placeholder="2FA 密码"
-                bind:value={phonePwd} onkeydown={(e) => { if (e.key === 'Enter') doPhoneLoginSubmit(); }} />
-            </div>
-            {#if phoneErr}<p class="set-hint" style="color: var(--md-sys-color-error)">{phoneErr}</p>{/if}
-            <div class="rename-btns">
-              <md-filled-button disabled={!phonePwd || phoneBusy} onclick={doPhoneLoginSubmit}>
-                {phoneBusy ? '验证中…' : '登录'}
-              </md-filled-button>
-            </div>
-          {/if}
-        </div>
-      {/if}
-    </div>
-  </div>
+  <AddAccountDialog
+    bind:tab={addAccTab}
+    bind:dragging={addAccDragging}
+    files={addAccFiles}
+    busy={addAccBusy}
+    qrImg={qrImg}
+    qrStatus={qrStatus}
+    qrRemain={qrRemain}
+    qrErr={qrErr}
+    phoneStage={phoneStage}
+    bind:phoneInput
+    bind:phoneCode
+    bind:phonePwd
+    phoneErr={phoneErr}
+    phoneBusy={phoneBusy}
+    onClose={closeAddAcc}
+    onStartQr={doStartQrLogin}
+    onRemoveFile={addAccRemove}
+    onConfirm={doAddAccountConfirm}
+    onDragOver={onAddAccDragOver}
+    onDragLeave={() => (addAccDragging = false)}
+    onDrop={onAddAccDrop}
+    onPhoneStart={doPhoneLoginStart}
+    onPhoneSubmit={doPhoneLoginSubmit}
+    onPhoneReset={phoneReset}
+  />
 {/if}
 
 {#if groupDelOpen}
