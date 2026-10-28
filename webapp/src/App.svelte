@@ -91,6 +91,7 @@
   import ProfileView from './components/ProfileView.svelte';
   import ChatView from './components/ChatView.svelte';
   import SettingsDialog from './components/SettingsDialog.svelte';
+  import MobileApp from './components/MobileApp.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -998,10 +999,7 @@
   let rightView = $state<'log' | 'passkey' | '2fa' | 'email' | 'devices' | 'profile' | 'settings' | 'chat' | 'join'>('log');
   let mobileTab = $state<'accounts' | 'current' | 'activity' | 'more'>('accounts');
   let mobilePanelOpen = $state(false);
-  const MOBILE_PANEL_TITLES: Record<string, string> = {
-    log: '运行日志', passkey: '通行密钥', '2fa': '两步验证', email: '邮箱登录',
-    devices: '登录设备', profile: '编辑资料', settings: '设置', chat: '会话', join: '群组与频道',
-  };
+
   function openMobilePanel(v: typeof rightView) {
     setView(v);
     mobilePanelOpen = true;
@@ -1905,177 +1903,48 @@
   onSettings={loadSettings}
 />
 
-<div class="mobile-app">
-  <header class="mobile-header">
-    {#if mobilePanelOpen}
-      <button class="mobile-back" aria-label="返回" onclick={closeMobilePanel}>‹</button>
-      <div class="mobile-heading">
-        <strong>{MOBILE_PANEL_TITLES[rightView] || '详情'}</strong>
-        <span>{current?.display || current?.name || '当前账号'}</span>
-      </div>
-      <span class="mobile-header-spacer"></span>
-    {:else}
-      <div class="mobile-brand-mark" aria-hidden="true">TG</div>
-      <div class="mobile-heading">
-        <strong>TG小号工具箱</strong>
-        <span>{accounts.length} 个账号 · {onlineNames.size} 个在线</span>
-      </div>
-      <span class="mobile-conn" class:on={connected && !connectingLabel} aria-label={connectingLabel || (connected ? '已连接' : '未连接')}></span>
-      <button class="mobile-add" aria-label="新建账号" title="新建账号" onclick={doOpenAddAccount}>＋</button>
-    {/if}
-  </header>
-
-  {#if !mobilePanelOpen}
-    <main class="mobile-main">
-      {#key mobileTab}
-      <div class="mobile-page">
-      {#if mobileTab === 'accounts'}
-        <div class="mobile-account-toolbar">
-          <label class="mobile-search-wrap">
-            <span aria-hidden="true">⌕</span>
-            <input class="mobile-search" placeholder="搜索账号" bind:value={search} oninput={onSearch} />
-            {#if search}<button class="mobile-clear" aria-label="清空搜索" onclick={() => { search = ''; onSearch(); }}>×</button>{/if}
-          </label>
-          <button class="mobile-filter" aria-label="新建分组" title="新建分组" onclick={doCreateGroup}>☷</button>
-        </div>
-        <div class="mobile-groups" aria-label="账号分组">
-          {#each ['all', 'ungrouped', ...Object.keys(groups)] as g}
-            <button class="mobile-group" class:active={curGroup === g} onclick={() => selectGroup(g)}>
-              {g === 'all' ? '全部' : g === 'ungrouped' ? '未分组' : g}
-            </button>
-          {/each}
-          <button class="mobile-group mobile-group-add" aria-label="新建分组" onclick={doCreateGroup}>＋</button>
-        </div>
-        <div class="mobile-list-heading">
-          <strong>{curGroup === 'all' ? '所有账号' : curGroup === 'ungrouped' ? '未分组' : curGroup}</strong>
-          <span>{filtered.length}</span>
-        </div>
-        {#if filtered.length}
-          <ul class="mobile-account-list">
-            {#each filtered as a, i (a.name)}
-              <li class="mobile-account-row" style="--i:{i}">
-                <button class="mobile-account-main" onclick={() => { current = a; mobileTab = 'current'; }}>
-                  <span class="mobile-avatar-wrap">
-                    {#if a.avatar && !avatarFailed.has(a.name)}
-                      <img class="mobile-avatar" src={avatarUrl(a)} alt="" onerror={() => onAvatarError(a.name)} />
-                    {:else}
-                      <span class="mobile-avatar" style="background:{avatarColor(a.name)}">{a.display?.[0] || a.username?.[0] || a.name[0] || '-'}</span>
-                    {/if}
-                    <i class="mobile-presence" class:online={onlineNames.has(a.name)}></i>
-                  </span>
-                  <span class="mobile-account-copy">
-                    <span class="mobile-account-name">{a.display || a.name}</span>
-                    <span class="mobile-account-sub">{a.username ? `@${a.username}` : a.phone ? `+${a.phone}` : a.state}</span>
-                  </span>
-                  {#if (a as any).poll_alive === false}<span class="mobile-state failed">失效</span>{:else if onlineNames.has(a.name)}<span class="mobile-state online">在线</span>{:else}<span class="mobile-state">离线</span>{/if}
-                  <span class="mobile-chevron" aria-hidden="true">›</span>
-                </button>
-                <button class="mobile-row-connect" aria-label={onlineNames.has(a.name) ? `切换到${a.display || a.name}` : `连接${a.display || a.name}`} onclick={() => onlineNames.has(a.name) ? onSwitch(a) : onConnect(a)}>
-                  {onlineNames.has(a.name) ? '切换' : '连接'}
-                </button>
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <div class="mobile-empty">
-            <span class="mobile-empty-icon" aria-hidden="true">＋</span>
-            <strong>{search ? '没有匹配的账号' : '还没有账号'}</strong>
-            <span>{search ? '换个关键词试试' : '添加账号后即可在此管理连接与资料'}</span>
-            {#if !search}<button class="mobile-primary" onclick={doOpenAddAccount}>新建账号</button>{/if}
-          </div>
-        {/if}
-      {:else if mobileTab === 'current'}
-        {#if current}
-          <section class="mobile-current-card">
-            <div class="mobile-current-top">
-              <span class="mobile-current-avatar" style="background:{avatarColor(current.name)}">
-                {#if current.avatar && !avatarFailed.has(current.name)}
-                  <img src={avatarUrl(current)} alt="" onerror={() => onAvatarError(current.name)} />
-                {:else}{current.display?.[0] || current.name[0] || '-'}{/if}
-              </span>
-              <div class="mobile-current-copy">
-                <strong>{current.display || current.name}</strong>
-                <span>{current.username ? `@${current.username}` : current.phone ? `+${current.phone}` : current.name}</span>
-                <span class="mobile-current-status" class:online={onlineNames.has(current.name)}>
-                  <i></i>{onlineNames.has(current.name) ? '已连接' : connectingLabel || '未连接'}
-                </span>
-              </div>
-              <button class="mobile-more-action" aria-label="账号操作" title="账号操作" onclick={doOpenAccountFolder}>•••</button>
-            </div>
-            <div class="mobile-primary-actions">
-              {#if onlineNames.has(current.name)}
-                <button class="mobile-primary" onclick={doDisconnect}>断开连接</button>
-                <button class="mobile-secondary" onclick={doReconnect}>重新连接</button>
-              {:else}
-                <button class="mobile-primary" onclick={() => onConnect(current)}>连接账号</button>
-                <button class="mobile-secondary" onclick={doLaunchClient}>启动客户端</button>
-              {/if}
-            </div>
-          </section>
-          <div class="mobile-section-label">账号管理</div>
-          <div class="mobile-action-list">
-            <button onclick={loadProfile}><span class="mobile-action-icon mint">人</span><span><strong>个人资料</strong><small>姓名、用户名、头像与生日</small></span><b>›</b></button>
-            <button onclick={() => openMobilePanel('chat')}><span class="mobile-action-icon blue">聊</span><span><strong>消息与会话</strong><small>查看会话、收发消息</small></span><b>›</b></button>
-            <button onclick={() => openMobilePanel('2fa')}><span class="mobile-action-icon violet">盾</span><span><strong>安全设置</strong><small>两步验证、通行密钥与设备</small></span><b>›</b></button>
-            <button onclick={() => openMobilePanel('devices')}><span class="mobile-action-icon amber">端</span><span><strong>登录设备</strong><small>查看并管理已授权设备</small></span><b>›</b></button>
-          </div>
-          <div class="mobile-section-label">常用操作</div>
-          <div class="mobile-quick-grid">
-            <button onclick={() => postTask('/api/tasks/delete-contacts')}><span>删</span><strong>删联系人</strong></button>
-            <button onclick={() => postTask('/api/tasks/delete-dialogs', { choice: 'users' })}><span>清</span><strong>删对话</strong></button>
-            <button onclick={doPack}><span>包</span><strong>打包账号</strong></button>
-            <button onclick={doRefreshAccountInfo}><span>刷</span><strong>刷新资料</strong></button>
-          </div>
-        {:else}
-          <div class="mobile-empty">
-            <span class="mobile-empty-icon" aria-hidden="true">◎</span>
-            <strong>尚未选择账号</strong>
-            <span>先从账号列表中选择或连接一个账号</span>
-            <button class="mobile-primary" onclick={() => (mobileTab = 'accounts')}>查看账号</button>
-          </div>
-        {/if}
-      {:else if mobileTab === 'activity'}
-        <div class="mobile-activity-head">
-          <div><strong>运行记录</strong><span>最近的连接与操作状态</span></div>
-          <button class="mobile-refresh" aria-label="刷新日志" title="刷新日志" onclick={loadLogHistory}>↻</button>
-        </div>
-        {#if progress.label}
-          <div class="mobile-progress"><span>{progress.label}</span><b>{progress.done}/{progress.total}</b><div><i style="width:{progress.total ? Math.min(100, Math.round(progress.done / progress.total * 100)) : 0}%"></i></div></div>
-        {/if}
-        {#if logs.length}
-          <ul class="mobile-log-list">
-            {#each logs as e, i (e.ts + '|' + i)}
-              <li class:error={e.level === 'error'} class:warning={e.level === 'warn'}>
-                <i></i><div><span>{e.msg}</span><time>{e.ts ? e.ts.slice(11, 19) : ''}</time></div>
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <div class="mobile-empty compact"><strong>暂无运行记录</strong><span>连接账号或执行操作后，状态会显示在这里</span></div>
-        {/if}
-      {:else}
-        <div class="mobile-section-label">偏好设置</div>
-        <div class="mobile-action-list">
-          <button onclick={loadSettings}><span class="mobile-action-icon blue">设</span><span><strong>程序设置</strong><small>外观、代理、白名单与打包</small></span><b>›</b></button>
-          <button onclick={toggleTheme}><span class="mobile-action-icon violet">◐</span><span><strong>切换外观</strong><small>当前：{themeMode === 'dark' ? '深色' : '浅色'}</small></span><b>›</b></button>
-          <button onclick={() => openMobilePanel('join')}><span class="mobile-action-icon mint">群</span><span><strong>群组与频道</strong><small>管理常用加入链接</small></span><b>›</b></button>
-          <button onclick={doOpenAddAccount}><span class="mobile-action-icon amber">＋</span><span><strong>新建账号</strong><small>导入文件或扫码登录</small></span><b>›</b></button>
-          <button onclick={() => openMobilePanel('log')}><span class="mobile-action-icon slate">≡</span><span><strong>运行日志</strong><small>查看程序状态与错误</small></span><b>›</b></button>
-        </div>
-        <div class="mobile-version">TG小号工具箱{appVersion ? ` · v${appVersion}` : ''}</div>
-      {/if}
-      </div>
-      {/key}
-    </main>
-  {/if}
-
-  <nav class="mobile-nav" aria-label="主导航">
-    <button class:active={mobileTab === 'accounts' && !mobilePanelOpen} aria-current={mobileTab === 'accounts' && !mobilePanelOpen ? 'page' : undefined} onclick={() => { mobilePanelOpen = false; mobileTab = 'accounts'; }}><span aria-hidden="true">▦</span><small>账号</small></button>
-    <button class:active={mobileTab === 'current' && !mobilePanelOpen} aria-current={mobileTab === 'current' && !mobilePanelOpen ? 'page' : undefined} onclick={() => { mobilePanelOpen = false; mobileTab = 'current'; }}><span aria-hidden="true">◉</span><small>当前</small></button>
-    <button class:active={mobileTab === 'activity' && !mobilePanelOpen} aria-current={mobileTab === 'activity' && !mobilePanelOpen ? 'page' : undefined} onclick={() => { mobilePanelOpen = false; mobileTab = 'activity'; }}><span aria-hidden="true">≡</span><small>动态</small></button>
-    <button class:active={mobileTab === 'more' && !mobilePanelOpen} aria-current={mobileTab === 'more' && !mobilePanelOpen ? 'page' : undefined} onclick={() => { mobilePanelOpen = false; mobileTab = 'more'; }}><span aria-hidden="true">•••</span><small>更多</small></button>
-  </nav>
-</div>
+<MobileApp
+  bind:mobilePanelOpen
+  bind:mobileTab
+  {rightView}
+  {current}
+  {accounts}
+  {onlineNames}
+  {connected}
+  {connectingLabel}
+  bind:search
+  {filtered}
+  {groups}
+  {curGroup}
+  {avatarFailed}
+  {appVersion}
+  {progress}
+  {logs}
+  {themeMode}
+  onSearch={onSearch}
+  onSelectGroup={selectGroup}
+  onCreateGroup={doCreateGroup}
+  onOpenAddAccount={doOpenAddAccount}
+  onSelectAccount={(a) => { current = a; mobileTab = 'current'; }}
+  {avatarUrl}
+  {avatarColor}
+  {onAvatarError}
+  onSwitch={onSwitch}
+  onConnect={onConnect}
+  onLaunchClient={doLaunchClient}
+  onOpenAccountFolder={doOpenAccountFolder}
+  onDisconnect={doDisconnect}
+  onReconnect={doReconnect}
+  onLoadProfile={loadProfile}
+  onOpenPanel={openMobilePanel}
+  onDeleteContacts={() => postTask('/api/tasks/delete-contacts')}
+  onDeleteDialogs={(choice) => postTask('/api/tasks/delete-dialogs', { choice })}
+  onPack={doPack}
+  onRefreshInfo={doRefreshAccountInfo}
+  onReloadLogs={loadLogHistory}
+  onLoadSettings={loadSettings}
+  onToggleTheme={toggleTheme}
+/>
 
 <svelte:window onmousemove={onWinMouseMove} onmouseup={onWinMouseUp} /><div class="layout" class:mobile-panel-open={mobilePanelOpen}>
   <aside class="left" style="width:{leftW}px" ondragover={onDragOver} ondrop={onDrop} onclick={closeCtx}>
