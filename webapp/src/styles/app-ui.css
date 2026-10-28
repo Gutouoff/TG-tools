@@ -387,7 +387,7 @@
   }
   .prog-bar {
     height: 4px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     background: var(--divider);
     overflow: hidden;
     margin: 8px 0 0;
@@ -395,7 +395,7 @@
   .prog-fill {
     height: 100%;
     background: var(--md-sys-color-primary);
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     transition: width 0.3s;
   }
   .log {
@@ -925,7 +925,7 @@
     max-height: 86vh;
     padding: 0;
     flex-direction: row;
-    border-radius: 28px;
+    border-radius: var(--radius-7xl);
     overflow: hidden;
   }
   .set-nav {
@@ -1713,7 +1713,7 @@
     padding: 48px var(--space-16);
   }
   .chat-empty-icon {
-    font-size: 40px;
+    font-size: var(--text-8xl);
     display: block;
     margin-bottom: 10px;
     opacity: 0.75;
@@ -2196,7 +2196,7 @@
 
   .title {
     color: var(--md-sys-color-on-surface);
-    font-size: 19px;
+    font-size: var(--text-4xl);
     font-weight: 600;
     letter-spacing: -0.1px;
   }
@@ -2254,7 +2254,7 @@
     min-height: 32px;
     padding: var(--space-4) var(--space-12);
     border: 1px solid transparent;
-    border-radius: 9px;
+    border-radius: var(--radius-lg);
     background: var(--md-sys-color-surface-container);
     color: var(--md-sys-color-on-surface-variant);
   }
@@ -2326,7 +2326,7 @@
     min-height: 34px;
     padding: var(--space-4) var(--space-10);
     border: 1px solid transparent;
-    border-radius: 9px;
+    border-radius: var(--radius-lg);
     color: var(--topbar-foreground, var(--md-sys-color-on-surface));
     background: transparent;
   }
@@ -2372,7 +2372,7 @@
   .set-nav-item {
     height: 42px;
     padding: 0 var(--space-12);
-    border-radius: 9px;
+    border-radius: var(--radius-lg);
   }
 
   .set-nav-item.on {
@@ -2399,7 +2399,7 @@
   .form select,
   .form textarea {
     border-color: var(--md-sys-color-outline-variant);
-    border-radius: 9px;
+    border-radius: var(--radius-lg);
     background: var(--md-sys-color-surface-container-lowest);
   }
 
@@ -2519,7 +2519,7 @@
     height: 40px;
     padding: 0 12px;
     gap: var(--space-12);
-    border-radius: 9px;
+    border-radius: var(--radius-lg);
     color: var(--md-sys-color-on-surface-variant);
     font-size: var(--text-md);
   }
@@ -2571,7 +2571,7 @@
     width: 46px;
     height: 46px;
     flex-shrink: 0;
-    border-radius: 13px;
+    border-radius: var(--radius-xl);
     background: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-primary);
     font-size: var(--text-6xl);
@@ -2723,7 +2723,7 @@
     width: 34px;
     height: 34px;
     border: 1px dashed var(--md-sys-color-outline-variant);
-    border-radius: 9px;
+    border-radius: var(--radius-lg);
     color: var(--md-sys-color-outline);
     font-size: var(--text-lg);
   }
@@ -2916,7 +2916,7 @@
   }
 
   .sec-head h3 {
-    font-size: 19px;
+    font-size: var(--text-4xl);
     font-weight: 700;
     letter-spacing: -0.2px;
   }
@@ -3181,7 +3181,7 @@
     min-height: 62px;
     padding: var(--space-8) var(--space-10);
     border: 1px solid transparent;
-    border-radius: 11px;
+    border-radius: var(--radius-xl);
   }
 
   .dlg:hover {
@@ -3453,7 +3453,7 @@
       width: 34px;
       height: 34px;
       flex: 0 0 auto;
-      border-radius: 11px;
+      border-radius: var(--radius-xl);
       background: var(--md-sys-color-primary);
       color: var(--md-sys-color-on-primary);
       font-size: var(--text-xs);
@@ -3526,7 +3526,7 @@
 
     .mobile-back {
       background: transparent;
-      font-size: 26px;
+      font-size: var(--text-6xl);
       padding-bottom: 4px;
     }
 
@@ -3560,7 +3560,7 @@
       min-width: 0;
       height: 42px;
       padding: 0 12px;
-      border-radius: 13px;
+      border-radius: var(--radius-xl);
       background: var(--md-sys-color-surface-container);
       color: var(--md-sys-color-on-surface-variant);
       font-size: var(--text-lg);
@@ -3842,7 +3842,7 @@
       display: inline-flex;
       align-items: center;
       gap: var(--space-4);
-      font-size: 12px !important;
+      font-size: var(--text-sm) !important;
       font-weight: 600;
     }
 
@@ -3966,7 +3966,7 @@
       width: 34px;
       height: 34px;
       flex: 0 0 auto;
-      border-radius: 11px;
+      border-radius: var(--radius-xl);
       font-size: var(--text-md);
       font-weight: 700;
     }
@@ -3989,7 +3989,7 @@
       align-items: center;
       gap: var(--space-8);
       padding: var(--space-12) var(--space-12);
-      border-radius: 15px;
+      border-radius: var(--radius-3xl);
       border: 1px solid var(--divider);
       background: var(--md-sys-color-surface-container-lowest);
       color: inherit;
@@ -4008,7 +4008,7 @@
       width: 26px;
       height: 26px;
       flex: 0 0 auto;
-      border-radius: 9px;
+      border-radius: var(--radius-lg);
       background: var(--md-sys-color-surface-container);
       color: var(--md-sys-color-on-surface-variant);
       font-size: var(--text-sm);
@@ -4156,7 +4156,7 @@
       width: 52px;
       height: 52px;
       margin-bottom: 4px;
-      border-radius: 17px;
+      border-radius: var(--radius-3xl);
       background: var(--md-sys-color-surface-container);
       color: var(--md-sys-color-on-surface-variant);
       font-size: var(--text-5xl);
@@ -4291,7 +4291,7 @@
 
     .set-mobile-back {
       color: var(--md-sys-color-primary);
-      font-size: 26px;
+      font-size: var(--text-6xl);
       padding-bottom: 6px;
     }
 
@@ -4605,7 +4605,7 @@
     }
 
     .mobile-current-status {
-      font-size: 12px !important;
+      font-size: var(--text-sm) !important;
     }
 
     .mobile-section-label {
@@ -4708,7 +4708,7 @@
       background: var(--md-sys-color-surface-container-low);
       border-color: var(--md-sys-color-outline-variant);
       padding: var(--space-16);
-      border-radius: 24px;
+      border-radius: var(--radius-6xl);
     }
 
     .mobile-account-row {
