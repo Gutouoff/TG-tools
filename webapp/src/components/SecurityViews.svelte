@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from '../texts';
+
   type SecurityView = 'passkey' | '2fa' | 'email' | 'devices';
 
   let {
@@ -46,78 +48,78 @@
 
 {#if view === 'passkey'}
   <div class="sec-head">
-    <h3>通行密钥</h3>
-    <button class="back" onclick={onBack}>日志</button>
+    <h3>{t('sec.passkeyTitle')}</h3>
+    <button class="back" onclick={onBack}>{t('sec.back')}</button>
   </div>
-  <md-filled-button onclick={onInitPasskey}>＋ 添加通行密钥</md-filled-button>
+  <md-filled-button onclick={onInitPasskey}>{t('sec.passkeyAdd')}</md-filled-button>
   {#if pkQrImg}
     <div class="qr-box">
-      <img class="qr-img" src={pkQrImg} alt="通行密钥二维码" />
-      <p class="qr-tip">请使用<b>手机系统相机或 Google 智能镜头</b>扫描<br />（由手机密码管理器完成通行密钥注册；Telegram 客户端不参与扫码）</p>
+      <img class="qr-img" src={pkQrImg} alt={t('sec.passkeyQrAlt')} />
+      <p class="qr-tip">{t('sec.qrPrefix')}<b>{t('sec.qrStrong')}</b>{t('sec.qrSuffix')}<br />{t('sec.qrNote')}</p>
     </div>
   {/if}
   <ul class="sec-list">
     {#each passkeys as pk}
       <li class="sec-item">
-        <span>{pk.name || '（未命名）'}</span>
-        <button class="danger" onclick={() => onDeletePasskey(pk.id)}>删除</button>
+        <span>{pk.name || t('sec.unnamed')}</span>
+        <button class="danger" onclick={() => onDeletePasskey(pk.id)}>{t('sec.delete')}</button>
       </li>
     {/each}
   </ul>
-  {#if !passkeys.length}<p class="empty">暂无通行密钥</p>{/if}
+  {#if !passkeys.length}<p class="empty">{t('sec.noPasskey')}</p>{/if}
 {:else if view === '2fa'}
   <div class="sec-head">
-    <h3>两步验证</h3>
-    <button class="back" onclick={onBack}>日志</button>
+    <h3>{t('sec.2faTitle')}</h3>
+    <button class="back" onclick={onBack}>{t('sec.back')}</button>
   </div>
-  <p>当前状态：{has2fa ? '已开启' : '未开启'}</p>
+  <p>{t('sec.2faStatus', { state: has2fa ? t('sec.2faOn') : t('sec.2faOff') })}</p>
   {#if has2fa}
-    <input placeholder="当前密码" bind:value={cur2fa} />
+    <input placeholder={t('sec.curPassword')} bind:value={cur2fa} />
   {/if}
-  <input placeholder="新密码" bind:value={new2fa} />
-  <md-filled-button onclick={onSet2FA}>设置或修改</md-filled-button>
+  <input placeholder={t('sec.newPassword')} bind:value={new2fa} />
+  <md-filled-button onclick={onSet2FA}>{t('sec.set2fa')}</md-filled-button>
 {:else if view === 'email'}
   <div class="sec-head">
-    <h3>邮箱登录</h3>
-    <button class="back" onclick={onBack}>日志</button>
+    <h3>{t('sec.emailTitle')}</h3>
+    <button class="back" onclick={onBack}>{t('sec.back')}</button>
   </div>
   {#if boundEmail && !showEmailForm}
     <div class="bound-box">
-      <div class="bound-label">已绑定邮箱</div>
+      <div class="bound-label">{t('sec.boundEmail')}</div>
       <div class="bound-email">{boundEmail}</div>
     </div>
-    <md-outlined-button onclick={() => (showEmailForm = true)}>换绑邮箱</md-outlined-button>
+    <md-outlined-button onclick={() => (showEmailForm = true)}>{t('sec.changeEmail')}</md-outlined-button>
   {:else}
     {#if boundEmail}
-      <p class="set-hint">当前绑定：{boundEmail}。填写新邮箱即可完成换绑。</p>
+      <p class="set-hint">{t('sec.boundHint', { email: boundEmail })}</p>
     {/if}
     {#if emailPresets.length}
       <div class="rename-quick">
-        <span class="rename-quick-label">预选邮箱：</span>
+        <span class="rename-quick-label">{t('sec.presets')}</span>
         {#each emailPresets as p}
           <button class="rule-chip" onclick={() => (emailInput = p)}>{p}</button>
         {/each}
       </div>
     {/if}
-    <input placeholder="邮箱地址" bind:value={emailInput} />
-    <md-outlined-button onclick={onSendEmail}>发送验证码</md-outlined-button>
-    <input placeholder="验证码" bind:value={codeInput} />
-    <md-filled-button onclick={onVerifyEmail}>验证绑定</md-filled-button>
+    <input placeholder={t('sec.emailPlaceholder')} bind:value={emailInput} />
+    <md-outlined-button onclick={onSendEmail}>{t('sec.sendCode')}</md-outlined-button>
+    <input placeholder={t('sec.codePlaceholder')} bind:value={codeInput} />
+    <md-filled-button onclick={onVerifyEmail}>{t('sec.verifyEmail')}</md-filled-button>
   {/if}
 {:else if view === 'devices'}
   <div class="sec-head">
-    <h3>登录设备</h3>
-    <button class="back" onclick={onBack}>日志</button>
+    <h3>{t('sec.devicesTitle')}</h3>
+    <button class="back" onclick={onBack}>{t('sec.back')}</button>
   </div>
   <ul class="sec-list">
     {#each devices as d}
       <li class="sec-item">
-        <span>{d.device_model || '未知设备'}{d.current ? '（本设备）' : ''}</span>
+        <span>{d.device_model || t('sec.unknownDevice')}{d.current ? t('sec.thisDevice') : ''}</span>
         {#if !d.current}
-          <button class="danger" onclick={() => onDeleteDevice(d.hash)}>删除</button>
+          <button class="danger" onclick={() => onDeleteDevice(d.hash)}>{t('sec.delete')}</button>
         {/if}
       </li>
     {/each}
   </ul>
-  {#if !devices.length}<p class="empty">暂无设备</p>{/if}
+  {#if !devices.length}<p class="empty">{t('sec.noDevices')}</p>{/if}
 {/if}

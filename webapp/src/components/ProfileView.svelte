@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Account } from '../api';
+  import { t } from '../texts';
 
   let {
     current,
@@ -49,8 +50,8 @@
 </script>
 
 <div class="sec-head">
-  <h3>编辑资料</h3>
-  <button class="back" onclick={onBack}>日志</button>
+  <h3>{t('profile.title')}</h3>
+  <button class="back" onclick={onBack}>{t('profile.back')}</button>
 </div>
 <div class="bi">
   {#if current?.avatar && !avatarFailed.has(current.name)}
@@ -59,30 +60,30 @@
     <span class="avatar big" style="background:{avatarColor(current?.name || '-')}">{current?.display?.[0] || current?.name?.[0] || '-'}</span>
   {/if}
   <div class="bi-meta">
-    <div class="bi-name">{current?.display || current?.name || '未选择账号'}</div>
+    <div class="bi-name">{current?.display || current?.name || t('profile.noAccount')}</div>
     <div class="bi-sub">@{current?.username || '-'}</div>
   </div>
 </div>
 <div class="form">
-  <label>名字</label>
+  <label>{t('profile.firstName')}</label>
   <input bind:value={firstName} />
-  <label>姓氏</label>
+  <label>{t('profile.lastName')}</label>
   <input bind:value={lastName} />
-  <label>用户名（不带 @）</label>
+  <label>{t('profile.username')}</label>
   <input bind:value={username} />
-  <label>简介</label>
+  <label>{t('profile.about')}</label>
   <textarea
     bind:value={about}
     bind:this={aboutEl}
     rows="1"
   ></textarea>
-  <label>生日（月 / 日 / 年）</label>
+  <label>{t('profile.birthday')}</label>
   <div class="row3">
-    <input placeholder="月" bind:value={month} />
-    <input placeholder="日" bind:value={day} />
-    <input placeholder="年" bind:value={year} />
+    <input placeholder={t('profile.month')} bind:value={month} />
+    <input placeholder={t('profile.day')} bind:value={day} />
+    <input placeholder={t('profile.year')} bind:value={year} />
   </div>
-  <label>头像</label>
+  <label>{t('profile.avatar')}</label>
   <input type="file" accept="image/*" onchange={onUploadAvatar} />
-  <md-filled-button onclick={onSaveProfile}>保存</md-filled-button>
+  <md-filled-button onclick={onSaveProfile}>{t('profile.save')}</md-filled-button>
 </div>
