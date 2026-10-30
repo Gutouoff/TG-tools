@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from '../texts';
+
   let {
     current,
     isOnline,
@@ -58,62 +60,62 @@
 
 {#if !curDialog}
   <div class="sec-head">
-    <h3>会话{#if chatUnread} <span class="badge">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}</h3>
+    <h3>{t('chat.listTitle')}{#if chatUnread} <span class="badge">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}</h3>
     <span class="head-btns">
-      <button class="back" onclick={onBack}>日志</button>
-      <button class="back refresh-btn" disabled={dialogsLoading} aria-busy={dialogsLoading} aria-label="刷新会话列表" onclick={onRefreshDialogs}>{dialogsLoading ? '加载中…' : '⟳ 刷新'}</button>
+      <button class="back" onclick={onBack}>{t('chat.log')}</button>
+      <button class="back refresh-btn" disabled={dialogsLoading} aria-busy={dialogsLoading} aria-label={t('chat.refreshLabel')} onclick={onRefreshDialogs}>{dialogsLoading ? t('chat.loading') : t('chat.refresh')}</button>
     </span>
   </div>
   <div class="chat-switch-row">
     <span class="chat-switch-label">
       <span class="status-dot" class:on={recvOn}></span>
-      <span class="chat-switch-text">接收新消息</span>
-      <em class="chat-state">{recvOn ? '监听中' : '已停止'}</em>
+      <span class="chat-switch-text">{t('chat.recvNew')}</span>
+      <em class="chat-state">{recvOn ? t('chat.listening') : t('chat.stopped')}</em>
     </span>
     <button
       class="toggle"
       class:on={recvOn}
       role="switch"
-      aria-label="接收新消息"
+      aria-label={t('chat.recvNew')}
       aria-checked={recvOn}
       disabled={!isOnline}
-      title={!isOnline ? '请先连接账号' : recvOn ? '停止接收' : '开始接收'}
+      title={!isOnline ? t('chat.connectFirst') : recvOn ? t('chat.stopRecv') : t('chat.startRecv')}
       onclick={onToggleRecv}
     >
       <span class="toggle-thumb"></span>
     </button>
   </div>
-  <div class="recv-rules-label">自动接收排除项</div>
+  <div class="recv-rules-label">{t('chat.rulesLabel')}</div>
   <div class="recv-rules">
-    <button class="rule-chip" class:on={recvRules.exclude_channels} aria-pressed={recvRules.exclude_channels} disabled={!isOnline} onclick={() => onRecvRuleChange('exclude_channels')}>{recvRules.exclude_channels ? '✓ ' : ''}排除频道</button>
-    <button class="rule-chip" class:on={recvRules.exclude_groups} aria-pressed={recvRules.exclude_groups} disabled={!isOnline} onclick={() => onRecvRuleChange('exclude_groups')}>{recvRules.exclude_groups ? '✓ ' : ''}排除群组</button>
-    <button class="rule-chip" class:on={recvRules.exclude_bots} aria-pressed={recvRules.exclude_bots} disabled={!isOnline} onclick={() => onRecvRuleChange('exclude_bots')}>{recvRules.exclude_bots ? '✓ ' : ''}排除机器人</button>
+    <button class="rule-chip" class:on={recvRules.exclude_channels} aria-pressed={recvRules.exclude_channels} disabled={!isOnline} onclick={() => onRecvRuleChange('exclude_channels')}>{recvRules.exclude_channels ? '✓ ' : ''}{t('chat.excludeChannels')}</button>
+    <button class="rule-chip" class:on={recvRules.exclude_groups} aria-pressed={recvRules.exclude_groups} disabled={!isOnline} onclick={() => onRecvRuleChange('exclude_groups')}>{recvRules.exclude_groups ? '✓ ' : ''}{t('chat.excludeGroups')}</button>
+    <button class="rule-chip" class:on={recvRules.exclude_bots} aria-pressed={recvRules.exclude_bots} disabled={!isOnline} onclick={() => onRecvRuleChange('exclude_bots')}>{recvRules.exclude_bots ? '✓ ' : ''}{t('chat.excludeBots')}</button>
   </div>
   <div class="start-chat-row">
     <input
       class="chat-input"
-      placeholder="@用户名 或 数字 ID"
+      placeholder={t('chat.startPlaceholder')}
       bind:value={startChatName}
       disabled={!isOnline}
       onkeydown={(e) => { if (e.key === 'Enter') onStartChat(); }}
     />
     <button class="send-btn" disabled={!startChatTarget.value || startingChat || !isOnline} onclick={onStartChat}>
-      {startingChat ? '查找中…' : '聊天'}
+      {startingChat ? t('chat.searching') : t('chat.chat')}
     </button>
   </div>
   {#if startChatTarget.label}
     <div class="start-chat-hint" aria-live="polite">
-      已识别
-      <span class="kind-badge">{startChatTarget.kind === 'id' ? 'ID' : '用户名'}</span>
+      {t('chat.recognized')}
+      <span class="kind-badge">{startChatTarget.kind === 'id' ? t('chat.kindId') : t('chat.kindUsername')}</span>
       <span class="hint-value">{startChatTarget.label}</span>
     </div>
   {/if}
   {#if !current}
-    <p class="empty">请先选择账号</p>
+    <p class="empty">{t('chat.selectAccountFirst')}</p>
   {:else if !isOnline}
-    <p class="empty">请先连接账号再查看会话</p>
+    <p class="empty">{t('chat.connectToView')}</p>
   {:else if !dialogs.length}
-    <p class="empty">{dialogsLoading ? '正在加载会话…' : '暂无会话，请点击右上角「刷新」获取'}</p>
+    <p class="empty">{dialogsLoading ? t('chat.loadingDialogs') : t('chat.noDialogs')}</p>
   {/if}
   <ul class="dlg-list">
     {#each dialogs as d (d.id)}
@@ -121,7 +123,7 @@
         class="dlg"
         role="button"
         tabindex="0"
-        aria-label={`打开会话 ${d.name}`}
+        aria-label={t('chat.openDialog', { name: d.name })}
         onclick={() => onOpenDialog(d)}
         onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDialog(d); } }}
       >
@@ -143,13 +145,13 @@
   <div class="sec-head">
     <h3>{curDialog.name}</h3>
     <span class="head-btns">
-      <button class="back" onclick={onBack}>日志</button>
-      <button class="back" onclick={() => (curDialog = null)}>会话列表</button>
+      <button class="back" onclick={onBack}>{t('chat.log')}</button>
+      <button class="back" onclick={() => (curDialog = null)}>{t('chat.dialogList')}</button>
     </span>
   </div>
   {#if historyHasMore}
     <button class="load-older" disabled={historyLoading} onclick={() => onLoadHistory(false)}>
-      {historyLoading ? '加载中…' : '加载更早消息'}
+      {historyLoading ? t('chat.loading') : t('chat.loadOlder')}
     </button>
   {/if}
   <ul class="chat-history">
@@ -157,29 +159,29 @@
       <li class="bbl-row" class:out={m.out}>
         <div class="bbl">
           {#if !m.out && curDialog.type === 'group' && m.sender}<span class="bbl-sender">{m.sender}</span>{/if}
-          <div class="bbl-text">{m.text || '[媒体消息]'}<span class="bbl-time">{m.date}{m.out ? ' ✓✓' : ''}</span></div>
+          <div class="bbl-text">{m.text || t('chat.mediaMessage')}<span class="bbl-time">{m.date}{m.out ? ' ✓✓' : ''}</span></div>
         </div>
       </li>
     {/each}
     {#if historyError}
       <li class="empty chat-empty-state" style="color: var(--md-sys-color-error)">
-        历史消息加载失败：{historyError}
-        <button class="back" onclick={() => onLoadHistory(true)}>[重试]</button>
+        {t('chat.historyError', { error: historyError })}
+        <button class="back" onclick={() => onLoadHistory(true)}>{t('chat.retry')}</button>
       </li>
     {:else if !historyMsgs.length}
-      <li class="empty chat-empty-state">{historyLoading ? '正在加载…' : '暂无消息'}</li>
+      <li class="empty chat-empty-state">{historyLoading ? t('chat.loadingShort') : t('chat.noMessages')}</li>
     {/if}
   </ul>
   <div class="chat-input-row">
     <input
       class="chat-input"
-      placeholder="输入消息（仅支持文本）"
+      placeholder={t('chat.inputPlaceholder')}
       bind:value={chatDraft}
       disabled={!isOnline}
       onkeydown={(e) => { if (e.key === 'Enter') onSendMsg(); }}
     />
     <button class="send-btn" disabled={sending || !chatDraft.trim()} onclick={onSendMsg}>
-      {sending ? '发送中…' : '发送'}
+      {sending ? t('chat.sending') : t('chat.send')}
     </button>
   </div>
 {/if}
