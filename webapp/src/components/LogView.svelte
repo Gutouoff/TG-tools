@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { LogItem } from '../api';
+  import { t } from '../texts';
 
   let {
     logs,
@@ -15,13 +16,13 @@
 </script>
 
 <div class="sec-head">
-  <h3>日志</h3>
+  <h3>{t('log.title')}</h3>
   {#if showBack}
-    <button class="back" onclick={() => onBack?.()}>返回</button>
+    <button class="back" onclick={() => onBack?.()}>{t('log.back')}</button>
   {/if}
 </div>
 <div class="prog">
-  <span>{progress.label || '无任务'}</span>
+  <span>{progress.label || t('log.noTask')}</span>
   <span>{progress.total ? `${progress.done}/${progress.total}` : ''}</span>
 </div>
 {#if progress.total}
@@ -30,7 +31,7 @@
   </div>
 {/if}
 {#if !logs.length}
-  <p class="empty">暂无日志</p>
+  <p class="empty">{t('log.empty')}</p>
 {/if}
 <ul class="log">
   {#each logs as e, i (e.ts + '|' + i)}

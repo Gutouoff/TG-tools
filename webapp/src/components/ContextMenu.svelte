@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from '../texts';
+
   type CtxMenu = { x: number; y: number; name: string };
 
   let {
@@ -27,7 +29,7 @@
 </script>
 
 <div class="ctx" style="left:{ctxMenu.x}px;top:{ctxMenu.y}px" onclick={(e) => e.stopPropagation()}>
-  <div class="ctx-title">移动分组（可多选）</div>
+  <div class="ctx-title">{t('ctx.moveGroup')}</div>
   {#each Object.keys(groups) as g}
     <label class="ctx-check">
       <input
@@ -42,13 +44,13 @@
       <span>{g}</span>
     </label>
   {/each}
-  <button onclick={() => { onMove(ctxMenu.name, 'ungrouped'); onClose(); }}>移出所有分组</button>
+  <button onclick={() => { onMove(ctxMenu.name, 'ungrouped'); onClose(); }}>{t('ctx.removeAll')}</button>
   {#if onlineNames.has(ctxMenu.name)}
-    <button class="ctx-disconnect" onclick={() => { onDisconnect(ctxMenu.name); onClose(); }}>断开连接（保持其他在线）</button>
+    <button class="ctx-disconnect" onclick={() => { onDisconnect(ctxMenu.name); onClose(); }}>{t('ctx.disconnect')}</button>
   {/if}
-  <button onclick={() => { onRename(ctxMenu.name); onClose(); }}>重命名文件夹…</button>
+  <button onclick={() => { onRename(ctxMenu.name); onClose(); }}>{t('ctx.rename')}</button>
   {#if renamePending[ctxMenu.name]}
-    <button onclick={() => { onRunPending(); onClose(); }}>立即执行待重命名 → {renamePending[ctxMenu.name]}</button>
-    <button onclick={() => { onCancelPending(ctxMenu.name); onClose(); }}>取消待重命名</button>
+    <button onclick={() => { onRunPending(); onClose(); }}>{t('ctx.runPending', { target: renamePending[ctxMenu.name] })}</button>
+    <button onclick={() => { onCancelPending(ctxMenu.name); onClose(); }}>{t('ctx.cancelPending')}</button>
   {/if}
 </div>

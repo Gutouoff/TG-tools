@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from '../texts';
+
   let {
     connected,
     connectingLabel,
@@ -27,17 +29,17 @@
 </script>
 
 <header class="topbar">
-  <span class="title">TG小号工具箱</span>
-  <span class="conn" class:on={connected && !connectingLabel}>{connectingLabel ? `● ${connectingLabel}` : connected ? '● 已连接' : '● 未连接'}</span>
-  <button class="topbtn" onclick={onAddAccount}>新建账号</button>
-  <button class="topbtn" onclick={onReconnect}>重新连接</button>
+  <span class="title">{t('app.title')}</span>
+  <span class="conn" class:on={connected && !connectingLabel}>{connectingLabel ? `● ${connectingLabel}` : connected ? t('topbar.connected') : t('topbar.disconnected')}</span>
+  <button class="topbtn" onclick={onAddAccount}>{t('topbar.newAccount')}</button>
+  <button class="topbtn" onclick={onReconnect}>{t('topbar.reconnect')}</button>
   <button class="topbtn" onclick={onLaunchClient}
     oncontextmenu={(e) => { e.preventDefault(); onOpenFolder(); }}
-    title="启动当前账号的 Telegram 客户端；右键账号卡片可打开文件夹">启动客户端</button>
-  <button class="topbtn" onclick={onDisconnect}>断开连接</button>
-  <button class="topbtn" onclick={onPack}>打包</button>
-  <button class="topbtn iconbtn" onclick={onToggleTheme} title={themeMode === 'dark' ? '切换到浅色' : '切换到深色'}>
+    title={t('topbar.launchClientHint')}>{t('topbar.launchClient')}</button>
+  <button class="topbtn" onclick={onDisconnect}>{t('topbar.disconnect')}</button>
+  <button class="topbtn" onclick={onPack}>{t('topbar.pack')}</button>
+  <button class="topbtn iconbtn" onclick={onToggleTheme} title={themeMode === 'dark' ? t('topbar.themeToLight') : t('topbar.themeToDark')}>
     {themeMode === 'dark' ? '☀️' : '🌙'}
   </button>
-  <button class="topbtn" onclick={onSettings}>设置</button>
+  <button class="topbtn" onclick={onSettings}>{t('topbar.settings')}</button>
 </header>
