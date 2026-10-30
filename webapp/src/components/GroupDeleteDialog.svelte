@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from '../texts';
+
   let {
     target,
     deleting,
@@ -15,16 +17,16 @@
 <div class="modal-mask" onclick={onClose}>
   <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
     <div class="rename-head">
-      <span>删除分组</span>
-      <button class="back set-close rename-x" title="关闭" onclick={onClose}>✕</button>
+      <span>{t('group.deleteTitle')}</span>
+      <button class="back set-close rename-x" title={t('common.close')} onclick={onClose}>✕</button>
     </div>
     <p class="set-hint">
-      删除分组「<b>{target}</b>」？组内账号不受影响，将归入「未分组」。
+      {t('group.deleteHintPrefix')}<b>{target}</b>{t('group.deleteHintSuffix')}
     </p>
     <div class="rename-btns">
-      <md-outlined-button onclick={onClose}>取消</md-outlined-button>
+      <md-outlined-button onclick={onClose}>{t('common.cancel')}</md-outlined-button>
       <md-filled-button class="danger-btn" disabled={deleting} onclick={onConfirm}>
-        {deleting ? '删除中…' : '删除'}
+        {deleting ? t('common.deleting') : t('common.delete')}
       </md-filled-button>
     </div>
   </div>

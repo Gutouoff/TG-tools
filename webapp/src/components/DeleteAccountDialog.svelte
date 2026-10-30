@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Account } from '../api';
+  import { t } from '../texts';
 
   let {
     target,
@@ -23,30 +24,30 @@
         <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
       </svg>
     </div>
-    <div class="del-title">删除账号</div>
-    <p class="del-sub">此操作<b>不可恢复</b>。将永久删除该账号的 session、tdata、登录凭据等全部文件，删除后只能重新登录。</p>
+    <div class="del-title">{t('account.deleteTitle')}</div>
+    <p class="del-sub">{t('account.deleteWarnPrefix')}<b>{t('account.deleteWarnStrong')}</b>{t('account.deleteWarnSuffix')}</p>
     <div class="set-group">
       <div class="set-row">
-        <span class="set-label">账号</span>
+        <span class="set-label">{t('account.label')}</span>
         <span class="del-val">{target.display || target.name}</span>
       </div>
       {#if target.uid}<div class="set-row">
-        <span class="set-label">UID</span>
+        <span class="set-label">{t('account.uid')}</span>
         <span class="del-val mono">{target.uid}</span>
       </div>{/if}
       <div class="set-row set-row-col">
-        <span class="set-label">将被删除的文件夹</span>
+        <span class="set-label">{t('account.deleteFolder')}</span>
         <code class="del-path">{target.path}</code>
       </div>
     </div>
     <label class="del-check">
       <input type="checkbox" bind:checked={confirm} />
-      <span>我已了解该操作不可恢复，确认删除该账号的全部文件</span>
+      <span>{t('account.deleteConfirm')}</span>
     </label>
     <div class="rename-btns">
-      <md-outlined-button onclick={onClose}>取消</md-outlined-button>
+      <md-outlined-button onclick={onClose}>{t('common.cancel')}</md-outlined-button>
       <md-filled-button class="danger-btn" disabled={deleting || !confirm} onclick={onConfirm}>
-        {deleting ? '删除中…' : '永久删除'}
+        {deleting ? t('common.deleting') : t('account.deleteForever')}
       </md-filled-button>
     </div>
   </div>

@@ -29,6 +29,31 @@ export const zh = {
   'ctx.rename': '重命名文件夹…',
   'ctx.runPending': '立即执行待重命名 → {target}',
   'ctx.cancelPending': '取消待重命名',
+
+  'common.close': '关闭',
+  'common.cancel': '取消',
+  'common.confirm': '确定',
+  'common.delete': '删除',
+  'common.deleting': '删除中…',
+  'common.processing': '处理中…',
+
+  'group.renameTitle': '分组重命名',
+  'group.renamePlaceholder': '输入新的分组名称',
+  'group.createTitle': '新建分组',
+  'group.createPlaceholder': '输入分组名称',
+  'group.deleteTitle': '删除分组',
+  'group.deleteHintPrefix': '删除分组「',
+  'group.deleteHintSuffix': '」？组内账号不受影响，将归入「未分组」。',
+
+  'account.deleteTitle': '删除账号',
+  'account.deleteWarnPrefix': '此操作',
+  'account.deleteWarnStrong': '不可恢复',
+  'account.deleteWarnSuffix': '。将永久删除该账号的 session、tdata、登录凭据等全部文件，删除后只能重新登录。',
+  'account.label': '账号',
+  'account.uid': 'UID',
+  'account.deleteFolder': '将被删除的文件夹',
+  'account.deleteConfirm': '我已了解该操作不可恢复，确认删除该账号的全部文件',
+  'account.deleteForever': '永久删除',
 } as const;
 
 export type TextKey = keyof typeof zh;

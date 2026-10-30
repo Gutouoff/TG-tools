@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from '../texts';
+
   let {
     value = $bindable(''),
     creating,
@@ -15,20 +17,20 @@
 <div class="modal-mask" onclick={onClose}>
   <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
     <div class="rename-head">
-      <span>新建分组</span>
-      <button class="back set-close rename-x" title="关闭" onclick={onClose}>✕</button>
+      <span>{t('group.createTitle')}</span>
+      <button class="back set-close rename-x" title={t('common.close')} onclick={onClose}>✕</button>
     </div>
     <input
       class="rename-input"
       bind:value
       onkeydown={(e) => { if (e.key === 'Enter') onConfirm(); }}
-      placeholder="输入分组名称"
+      placeholder={t('group.createPlaceholder')}
       maxlength="30"
     />
     <div class="rename-btns">
-      <md-outlined-button onclick={onClose}>取消</md-outlined-button>
+      <md-outlined-button onclick={onClose}>{t('common.cancel')}</md-outlined-button>
       <md-filled-button disabled={creating || !value.trim()} onclick={onConfirm}>
-        {creating ? '处理中…' : '确定'}
+        {creating ? t('common.processing') : t('common.confirm')}
       </md-filled-button>
     </div>
   </div>
