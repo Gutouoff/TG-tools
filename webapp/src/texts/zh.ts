@@ -398,6 +398,14 @@ export const zh = {
   'card.exporting': '导出中…',
   'card.export': '导出表格',
   'card.deleteAccount': '删除账号',
+
+  'common.all': '全部',
+  'common.ungrouped': '未分组',
+  'common.back': '返回',
+  'common.rename': '重命名…',
+  'group.menuTitle': '分组：{name}',
+  'group.deleteMenu': '删除分组（账号移回未分组）',
+  'app.searchPlaceholder': '搜索账号…',
 } as const;
 
 export type TextKey = keyof typeof zh;

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, flushSync } from 'svelte';
+  import { t } from './texts';
   import {
     getAccounts,
     connectAccount,
@@ -1962,12 +1963,12 @@
           oncontextmenu={(e) => onGroupContext(e, g)}
           onmousedown={(e) => onGroupMouseDown(e, g)}
         >
-          {g === 'all' ? '全部' : g === 'ungrouped' ? '未分组' : g}
+          {g === 'all' ? t('common.all') : g === 'ungrouped' ? t('common.ungrouped') : g}
         </button>
       {/each}
       <button class="grp add" onclick={doCreateGroup}>＋</button>
     </div>
-    <input class="search" placeholder="搜索账号…" bind:value={search} oninput={onSearch} />
+    <input class="search" placeholder={t('app.searchPlaceholder')} bind:value={search} oninput={onSearch} />
     <ul class="list">
       {#key filterVersion}
       {#each filtered as a}
@@ -2051,7 +2052,7 @@
   <section class="right">
     {#if mobilePanelOpen}
       <div class="mobile-panel-bar">
-        <button class="mobile-panel-back" aria-label="返回" onclick={closeMobilePanel}>‹ 返回</button>
+        <button class="mobile-panel-back" aria-label={t('common.back')} onclick={closeMobilePanel}>‹ {t('common.back')}</button>
       </div>
     {/if}
     {#if rightView === 'log'}
@@ -2144,9 +2145,9 @@
 
   {#if groupMenu}
     <div class="ctx" style="left:{groupMenu.x}px;top:{groupMenu.y}px" onclick={(e) => e.stopPropagation()}>
-      <div class="ctx-title">分组：{groupMenu.name}</div>
-      <button onclick={doOpenGroupRename}>重命名…</button>
-      <button class="ctx-disconnect" onclick={doOpenGroupDelete}>删除分组（账号移回未分组）</button>
+      <div class="ctx-title">{t('group.menuTitle', { name: groupMenu.name })}</div>
+      <button onclick={doOpenGroupRename}>{t('common.rename')}</button>
+      <button class="ctx-disconnect" onclick={doOpenGroupDelete}>{t('group.deleteMenu')}</button>
     </div>
   {/if}
 
