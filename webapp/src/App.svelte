@@ -94,6 +94,9 @@
   import SettingsDialog from './components/SettingsDialog.svelte';
   import MobileApp from './components/MobileApp.svelte';
   import AddAccountDialog from './components/AddAccountDialog.svelte';
+  import TdataToSessionDialog from './components/TdataToSessionDialog.svelte';
+  import SessionToTdataDialog from './components/SessionToTdataDialog.svelte';
+  import RenameAccountDialog from './components/RenameAccountDialog.svelte';
 
   const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AAE', '#6EC9CB', '#FAA774', '#FFA6C9'];
 
@@ -2198,58 +2201,23 @@
 {/if}
 
 {#if t2sOpen && current}
-  <div class="modal-mask" onclick={() => (t2sOpen = false)}>
-    <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
-      <div class="rename-head">
-        <span>tdata 转 session+json（覆盖刷新会话）</span>
-        <button class="back set-close rename-x" title="关闭" onclick={() => (t2sOpen = false)}>✕</button>
-      </div>
-      <p class="set-hint">
-        使用账号 <b>{current.display || current.name}</b> 的 <b>tdata</b> 重新生成 session+json，覆盖现有会话数据。适用于 session 过期、登录态失效的账号。
-      </p>
-      <p class="set-hint" style="color: var(--md-sys-color-error)">
-        在线账号仅刷新 json 元数据；离线账号将删除旧 session 并从 tdata 重建，tdata 已失效则刷新失败。
-      </p>
-      <div class="rename-btns">
-        <md-outlined-button onclick={() => (t2sOpen = false)}>取消</md-outlined-button>
-        <md-filled-button disabled={t2sConverting} onclick={doTdataToSsConfirm}>
-          {t2sConverting ? '刷新中…' : '开始刷新'}
-        </md-filled-button>
-      </div>
-    </div>
-  </div>
+  <TdataToSessionDialog
+    accountName={current.display || current.name}
+    converting={t2sConverting}
+    onClose={() => (t2sOpen = false)}
+    onConfirm={doTdataToSsConfirm}
+  />
 {/if}
 
 {#if convOpen && current}
-  <div class="modal-mask" onclick={() => (convOpen = false)}>
-    <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
-      <div class="rename-head">
-        <span>session+json 转 tdata</span>
-        <button class="back set-close rename-x" title="关闭" onclick={() => (convOpen = false)}>✕</button>
-      </div>
-      <p class="set-hint">
-        将账号 <b>{current.display || current.name}</b> 的 session 登录态转换为 Telegram Desktop 的 <b>tdata</b>，写入账号文件夹下的 tdata\ 子目录。
-      </p>
-      <p class="set-hint" style="color: var(--md-sys-color-error)">
-        原 session 保留不变，转换后两种登录态并存；tdata 需配合 Telegram.exe 使用。
-      </p>
-      <label class="del-check">
-        <input type="checkbox" bind:checked={convOverwrite} />
-        <span>覆盖已有 tdata（默认关闭；开启后目标 tdata\ 非空也会执行）</span>
-      </label>
-      <div class="set-row" style="margin-top:8px">
-        <span class="set-label">2FA 密码</span>
-        <input class="set-input" type="password" autocomplete="new-password"
-          bind:value={convTwofa} placeholder="开启两步验证的账号必填；留空则使用 json 中保存的密码" />
-      </div>
-      <div class="rename-btns">
-        <md-outlined-button onclick={() => (convOpen = false)}>取消</md-outlined-button>
-        <md-filled-button disabled={converting} onclick={doConvertTdataConfirm}>
-          {converting ? '转换中…' : '开始转换'}
-        </md-filled-button>
-      </div>
-    </div>
-  </div>
+  <SessionToTdataDialog
+    accountName={current.display || current.name}
+    bind:overwrite={convOverwrite}
+    bind:twofa={convTwofa}
+    converting={converting}
+    onClose={() => (convOpen = false)}
+    onConfirm={doConvertTdataConfirm}
+  />
 {/if}
 
 {#if delOpen && delTarget}
@@ -2272,37 +2240,15 @@
 {/if}
 
 {#if renameOpen}
-  <div class="modal-mask" onclick={() => (renameOpen = false)}>
-    <div class="modal rename-modal" onclick={(e) => e.stopPropagation()}>
-      <div class="rename-head">
-        <span>文件夹重命名</span>
-        <button class="back set-close rename-x" title="关闭" onclick={() => (renameOpen = false)}>✕</button>
-      </div>
-      <input
-        class="rename-input"
-        bind:value={renameInput}
-        onkeydown={(e) => { if (e.key === 'Enter') doRename(); }}
-        placeholder="输入新的文件夹名称"
-        maxlength="60"
-      />
-      {#if renameQuickOpts.length}
-        <div class="rename-quick">
-          <span class="rename-quick-label">快捷填充：</span>
-          {#each renameQuickOpts as [k, label]}
-            {#if renameQuickVal(k)}
-              <button class="rule-chip" title={renameQuickVal(k)} onclick={() => applyRenameQuick(k, label)}>{label}</button>
-            {/if}
-          {/each}
-        </div>
-      {/if}
-      <div class="rename-btns">
-        <md-outlined-button onclick={() => (renameOpen = false)}>取消</md-outlined-button>
-        <md-filled-button disabled={renaming || !renameInput.trim()} onclick={doRename}>
-          {renaming ? '处理中…' : '确定'}
-        </md-filled-button>
-      </div>
-    </div>
-  </div>
+  <RenameAccountDialog
+    bind:value={renameInput}
+    renaming={renaming}
+    quickOpts={renameQuickOpts}
+    quickVal={renameQuickVal}
+    onApplyQuick={applyRenameQuick}
+    onClose={() => (renameOpen = false)}
+    onConfirm={doRename}
+  />
 {/if}
 
 {#if settingsOpen}

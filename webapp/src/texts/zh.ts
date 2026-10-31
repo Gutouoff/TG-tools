@@ -406,6 +406,28 @@ export const zh = {
   'group.menuTitle': '分组：{name}',
   'group.deleteMenu': '删除分组（账号移回未分组）',
   'app.searchPlaceholder': '搜索账号…',
+
+  't2s.title': 'tdata 转 session+json（覆盖刷新会话）',
+  't2s.hintPrefix': '使用账号 ',
+  't2s.hintMid': ' 的 ',
+  't2s.hintSuffix': ' 重新生成 session+json，覆盖现有会话数据。适用于 session 过期、登录态失效的账号。',
+  't2s.warn': '在线账号仅刷新 json 元数据；离线账号将删除旧 session 并从 tdata 重建，tdata 已失效则刷新失败。',
+  't2s.confirm': '开始刷新',
+  't2s.refreshing': '刷新中…',
+
+  'conv.title': 'session+json 转 tdata',
+  'conv.hintPrefix': '将账号 ',
+  'conv.hintMid': ' 的 session 登录态转换为 Telegram Desktop 的 ',
+  'conv.hintSuffix': '，写入账号文件夹下的 tdata\\ 子目录。',
+  'conv.warn': '原 session 保留不变，转换后两种登录态并存；tdata 需配合 Telegram.exe 使用。',
+  'conv.overwrite': '覆盖已有 tdata（默认关闭；开启后目标 tdata\\ 非空也会执行）',
+  'conv.twofaLabel': '2FA 密码',
+  'conv.twofaPlaceholder': '开启两步验证的账号必填；留空则使用 json 中保存的密码',
+  'conv.confirm': '开始转换',
+
+  'rename.title': '文件夹重命名',
+  'rename.placeholder': '输入新的文件夹名称',
+  'rename.quick': '快捷填充：',
 } as const;
 
 export type TextKey = keyof typeof zh;
