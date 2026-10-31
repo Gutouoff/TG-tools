@@ -130,7 +130,7 @@
           </label>
           <button class="mobile-filter" aria-label={t('mob.newGroup')} title={t('mob.newGroup')} onclick={onCreateGroup}>☷</button>
         </div>
-        <div class="mobile-groups" aria-label="账号分组">
+        <div class="mobile-groups" aria-label={t('mob.groupsAria')}>
           {#each ['all', 'ungrouped', ...Object.keys(groups)] as g}
             <button class="mobile-group" class:active={curGroup === g} onclick={() => onSelectGroup(g)}>
               {g === 'all' ? t('mob.all') : g === 'ungrouped' ? t('mob.ungrouped') : g}

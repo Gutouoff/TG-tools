@@ -428,6 +428,8 @@ export const zh = {
   'rename.title': '文件夹重命名',
   'rename.placeholder': '输入新的文件夹名称',
   'rename.quick': '快捷填充：',
+
+  'mob.groupsAria': '账号分组',
 } as const;
 
 export type TextKey = keyof typeof zh;
