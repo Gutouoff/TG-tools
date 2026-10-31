@@ -362,6 +362,56 @@ export const zh = {
   'mob.panel.email': '邮箱登录',
   'mob.panel.devices': '登录设备',
   'mob.panel.join': '群组与频道',
+
+  'card.general': '基本信息',
+  'card.chat': '聊天',
+  'card.security': '安全',
+  'card.delete': '删除',
+  'card.convert': '转换',
+  'card.other': '其他设置',
+  'card.noAccount': '未选择账号',
+  'card.edit': '编辑',
+  'card.recvNew': '接收新消息',
+  'card.listening': '监听中',
+  'card.stopped': '已停止',
+  'card.connectFirst': '请先连接账号',
+  'card.stopRecv': '停止接收',
+  'card.startRecv': '开始接收',
+  'card.messageList': '消息列表',
+  'card.2fa': '两步验证',
+  'card.passkey': '通行密钥',
+  'card.email': '邮箱登录',
+  'card.devices': '登录设备',
+  'card.delContacts': '删联系人',
+  'card.delDialogs': '删对话',
+  'card.delBots': '删机器人',
+  'card.delChannels': '删频道',
+  'card.speed': '速度',
+  'card.tdataToSs': 'tdata 转 session+json',
+  'card.converting': '转换中…',
+  'card.ssToTdata': 'session+json 转 tdata',
+  'card.refreshSs': '刷新 session（批量修复登录态失效的账号）',
+  'card.updateClient': '安装或升级客户端',
+  'card.refreshInfo': '刷新账号信息',
+  'card.poll': '账号轮询',
+  'card.joinChannels': '加群频道…',
+  'card.exporting': '导出中…',
+  'card.export': '导出表格',
+  'card.deleteAccount': '删除账号',
 } as const;
 
 export type TextKey = keyof typeof zh;
+
+/** 卡片 id 是持久化状态键（settings.card_order），这里只负责显示名。 */
+export const cardLabels: Record<string, string> = {
+  基本信息: '基本信息',
+  聊天: '聊天',
+  安全: '安全',
+  删除: '删除',
+  转换: '转换',
+  其他设置: '其他设置',
+};
+
+export function cardLabel(id: string): string {
+  return cardLabels[id] ?? id;
+}

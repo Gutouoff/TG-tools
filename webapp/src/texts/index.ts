@@ -14,3 +14,5 @@ export function t(key: TextKey, params?: Record<string, string | number>): strin
   }
   return text;
 }
+
+export { cardLabel } from './zh';

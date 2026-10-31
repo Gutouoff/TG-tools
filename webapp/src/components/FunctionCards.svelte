@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Account } from '../api';
+  import { t, cardLabel } from '../texts';
 
   let {
     cardOrder,
@@ -77,7 +78,7 @@
 {#each cardOrder as c (c)}
   {#if c === '基本信息'}
     <details class="card" data-card="基本信息" open={isOpen('基本信息', true)} ontoggle={(e) => onToggle('基本信息', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>基本信息</summary>
+      <summary>{cardLabel('基本信息')}</summary>
       <div class="bi">
         {#if current?.avatar && !avatarFailed.has(current.name)}
           <img class="avatar big" src={avatarUrl(current)} alt="" onerror={() => onAvatarError(current?.name || '')} />
@@ -87,30 +88,30 @@
           </span>
         {/if}
         <div class="bi-meta">
-          <div class="bi-name">{current?.display || current?.name || '未选择账号'}</div>
+          <div class="bi-name">{current?.display || current?.name || t('card.noAccount')}</div>
           <div class="bi-sub">@{current?.username || current?.phone || '-'}</div>
         </div>
-        <button class="edit-btn" onclick={onEditProfile}>编辑</button>
+        <button class="edit-btn" onclick={onEditProfile}>{t('card.edit')}</button>
       </div>
     </details>
   {:else if c === '聊天'}
     <details class="card" data-card="聊天" open={isOpen('聊天', true)} ontoggle={(e) => onToggle('聊天', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>聊天</summary>
+      <summary>{cardLabel('聊天')}</summary>
       <div class="chat-ctl">
         <div class="chat-switch-row">
           <span class="chat-switch-label">
             <span class="status-dot" class:on={recvOn}></span>
-            <span class="chat-switch-text">接收新消息</span>
-            <em class="chat-state">{recvOn ? '监听中' : '已停止'}</em>
+            <span class="chat-switch-text">{t('card.recvNew')}</span>
+            <em class="chat-state">{recvOn ? t('card.listening') : t('card.stopped')}</em>
           </span>
           <button
             class="toggle"
             class:on={recvOn}
             role="switch"
-            aria-label="接收新消息"
+            aria-label={t('card.recvNew')}
             aria-checked={recvOn}
             disabled={!canRecv}
-            title={!canRecv ? '请先连接账号' : recvOn ? '停止接收' : '开始接收'}
+            title={!canRecv ? t('card.connectFirst') : recvOn ? t('card.stopRecv') : t('card.startRecv')}
             onclick={onToggleRecv}
           >
             <span class="toggle-thumb"></span>
@@ -118,7 +119,7 @@
         </div>
         <div class="chat-entries">
           <button class="chat-entry" onclick={onOpenChatList}>
-            消息列表
+            {t('card.messageList')}
             {#if chatUnread}<span class="badge">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}
           </button>
         </div>
@@ -126,25 +127,25 @@
     </details>
   {:else if c === '安全'}
     <details class="card" data-card="安全" open={isOpen('安全', false)} ontoggle={(e) => onToggle('安全', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>安全</summary>
+      <summary>{cardLabel('安全')}</summary>
       <div class="grid">
-        <md-outlined-button onclick={on2FA}>两步验证</md-outlined-button>
-        <md-outlined-button onclick={onPasskeys}>通行密钥</md-outlined-button>
-        <md-outlined-button onclick={onEmail}>邮箱登录</md-outlined-button>
-        <md-outlined-button onclick={onDevices}>登录设备</md-outlined-button>
+        <md-outlined-button onclick={on2FA}>{t('card.2fa')}</md-outlined-button>
+        <md-outlined-button onclick={onPasskeys}>{t('card.passkey')}</md-outlined-button>
+        <md-outlined-button onclick={onEmail}>{t('card.email')}</md-outlined-button>
+        <md-outlined-button onclick={onDevices}>{t('card.devices')}</md-outlined-button>
       </div>
     </details>
   {:else if c === '删除'}
     <details class="card" data-card="删除" open={isOpen('删除', true)} ontoggle={(e) => onToggle('删除', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>删除</summary>
+      <summary>{cardLabel('删除')}</summary>
       <div class="grid">
-        <md-outlined-button onclick={onDeleteContacts}>删联系人</md-outlined-button>
-        <md-outlined-button onclick={() => onDeleteDialogs('users')}>删对话</md-outlined-button>
-        <md-outlined-button onclick={() => onDeleteDialogs('bots')}>删机器人</md-outlined-button>
-        <md-outlined-button onclick={() => onDeleteDialogs('groups')}>删频道</md-outlined-button>
+        <md-outlined-button onclick={onDeleteContacts}>{t('card.delContacts')}</md-outlined-button>
+        <md-outlined-button onclick={() => onDeleteDialogs('users')}>{t('card.delDialogs')}</md-outlined-button>
+        <md-outlined-button onclick={() => onDeleteDialogs('bots')}>{t('card.delBots')}</md-outlined-button>
+        <md-outlined-button onclick={() => onDeleteDialogs('groups')}>{t('card.delChannels')}</md-outlined-button>
       </div>
       <div class="speed-row">
-        <span class="speed-label">速度</span>
+        <span class="speed-label">{t('card.speed')}</span>
         <div class="speed-seg">
           {#each speedSeg as [label, v]}
             <button class="seg" class:on={speedVal === v} onclick={() => onSpeed(v)}>{label}</button>
@@ -154,23 +155,23 @@
     </details>
   {:else if c === '转换'}
     <details class="card" data-card="转换" open={isOpen('转换', false)} ontoggle={(e) => onToggle('转换', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>转换</summary>
+      <summary>{cardLabel('转换')}</summary>
       <div class="conv-group">
-        <md-outlined-button class="full-row" onclick={onOpenTdataToSs}>tdata 转 session+json</md-outlined-button>
-        <md-outlined-button class="full-row" onclick={onOpenConvertTdata} disabled={converting}>{converting ? '转换中…' : 'session+json 转 tdata'}</md-outlined-button>
-        <md-outlined-button onclick={onRefreshSs}>刷新 session（批量修复登录态失效的账号）</md-outlined-button>
+        <md-outlined-button class="full-row" onclick={onOpenTdataToSs}>{t('card.tdataToSs')}</md-outlined-button>
+        <md-outlined-button class="full-row" onclick={onOpenConvertTdata} disabled={converting}>{converting ? t('card.converting') : t('card.ssToTdata')}</md-outlined-button>
+        <md-outlined-button onclick={onRefreshSs}>{t('card.refreshSs')}</md-outlined-button>
       </div>
     </details>
   {:else if c === '其他设置'}
     <details class="card" data-card="其他设置" open={isOpen('其他设置', false)} ontoggle={(e) => onToggle('其他设置', (e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>其他设置</summary>
+      <summary>{cardLabel('其他设置')}</summary>
       <div class="grid">
-        <md-outlined-button onclick={onUpdateTelegram}>安装或升级客户端</md-outlined-button>
-        <md-outlined-button onclick={onRefreshInfo}>刷新账号信息</md-outlined-button>
-        <md-outlined-button onclick={onPollAccounts}>账号轮询</md-outlined-button>
-        <md-outlined-button onclick={onJoinChannels}>加群频道…</md-outlined-button>
-        <md-outlined-button onclick={onExport} disabled={exporting}>{exporting ? '导出中…' : '导出表格'}</md-outlined-button>
-        <md-outlined-button class="danger-btn" onclick={onDeleteAccount}>删除账号</md-outlined-button>
+        <md-outlined-button onclick={onUpdateTelegram}>{t('card.updateClient')}</md-outlined-button>
+        <md-outlined-button onclick={onRefreshInfo}>{t('card.refreshInfo')}</md-outlined-button>
+        <md-outlined-button onclick={onPollAccounts}>{t('card.poll')}</md-outlined-button>
+        <md-outlined-button onclick={onJoinChannels}>{t('card.joinChannels')}</md-outlined-button>
+        <md-outlined-button onclick={onExport} disabled={exporting}>{exporting ? t('card.exporting') : t('card.export')}</md-outlined-button>
+        <md-outlined-button class="danger-btn" onclick={onDeleteAccount}>{t('card.deleteAccount')}</md-outlined-button>
       </div>
     </details>
   {/if}
