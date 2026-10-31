@@ -21,3 +21,16 @@ test('手机端：更多页', async ({ app }) => {
   await settle(app);
   await expect(app).toHaveScreenshot('10-mobile-more.png');
 });
+
+test('手机端：选中账号后的当前页', async ({ app }) => {
+  await app.locator('.mobile-account-row .mobile-account-main').first().click();
+  await expect(app.locator('.mobile-current-card')).toContainText('Alpha');
+  await expect(app.locator('.mobile-action-list')).toContainText('个人资料');
+  await expect(app.locator('.mobile-quick-grid')).toContainText('删联系人');
+});
+
+test('手机端：动态页显示日志', async ({ app }) => {
+  await app.locator('.mobile-nav button', { hasText: '动态' }).click();
+  await expect(app.locator('.mobile-log-list')).toContainText('程序版本');
+  await expect(app.locator('.mobile-log-list li').first()).toBeVisible();
+});
