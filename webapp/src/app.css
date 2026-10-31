@@ -239,3 +239,23 @@ md-outlined-button {
   --space-20: 20px;
   --space-24: 24px;
 }
+
+/* 阴影/层级令牌（Phase 3-3）：数值与迁移前完全一致，改一处即可全局调整。 */
+:root {
+  --shadow-topbar-1: 0 1px 4px rgba(0, 0, 0, 0.25);
+  --shadow-topbar-2: 0 1px 0 rgba(29, 27, 32, 0.12), 0 3px 12px rgba(29, 27, 32, 0.12);
+  --shadow-ctx-1: 0 4px 16px rgba(0, 0, 0, 0.2);
+  --shadow-ctx-2: 0 8px 24px rgba(29, 27, 32, 0.18), 0 2px 8px rgba(29, 27, 32, 0.12);
+  --shadow-ctx-3: 0 8px 24px rgba(26, 27, 32, 0.14), 0 2px 6px rgba(26, 27, 32, 0.08);
+  --shadow-modal-1: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --shadow-modal-2: 0 16px 40px rgba(29, 27, 32, 0.2), 0 4px 12px rgba(29, 27, 32, 0.14);
+  --shadow-modal-3: 0 18px 40px rgba(26, 27, 32, 0.16), 0 4px 12px rgba(26, 27, 32, 0.1);
+  --shadow-card-1: 0 1px 2px rgba(29, 27, 32, 0.05);
+  --shadow-card-2: 0 1px 2px rgba(29, 27, 32, 0.03);
+  --shadow-card-3: 0 1px 3px rgba(26, 27, 32, 0.04);
+  --shadow-card-4: 0 1px 3px rgba(26, 27, 32, 0.05), 0 8px 22px rgba(26, 27, 32, 0.035);
+  --shadow-card-5: 0 1px 2px rgba(26, 27, 32, 0.03);
+  --shadow-btn-1: 0 1px 2px rgba(29, 27, 32, 0.14);
+  --shadow-bubble-1: 0 1px 1px rgba(29, 27, 32, 0.06);
+  --shadow-item-current: inset 3px 0 0 var(--md-sys-color-primary);
+}
