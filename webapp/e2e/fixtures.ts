@@ -72,6 +72,13 @@ export async function installMocks(page: Page) {
     if (p === '/api/whitelist') return json(route, { users: [5434838648], groups: [2284618069] });
     if (p === '/api/dialogs') return json(route, { ok: true, dialogs });
     if (p === '/api/chat/history') return json(route, { ok: true, msgs: [] });
+    if (p === '/api/passkeys') return json(route, { ok: true, passkeys: [] });
+    if (p === '/api/devices') return json(route, { ok: true, devices: [] });
+    if (p === '/api/2fa') return json(route, { ok: true, has_2fa: false });
+    if (p === '/api/profile') return json(route, {
+      ok: true,
+      profile: { first: '', last: '', about: '', username: '', phone: '', photo: '' },
+    });
     return json(route, { ok: true });
   });
 }
@@ -122,8 +129,18 @@ export async function installDeterminism(page: Page) {
   });
 }
 
-export const test = base.extend<{ app: Page }>({
-  app: async ({ page }, use) => {
+export const test = base.extend<{ app: Page; appErrors: string[] }>({
+  appErrors: async ({}, use) => {
+    await use([]);
+  },
+  app: async ({ page, appErrors }, use) => {
+    page.on('pageerror', (err) => appErrors.push(`pageerror: ${err.message}`));
+    page.on('console', (msg) => {
+      if (msg.type() !== 'error') return;
+      const text = msg.text();
+      if (text.includes('favicon')) return;
+      appErrors.push(`console: ${text}`);
+    });
     await installDeterminism(page);
     await installMocks(page);
     await page.goto('/?token=e2e');
