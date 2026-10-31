@@ -1,7 +1,7 @@
 # Phase 0：前端回归基线（Playwright E2E + 本地截图对比）
 
 > 目的：在动任何样式之前先有「可重复的 UI 基线」，避免重设计把功能/布局改坏。
-> 当前覆盖：24 条用例（交互 + 11 张视觉快照 + 文案/运行时错误守卫）；`npm run test:e2e` 全绿。
+> 当前覆盖：26 条用例（交互 + 13 张视觉快照，含深色模式 + 文案/运行时错误守卫）；`npm run test:e2e` 全绿。
 
 ## 为什么是本地截图，而不是 Percy
 
@@ -36,6 +36,7 @@ npx playwright install chromium
 | `e2e/texts.spec.ts` | 文案守卫：组件里 `t()` 的 key 必须存在于 `zh.ts`，模板不得出现硬编码中文（图标字形除外） |
 | `e2e/errors.spec.ts` | 全界面走查：账号卡、六张功能卡、设置六分区、会话/资料/安全/加群视图、重命名与删除弹窗，全程不得出现 JS `pageerror` / console error |
 | `e2e/visual.spec.ts` | 11 张基线：主界面、设置-通用、设置-外观、右键菜单、删除弹窗、会话列表、加群频道、资料编辑、新建账号、手机端账号/更多 |
+| `e2e/dark.spec.ts` | 深色模式 2 张基线：主界面、设置-外观（`settings.theme_mode=dark` 走同一套 mock，启动即生效） |
 
 ## 确定性措施（很重要）
 

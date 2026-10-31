@@ -57,12 +57,13 @@ async function json(route: any, body: unknown) {
 }
 
 /** 静态托管页面时拦截所有 /api/*，返回固定数据，保证截图与断言可复现。 */
-export async function installMocks(page: Page) {
+export async function installMocks(page: Page, settingsOverride: Partial<typeof settings> = {}) {
+  const effectiveSettings = { ...settings, ...settingsOverride };
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     const p = url.pathname;
     if (p === '/api/accounts') return json(route, accounts);
-    if (p === '/api/settings') return json(route, settings);
+    if (p === '/api/settings') return json(route, effectiveSettings);
     if (p === '/api/ping') return json(route, { status: 'ok', app: 'TG工具箱', version: '1.2.3' });
     if (p === '/api/logs') return json(route, { ok: true, items: logs, file: 'logs/tg-tool-20261028.log' });
     if (p === '/api/online') return json(route, { ok: true, online: [{ name: 'acc_alpha' }] });
@@ -129,22 +130,30 @@ export async function installDeterminism(page: Page) {
   });
 }
 
-export const test = base.extend<{ app: Page; appErrors: string[] }>({
+async function bootstrap(page: Page, appErrors: string[], settingsOverride: Partial<typeof settings> = {}) {
+  page.on('pageerror', (err) => appErrors.push(`pageerror: ${err.message}`));
+  page.on('console', (msg) => {
+    if (msg.type() !== 'error') return;
+    const text = msg.text();
+    if (text.includes('favicon')) return;
+    appErrors.push(`console: ${text}`);
+  });
+  await installDeterminism(page);
+  await installMocks(page, settingsOverride);
+  await page.goto('/?token=e2e');
+  await page.waitForFunction(() => document.fonts.status === 'loaded');
+}
+
+export const test = base.extend<{ app: Page; darkApp: Page; appErrors: string[] }>({
   appErrors: async ({}, use) => {
     await use([]);
   },
   app: async ({ page, appErrors }, use) => {
-    page.on('pageerror', (err) => appErrors.push(`pageerror: ${err.message}`));
-    page.on('console', (msg) => {
-      if (msg.type() !== 'error') return;
-      const text = msg.text();
-      if (text.includes('favicon')) return;
-      appErrors.push(`console: ${text}`);
-    });
-    await installDeterminism(page);
-    await installMocks(page);
-    await page.goto('/?token=e2e');
-    await page.waitForFunction(() => document.fonts.status === 'loaded');
+    await bootstrap(page, appErrors);
+    await use(page);
+  },
+  darkApp: async ({ page, appErrors }, use) => {
+    await bootstrap(page, appErrors, { theme_mode: 'dark' });
     await use(page);
   },
 });
