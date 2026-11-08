@@ -36,10 +36,13 @@ webapp/test-results/
 webapp/playwright-report/
 webapp/blob-report/
 
-# Android M0 构建缓存与产物
+# Android M0 / WebView 实验的构建缓存与产物
 android_m0*/.buildozer/
 android_m0*/bin/
 android_m0*/.venv/
+android_app/.buildozer/
+android_app/bin/
+android_app/.venv/
 
 # 工具临时目录
 .zcode/
