@@ -1,7 +1,7 @@
 # TG 工具箱交接文档（重开会话用）
 
 > 本文档记录项目完整状态、关键机制、卡点与下一步，供新会话无缝继续。
-> 最后更新：**2026-10-01，v1.2.2（发布提交 9b31358，tag v1.2.2）**。本文档基于全仓库复查整篇重写，替代 v1.1.0 时期旧版。
+> 最后更新：**2026-11-08，v1.2.3 已发布，前端重构 Phase 1–4 完成、Phase 5 待开始**。旧版基于 v1.2.2 的章节已按当前代码校正。
 
 ---
 
@@ -16,18 +16,18 @@ Telegram 小号批量维护工具箱（删联系人/删对话/退群/加群/拉�
 - CLI（`python -X utf8 tg_tool.py`，账号目录内）仍可用；Tkinter GUI 已归档 `legacy/`（v1.0.0 起冻结不维护）
 - **运行时账号数据**：`D:\Desktop\TG小号\`（不入库、不改目录结构）
 
-## 二、当前状态快照（2026-10-01）
+## 二、当前状态快照（2026-11-08）
 
 | 项 | 值 |
 |---|---|
-| 版本 | **v1.2.2**（`tg_tool.py:43` `APP_VERSION`，唯一权威；`/api/ping` 与前端顶栏读它） |
-| 分支 | dev = main（v1.2.2 发布提交 9b31358，其后仅文档更新）；本地分支 `new-ui` = a5f97f8（「LocalSend 风 Teal 主题」旧提交，落后 102 提交，纯残留可删） |
-| tag | v1.2.2 已打并推送，GitHub Release 带资产 TG-tools_v1.2.2.zip（≈30MB） |
-| 发布线 | v1.1.0-beta.1→9 → v1.1.0 → v1.1.1 → v1.2.0 → v1.2.1 → v1.2.2；notes 归档 `docs/releases/` |
-| v1.2.2 内容 | 改名遇「文件夹被占用」不再直接报错：记入待执行 `rename_pending.json`，列表显示「待改名」徽标，后台每 10 秒重试，客户端关闭后自动改名；右键可立即执行/取消 |
-| v1.2.1 内容 | 修复拖入 zip 导入失败（包内账号数据多套一层文件夹时识别不到）+ 同含 session/tdata 的包被误判成 tdata（会多转出一条登录态） |
-| v1.2.0 内容 | 新建账号三方式（拖包导入/扫码登录/手机号登录）+ 导入增强 + 加群频道页一体化 + 打包结果进剪贴板 + 安全加固（首页强制 token、Host 白名单）+ 一批修复 |
-| 未完卡点 | ① passkey caBLE 等用户复测（见第七节）② 多设备 App 化待启动 M0（见第八节） |
+| 版本 | **v1.2.3**（`tg_tool.py:45` `APP_VERSION`，唯一权威；`/api/ping` 与前端顶栏读它） |
+| 分支 | `main` = `origin/main` = v1.2.3 发布提交 `1509748`；`dev` = `82939e4`，领先 main 48 个提交，其中 42 个尚未推到 `origin/dev` |
+| tag | v1.2.3 已打并推送，GitHub Release 带资产 TG-tools_v1.2.3.zip（≈30MB） |
+| 发布线 | v1.1.0-beta.1→9 → v1.1.0 → v1.1.1 → v1.2.0 → v1.2.1 → v1.2.2 → v1.2.3；notes 归档 `docs/releases/` |
+| v1.2.3 内容 | 蓝色主题（#356AE6）+ 设置页分区导航 + 会话区刷新与可达性；配置结构无破坏性变更 |
+| 当前工作 | 前端重构 Phase 1–4 已完成：拆 19 个组件、样式迁 `webapp/src/styles/app-ui.css`、文案外置 `webapp/src/texts/zh.ts`、26 条 Playwright 用例全绿；Phase 5 视觉重设计见 `docs/ui-phase5-plan.md` |
+| 部署状态 | `D:\Desktop\TG小号\TG工具箱Web\` 仍是 2026-10-23 的 v1.2.3 程序；10-31 构建的新包未覆盖部署 |
+| 未完卡点 | ① passkey caBLE 等用户复测（见第七节）② Android M0-D 卡 vivo 后台冻结（见第八节）③ UI Phase 5 未开始 |
 
 ## 三、环境
 
@@ -35,13 +35,13 @@ Telegram 小号批量维护工具箱（删联系人/删对话/退群/加群/拉�
 |---|---|
 | 工作目录 | `D:\dsh\tgtools` |
 | 部署目录 | `D:\Desktop\TG小号\TG工具箱Web\`（用户运行 exe 处；**E:\Telegram Desktop 是用户主号绝对不碰**） |
-| Python | `C:\Python314\python.exe -X utf8`（必须 `-X utf8`） |
+| Python | `python`（3.12.10，必须 `-X utf8`）；发版构建用临时 venv 安装依赖，见 `docs/RELEASE_BUILD.md` |
 | Node/npm | `webapp/` 下 `npm run build`（Vite） |
 | Git 远程 | `https://github.com/Gutouoff/TG-tools.git`（origin） |
 | 终端 | MSYS bash（POSIX 语法，原生工具传 `C:/x` 正斜杠路径） |
 | 已装依赖 | 见 requirements.txt（pin）：telethon 1.44.0 / opentele-ng 1.4.0 / fastapi 0.141.1 / uvicorn 0.52.4 / pywebview 6.2.1 / websockets 17.1 / qrcode 8.2 / pillow 12.3.0 / cryptography 50.0.1 / cbor2 6.1.4 / bleak 3.0.2 / python-socks 3.0.0 / openpyxl 3.1.5 |
 
-**ROOT（账号根目录）解析规则**（server.py:38-45）：frozen 时 SCRIPT_DIR=exe 目录，onedir 下 ROOT=exe 目录的上级（部署态即 `D:\Desktop\TG小号\`）；源码态 ROOT=`tg_tool.SCRIPT_DIR` 的上级（即 `D:\dsh`）。所有账号路径必须过 `_ensure_in_root`（越界 400）。
+**ROOT（账号根目录）解析规则**（`server.py` 顶部）：frozen 时 SCRIPT_DIR=exe 目录，onedir 下 ROOT=exe 目录的上级（部署态即 `D:\Desktop\TG小号\`）；源码态 ROOT=`tg_tool.SCRIPT_DIR` 的上级（即 `D:\dsh`）。所有账号路径必须过 `_ensure_in_root`（越界 400）。
 
 ## 四、标准流程：构建 → 打包 → 部署 → 发布
 
@@ -49,8 +49,8 @@ Telegram 小号批量维护工具箱（删联系人/删对话/退群/加群/拉�
 # 1. 前端构建（webapp 目录）——改了 webapp/src/** 后必须先 build 再打包/部署
 npm run build
 
-# 2. 打包（tgtools 目录）
-& C:\Python314\python.exe -X utf8 -m PyInstaller TG工具箱Web.spec --noconfirm
+# 2. 打包（tgtools 目录；依赖装在临时 venv 时换成该 venv 的 python）
+python -X utf8 -m PyInstaller TG工具箱Web.spec --noconfirm
 
 # 3. 覆盖部署（保留 avatars/profiles 缓存，不删；deploy.bat 同效）
 Copy-Item 'D:\dsh\tgtools\dist\TG工具箱Web\*' 'D:\Desktop\TG小号\TG工具箱Web' -Recurse -Force
@@ -63,21 +63,25 @@ git checkout main; git merge --ff-only dev; git push origin main; git checkout d
 - **沙箱注意**：`npm run build` 的 esbuild spawn 与 `git push`（读 Windows 凭据管理器）会 EPERM/Authentication failed，需放开沙箱权限重试。
 - **流程铁律**：改了 `webapp/src/**` 忘 build 就打包 = 把旧界面带出去（`webapp/dist` 不入库）。
 
-## 五、代码地图（行数为 2026-10-01 实测）
+## 五、代码地图（行数为 2026-11-08 实测）
 
 | 文件 | 行数 | 职责与改动注意 |
 |---|---|---|
-| `server.py` | 2176 | FastAPI 后端全部 REST/WS API；鉴权中间件、设置迁移、打包、静态首页注入 token。50+ 路由分组：基础(ping/accounts/ws)、连接(connect/disconnect/switch/online)、任务(tasks/*、speed、whitelist、poll-accounts、join-channels)、聊天资料(dialogs/history/chat.send/me/profile/*/avatar/2fa/email/*/devices)、转换(convert-to-tdata/convert-tdata/refresh-session/refresh-ss-batch)、账号管理(launch-client/open-folder/rename-account/delete-account/groups/*)、**新建账号(add-account/import/qrlogin/*/phonelogin/*)**、系统(update-telegram/settings/pack/export-accounts/passkeys/*) |
-| `tg_engine.py` | 2264 | 引擎：线程+私有 asyncio loop、`_pool` 多账号连接池/秒切、任务、温和取消、进度回调；v1.2.0 新增 qr_login_start/poll/cancel、phone_login_start/submit/cancel、_write_json_from_me、poll_accounts |
-| `tg_tool.py` | 1583 | 核心业务+CLI+`DEFAULT_TEXTS`(t0xx) 界面文本表+白名单(DEFAULT_USER/GROUP_WHITELIST)+代理+`SPEED_PRESETS`+APP_VERSION；`make_json_from_session`/`reconcile_converted_json` 供导入复用 |
-| `webapp/src/App.svelte` | 4487 | 主 UI 全部：账号卡/分组/功能卡/弹窗/新建账号三流程/加群页/安全页。改动后必须 `npm run build` |
-| `webapp/src/api.ts` | 373 | API 封装 + TOKEN + connectWS |
-| `webapp/src/app.css` | 128 | Material 3 Teal 主题变量 + 深色模式（theme_mode 切换） |
+| `server.py` | 2389 | FastAPI 后端全部 REST/WS API（78 条路由）；鉴权中间件、设置迁移、打包、静态首页注入 token。分组：基础(ping/accounts/ws)、连接(connect/disconnect/switch/online)、任务(tasks/*、speed、whitelist、poll-accounts、join-channels)、聊天资料(dialogs/history/chat.send/me/profile/*/avatar/2fa/email/*/devices)、转换(convert-to-tdata/convert-tdata/refresh-session/refresh-ss-batch)、账号管理(launch-client/open-folder/rename-account/delete-account/groups/*)、**新建账号(add-account/import/qrlogin/*/phonelogin/*)**、系统(update-telegram/settings/pack/export-accounts/passkeys/*) |
+| `tg_engine.py` | 2252 | 引擎：线程+私有 asyncio loop、`_pool` 多账号连接池/秒切、任务、温和取消、进度回调；qr_login_start/poll/cancel、phone_login_start/submit/cancel、_write_json_from_me、poll_accounts |
+| `tg_tool.py` | 1576 | 核心业务+CLI+`DEFAULT_TEXTS`(t0xx) 界面文本表+白名单(DEFAULT_USER/GROUP_WHITELIST)+代理+`SPEED_PRESETS`+APP_VERSION；`make_json_from_session`/`reconcile_converted_json` 供导入复用 |
+| `webapp/src/App.svelte` | 2263 | 主 UI 外壳与业务流程编排（账号/分组/任务/新建账号/移动端）；模板已组件化，业务状态与 `flushSync` 仍在脚本内。改动后必须 `npm run build` |
+| `webapp/src/components/` | 19 个 / 1957 | 展示组件：TopBar/AccountCard/FunctionCards/ChatView/SettingsDialog/MobileApp 等；props 与回调由 App 注入 |
+| `webapp/src/styles/app-ui.css` | 4996 | 全局界面样式（Phase 2-1 从 App.svelte 迁出）；颜色/尺寸必须引用 app.css 的令牌 |
+| `webapp/src/app.css` | 260 | Material 3 颜色、圆角、间距、字号、阴影令牌 + 深色模式（`theme_mode`） |
+| `webapp/src/texts/zh.ts` | 446 | 全部界面文案（399 条 key）与卡片显示名；模板禁止硬编码中文 |
+| `webapp/src/api.ts` | 421 | API 封装 + TOKEN + connectWS |
 | `cable.py` | 660 | passkey caBLE 完整实现（见第七节） |
 | `web_main.py` | 121 | pywebview 壳；窗口尺寸记忆 settings.json；降级浏览器模式 |
-| `tg_profile.py` | 363 | 资料缓存 worker：profiles.json + avatars/；DEAD 集合跳过死号；PHONE_CODE_MAP 区号表 |
+| `tg_profile.py` | 356 | 资料缓存 worker：profiles.json + avatars/；DEAD 集合跳过死号；PHONE_CODE_MAP 区号表 |
+| `tg_log.py` | 212 | 统一日志：分级、按天落盘、环形缓冲、手机号打码 |
 | `tl_patch.py` | 283 | Telethon 1.44 新 message 构造体 3ae56482 注册；官方更新 layer 后自动失效，无需维护 |
-| `tdata2session.py` | 119 | opentele-ng tdata↔session 独立转换（也被 tg_tool import） |
+| `tdata2session.py` | 117 | opentele-ng tdata↔session 独立转换（也被 tg_tool import） |
 | `legacy/` | — | tg_ui.py（Tkinter，冻结）+ tdesktop 参考源码 reference/ |
 | `docs/releases/` | — | 各版本 release notes |
 | `界面文本.txt` | — | 全部界面中文外置；**运行目录那份才是活的，仓库这份是模板**；新增文案 = tg_tool.py DEFAULT_TEXTS 加 t0xx key + 此文件同步 |
@@ -130,14 +134,14 @@ git checkout main; git merge --ff-only dev; git push origin main; git checkout d
 - 诊断基建 `cable.py _detect` 保留：全 UUID 抓包、验密、变体探测；debug 日志（passkey_adv/mfg/diag）需 settings.json `log_level=debug` 才下发。
 - 走通后清理 cable.py 诊断日志。
 
-## 八、多设备 App 化规划（2026-10-01 已评估，待启动 M0）
+## 八、多设备 App 化规划（M0-A/B/C 已通过，M0-D 卡 vivo 后台冻结）
 
 ### 8.1 目标与既定原则
 每台设备（Android 优先，电脑保留）都是**完整节点**：能托管账号、执行 Telegram 操作、接收其他设备命令。账号所有权即宿主（session 只在一台设备运行，其他设备只发命令）；**不用租约**；备份文件不允许自动运行（防同 session 双端冲突）；迁移 = 源停号 → 加密传输 → 新宿主接管 → 更新映射；离线设备的账号不显示或标记不可用。技术栈不换（FastAPI + Svelte + pywebview），Android 用 Buildozer/p4a 打包。
 
 ### 8.2 技术核实结论（2026-10-01 评估后修订）
 - Telethon 1.44.0 的核心代码偏纯 Python，且当前桌面端未安装 cryptg；这只能降低原生扩展风险，**不能证明 Android p4a 构建和运行已经可行**。
-- Ed25519 不在 Python 标准库中。设备身份签名、TLS 和 passkey 依赖必须单独选择并验证 p4a recipe；不能再把 Android 方案描述为“零 C 扩展”。当前 server.py 还会无条件导入 cable.py，裁剪 cryptography/cbor2/bleak 前必须做条件导入或平台拆分。
+- Ed25519 不在 Python 标准库中。设备身份签名、TLS 和 passkey 依赖必须单独选择并验证 p4a recipe；不能再把 Android 方案描述为“零 C 扩展”。`cable.py` 已改为按需加载（缺可选依赖时 passkey 接口明确报错，不再拖垮整个服务），但 Android 首版仍需条件导入或平台拆分。
 - 前端已使用 @material/web 2.3（Material 3 官方组件），UI 层可以复用组件和 API 模型，但桌面 pywebview 入口不能直接作为 Android 入口。
 - 账号 JSON/profiles.json 中已有 user_id（uid），适合作为候选合并键；目标设备仍必须连接 Telegram 后用 get_me() 校验真实 UID，不能只相信缓存。
 - 现有 /api/pack 依赖系统 7z/7za，不能直接用于 Android 迁移；迁移需要独立的可移植加密包格式，包含 KDF、AEAD、版本、文件清单、校验、大小限制和原子提交。
@@ -264,13 +268,15 @@ git checkout main; git merge --ff-only dev; git push origin main; git checkout d
 - CLI 回归：`printf '\n0\n' | python -X utf8 tg_tool.py`（账号目录内）。
 - Web 后端冒烟：起服务后无 token 访问 /api/* 应 401、带 X-TG-Token 应 200；`/api/pack` 无 pack_password 必须拒绝；路径越界必须 400。
 - 前端构建：`cd webapp && npm run build`。
+- 前端 E2E：`cd webapp && npx playwright test`（26 条：交互 + 13 张视觉基线 + 深色/手机端 + 文案与运行时错误守卫；自动 build + preview）。有意改视觉后跑 `npm run test:e2e:update`，必须人工看 PNG diff。
+- 前端契约守卫：`flushSync` 保持 21 处；`.log`、`.chat-history`、`.ctx`、`details.card` 选择器不能改；分组按钮 padding/高度不能动（见 `docs/UI_REFACTOR_RISKS.md`）。
 - 多账号在线/秒切：连两个号 → 双击切号 → 断当前号自动切池内下一个。
 
 ## 十一、下一步建议（优先级序）
 
-1. **多设备 M0-A 技术验证**（第八节 8.5）：先固定 Android 构建链和最小入口，验证 ARM64 APK、依赖导入、服务进程与本机 WebView。
-2. **多设备 M0-B/M0-C**：让前台服务进程独占 Engine/Telethon，完成已有 .session 的只读连接、断网重连、服务恢复和过夜保活。
-3. **多设备 M0-D**：完成设备身份、TLS/应用层认证、二维码配对、密钥存储和重放拒绝原型。
-4. passkey 继续作为桌面独立卡点处理；不得把 cable/cryptography 直接混入 Android 首版依赖，先做条件导入或平台拆分。
-5. 批量任务 fan-out、`new-ui` 残留分支清理和移动端 UI 重做，均排在 M0 通过之后。
+1. **UI Phase 5 视觉重设计**：按 `docs/ui-phase5-plan.md` 执行。先定色板（沿用 v1.2.3 的 #356AE6，或换方案里的深蓝），再按「令牌 → 密度 → 账号列表 → 功能卡/进度 → 危险弹窗 → 手机端」推进；每个改动单独 build + 26 条全绿 + 单独 commit。
+2. **发版**：Phase 5 完成后 bump `APP_VERSION`（新外观建议 1.3.0，纯修复则 1.2.4）→ 构建 → 部署 → tag → GitHub Release；发版前先把 `dev` 推到 `origin/dev` 备份。
+3. **passkey caBLE 复测**：等用户按第七节的成功标志验证；走通后清理 `cable.py` 诊断日志。
+4. **Android M0-D**：vivo 后台冻结按「仅前台可用」设计，或人工加 i管家白名单复测；Android 实验与文档保留在 `android-m0-local` 分支，不混入桌面发版。
+5. **批量任务 fan-out**：排在 UI 与 Android 之后。
 6. 改动 `webapp/src/**` 的任何提交前先 `npm run build`（铁律）。

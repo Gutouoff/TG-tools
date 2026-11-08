@@ -69,6 +69,6 @@
 
 ## 七、新增文案的落点
 
-- 前端：直接写在 `App.svelte` 对应位置，保持本规范。
+- 前端：写进 `webapp/src/texts/zh.ts`（key 命名 `模块.语义`，公共词放 `common.*`），组件里用 `t('模块.key')`；模板禁止硬编码中文，流程见 `docs/UI_TEXTS.md`。
 - 后端返回给界面的 `msg`：本规范同样适用。
 - CLI：`tg_tool.py` 的 `DEFAULT_TEXTS` 加 `t0xx` key，并同步仓库根目录 `界面文本.txt`（运行目录那份才是活的）。

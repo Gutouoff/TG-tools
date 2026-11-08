@@ -21,7 +21,7 @@ CLI（tg_tool.py）仍可用；Tkinter GUI（tg_ui.py）已归档至 `legacy/`�
 |---|---|---|
 | `server.py` | FastAPI 后端：token 鉴权、账号/连接池/任务/打包/设置/安全 API、WebSocket 广播、静态首页注入 token | 所有 /api 需 `X-TG-Token` 头（仅 avatar-image 放行 query token）；路径一律过 `_ensure_in_root`；日志经 `_emit` 打码手机号后广播；打包强制 AES-256（需 7z），密码存 settings.json |
 | `web_main.py` | pywebview 壳 | 启动 FastAPI 后加载 `http://localhost:{port}/?token=`（用 localhost 是为 WebAuthn rp.id） |
-| `webapp/src/` | Svelte 5 前端（App.svelte 主界面 + api.ts 封装 + app.css 主题） | 改完必须 `cd webapp && npm run build` 再打包部署（webapp/dist 不入库）；token 从 `window.__TG_TOKEN__`（后端注入 index.html）或 URL query 读 |
+| `webapp/src/` | Svelte 5 前端：App.svelte 外壳与流程编排 + `components/`（19 个展示组件）+ `styles/app-ui.css`（全局样式）+ `texts/zh.ts`（全部界面文案）+ api.ts + app.css（设计令牌） | 改完必须 `cd webapp && npm run build` 再打包部署（webapp/dist 不入库）；文案禁止硬编码，走 `t()`；token 从 `window.__TG_TOKEN__`（后端注入 index.html）或 URL query 读 |
 | `cable.py` | passkey caBLE（蓝牙扫码登录）完整实现 | 依赖 bleak/cbor2/cryptography；诊断日志待 passkey 走通后清理（见 HANDOFF.md 卡点） |
 | `tg_tool.py` | 核心业务+CLI 交互+界面文本表 DEFAULT_TEXTS+白名单+代理 | 它是库（GUI/Web 都 import 它）也是 CLI 入口；模块级可变量 DIALOG_DELAY/CONTACT_*_DELAY 被 Engine.set_speed 运行时改 |
 | `tg_engine.py` | 引擎：线程+asyncio 循环、**多账号连接池(_pool)/秒切**、任务、温和取消、进度回调 | 所有 on_log/on_progress/on_state 回调默认在引擎线程执行,UI 侧必须 root.after 投递;任务只作用于"当前账号" |
@@ -37,11 +37,11 @@ CLI（tg_tool.py）仍可用；Tkinter GUI（tg_ui.py）已归档至 `legacy/`�
 
 - 测试账号：`D:\Desktop\TG小号\Dexpornuxiuo`（用户授权随便删）
 - 死号（连接失败正常）：18296957526、Racoro、xxxCeay
-- GUI 冒烟：构建 App → 搜索过滤 → 弹窗构建,不真删
+- 前端 E2E：`cd webapp && npx playwright test`（26 条：交互 + 13 张视觉基线 + 深色/手机端 + 文案/运行时错误守卫；自动构建并起 preview）
 - CLI 回归：`printf '\n0\n' | python -X utf8 tg_tool.py`（账号目录内）
 - Web 后端冒烟：`server.start_server()` 起服务后,无 token 访问 /api/* 应 401,带 `X-TG-Token` 应 200;`/api/pack` 无 pack_password 必须拒绝;路径越界必须 400
 - 前端构建：`cd webapp && npm run build`（沙箱内 esbuild 可能 EPERM,需放开权限重试）
-- Python：`C:\Python314\python.exe` + `-X utf8`,终端是 MSYS bash（POSIX 语法,原生工具传 `C:/x` 正斜杠路径）
+- Python：`python`（3.12）+ `-X utf8`;发版构建用临时 venv（见 docs/RELEASE_BUILD.md）,终端是 MSYS bash（POSIX 语法,原生工具传 `C:/x` 正斜杠路径）
 
 ## 约定
 

@@ -44,11 +44,12 @@ webapp/src/texts/
 1. 在 `zh.ts` 加 key（同一模块内按语义命名）；
 2. 组件里用 `t('模块.key')`，需要参数就写 `{param}`；
 3. `cd webapp && npm run build`；
-4. `npm run test:e2e` 必须 17 条全绿（纯文案迁移截图不应变化）；
+4. `npm run test:e2e` 必须 26 条全绿（纯文案迁移截图不应变化）；
 5. 单独 commit。
 
 ## 当前状态
 
 - 19 个组件 + `App.svelte` 外壳已全部外置，`App.svelte` 模板中文行数为 0；
+- 文案守卫在 `e2e/texts.spec.ts`：检查 `t()` 的 key 都存在于 `zh.ts`，且组件模板没有硬编码中文（图标字形除外）；
 - 组件模板只剩图标字形；
 - 动态文案（后端返回的日志、账号名、错误信息）不在本机制内，仍按原样透传。
