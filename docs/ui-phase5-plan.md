@@ -1,7 +1,7 @@
 # UI 重构实施计划（Phase 5：外观重设计）
 
 > **状态**：待执行。Phase 1–4（组件化、令牌化、文案外置、测试基线）已完成。
-> **基线**：`dev` @ `82939e4`（2026-10-31，v1.2.3 + 前端重构 48 个提交）。
+> **基线**：`dev` @ `4915e0f`（2026-11-08，v1.2.3 + 前端重构 + 收尾提交）。
 > **目标**：只改视觉、布局与样式，不改任何功能、接口、数据结构与持久化值。
 > **关联**：[AGENTS.md](../AGENTS.md)、[UI_REFACTOR_RISKS.md](UI_REFACTOR_RISKS.md)、[PHASE0_TESTING.md](PHASE0_TESTING.md)、[UI_TEXTS.md](UI_TEXTS.md)、[UI_STYLE.md](UI_STYLE.md)。
 > **历史文档**：[ui-redesign-plan.md](ui-redesign-plan.md) 与 [ui-redesign-risks.md](ui-redesign-risks.md) 基于 v1.2.2 单文件结构，仅作设计参考，任务分解以本文件为准。
@@ -33,7 +33,7 @@
 | `api.ts` | 421 行（只读） |
 | 构建 | `npm run build` ✅ 217 模块，335KB JS / 92KB CSS |
 | E2E | `npx playwright test` ✅ 26/26，13 张视觉基线 |
-| 已知告警 | `AddAccountDialog.svelte:157` 的 `md-outlined-button` 点击缺 ARIA role |
+| 已知告警 | 76 条 a11y 告警（既有基线，构建不阻断；Phase 5.8 处理） |
 
 ### 1.2 已完成的准备（Phase 1–4）
 
@@ -296,7 +296,7 @@ grep -n 'onGroupMouseDown' webapp/src/App.svelte     # 仍在
 | 项 | 约定 |
 |---|---|
 | 分支 | 从 `dev` 切 `ui-phase5`，完成后再合回 `dev` |
-| 提交粒度 | 一个 Phase 一个 commit；a11y 修复单独一个 commit |
+| 提交粒度 | 一个 Phase 一个 commit；a11y 处理在 5.8 内单独一个 commit |
 | 提交信息 | `Phase 5-N: <改动摘要>（无行为变化）` |
 | 基线更新 | 只在该 Phase 声明的视觉区域；更新后必须人工看 PNG diff |
 | 预发布 | 5.1–5.6 完成后出 `1.3.0-beta.1` 给测试者；5.7–5.8 后发 `1.3.0` |
