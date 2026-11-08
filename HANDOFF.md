@@ -21,7 +21,7 @@ Telegram 小号批量维护工具箱（删联系人/删对话/退群/加群/拉�
 | 项 | 值 |
 |---|---|
 | 版本 | **v1.2.3**（`tg_tool.py:45` `APP_VERSION`，唯一权威；`/api/ping` 与前端顶栏读它） |
-| 分支 | `main` = `origin/main` = v1.2.3 发布提交 `1509748`；`dev` = `82939e4`，领先 main 48 个提交，其中 42 个尚未推到 `origin/dev` |
+| 分支 | `main` = `origin/main` = v1.2.3 发布提交 `1509748`；`dev` = `00eca1b`，领先 main 52 个提交，已推送到 `origin/dev` |
 | tag | v1.2.3 已打并推送，GitHub Release 带资产 TG-tools_v1.2.3.zip（≈30MB） |
 | 发布线 | v1.1.0-beta.1→9 → v1.1.0 → v1.1.1 → v1.2.0 → v1.2.1 → v1.2.2 → v1.2.3；notes 归档 `docs/releases/` |
 | v1.2.3 内容 | 蓝色主题（#356AE6）+ 设置页分区导航 + 会话区刷新与可达性；配置结构无破坏性变更 |
